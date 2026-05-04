@@ -11,6 +11,7 @@ import Recoltes from '@/components/Recoltes'
 import Ventes from '@/components/Ventes'
 import Commandes from '@/components/Commandes'
 import Disponibilite from '@/components/Disponibilite'
+import Verification from '@/components/Verification'
 import OnboardingModal from '@/components/OnboardingModal'
 
 const SECTIONS = [
@@ -22,6 +23,7 @@ const SECTIONS = [
   { id: 'ventes', label: 'Ventes', icon: '💰' },
   { id: 'commandes', label: 'Commandes de graines', icon: '📦' },
   { id: 'disponibilite', label: 'Disponibilité', icon: '🌸' },
+  { id: 'verification', label: 'Vérification', icon: '📋' },
 ] as const
 
 export default function Home() {
@@ -94,6 +96,7 @@ export default function Home() {
           {section === 'ventes' && <Ventes ctx={ctx} />}
           {section === 'commandes' && <Commandes ctx={ctx} />}
           {section === 'disponibilite' && <Disponibilite ctx={ctx} />}
+          {section === 'verification' && <Verification ctx={ctx} />}
         </div>
       </main>
     </div>

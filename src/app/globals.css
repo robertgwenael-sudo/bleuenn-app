@@ -50,6 +50,14 @@
   .table-cell {
     @apply px-3.5 py-2.5 border-b border-cream-dark text-sm;
   }
+
+  /* Tableau de vérification (style Excel) */
+  .thv {
+    @apply px-2 py-2 text-center text-[0.6rem] font-semibold uppercase tracking-wider whitespace-nowrap;
+  }
+  .tdv {
+    @apply px-2 py-1.5 whitespace-nowrap;
+  }
 }
 
 /* Scrollbar */
