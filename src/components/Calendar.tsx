@@ -137,10 +137,11 @@ export default function Calendar({ ctx }: { ctx: any }) {
 
           {/* ─── Ligne totaux dynamiques par semaine ─── */}
           {unique.length > 0 && (() => {
-            // Calcul du nombre de plants en cellule par semaine
+            // Calcul dynamique par semaine
             const plantsEnCellule: number[] = new Array(52).fill(0)
             const plantsAuChamp: number[] = new Array(52).fill(0)
             const plantsEnRecolte: number[] = new Array(52).fill(0)
+            const tigesARecolter: number[] = new Array(52).fill(0)
 
             for (const p of unique) {
               const wSemis = getWeekNumber(new Date(p.date_semis + 'T00:00:00'))
@@ -148,6 +149,9 @@ export default function Calendar({ ctx }: { ctx: any }) {
               const wRec = p.date_recolte ? getWeekNumber(new Date(p.date_recolte + 'T00:00:00')) : 99
               const wFin = p.date_fin ? getWeekNumber(new Date(p.date_fin + 'T00:00:00')) : 99
               const plants = p.plants_count || 0
+              const tigesNettes = p.tiges_estimees || 0
+              const semainesRecolte = Math.max(1, wFin - wRec + 1)
+              const tigesParSemaine = Math.round(tigesNettes / semainesRecolte)
 
               for (let i = 0; i < 52; i++) {
                 const w = i + 1
@@ -157,6 +161,7 @@ export default function Calendar({ ctx }: { ctx: any }) {
                   plantsAuChamp[i] += plants
                 } else if (w >= wRec && w <= wFin) {
                   plantsEnRecolte[i] += plants
+                  tigesARecolter[i] += tigesParSemaine
                 }
               }
             }
@@ -167,6 +172,7 @@ export default function Calendar({ ctx }: { ctx: any }) {
             const maxCellule = Math.max(...plantsEnCellule)
             const maxChamp = Math.max(...plantsAuChamp)
             const maxRecolte = Math.max(...plantsEnRecolte)
+            const maxTiges = Math.max(...tigesARecolter)
 
             return (
               <tfoot>
@@ -237,6 +243,30 @@ export default function Calendar({ ctx }: { ctx: any }) {
                           <div className="flex flex-col items-center">
                             <span className="text-[0.5rem] font-bold text-brun leading-none">{v}</span>
                             <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#9dc08b' }} />
+                          </div>
+                        ) : (
+                          <div className="h-[20px]" />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+                {/* Tiges à récolter par semaine */}
+                <tr className="bg-sage/5">
+                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-feuille whitespace-nowrap">
+                    ✂️ Tiges à récolter
+                  </td>
+                  <td />
+                  <td />
+                  {weeks.map((w, i) => {
+                    const v = tigesARecolter[i]
+                    const pct = maxTiges > 0 ? v / maxTiges : 0
+                    return (
+                      <td key={w} className="!p-0.5 text-center">
+                        {v > 0 ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[0.5rem] font-bold text-feuille leading-none">{v}</span>
+                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#609c54' }} />
                           </div>
                         ) : (
                           <div className="h-[20px]" />
