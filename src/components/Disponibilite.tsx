@@ -51,15 +51,6 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
         </select>
       </div>
 
-      {/* Weekly counts */}
-      <div className="flex gap-1.5 flex-wrap mb-5">
-        {weeks.map((w, i) => (
-          <div key={w} className={`px-2 py-1 rounded-full text-[0.6rem] shadow-card ${availCount[i] > 0 ? 'bg-sage-pale text-sage-dark' : 'bg-white text-terre'}`}>
-            S{w}: <strong>{availCount[i]}</strong>
-          </div>
-        ))}
-      </div>
-
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -102,6 +93,20 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
               </td></tr>
             )}
           </tbody>
+          {Object.keys(byName).length > 0 && (
+            <tfoot>
+              <tr className="bg-cream/60">
+                <td className="px-3 py-2 text-[0.6rem] font-bold text-brun uppercase tracking-wider sticky left-0 bg-cream/60 z-10 border-t-2 border-sage/20">
+                  Total variétés
+                </td>
+                {weeks.map((_, i) => (
+                  <td key={i} className={`text-center px-1 py-2 border-t-2 border-sage/20 text-[0.6rem] font-bold ${availCount[i] > 0 ? 'text-sage-dark' : 'text-terre/30'}`}>
+                    {availCount[i]}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>
