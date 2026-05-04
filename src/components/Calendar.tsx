@@ -45,13 +45,13 @@ export default function Calendar({ ctx }: { ctx: any }) {
       {/* Legend */}
       <div className="flex gap-5 mb-4 flex-wrap">
         <div className="flex items-center gap-2 text-xs">
-          <div className="w-4 h-3 rounded bg-blush" /> En cellule
+          <div className="w-4 h-3 rounded" style={{ backgroundColor: '#f5d98e' }} /> En cellule
         </div>
         <div className="flex items-center gap-2 text-xs">
-          <div className="w-4 h-3 rounded bg-sage-light" /> Au champ
+          <div className="w-4 h-3 rounded" style={{ backgroundColor: '#e8b06d' }} /> Au champ
         </div>
         <div className="flex items-center gap-2 text-xs">
-          <div className="w-4 h-3 rounded bg-sage" /> En récolte
+          <div className="w-4 h-3 rounded" style={{ backgroundColor: '#9dc08b' }} /> En récolte
         </div>
       </div>
 
@@ -112,9 +112,9 @@ export default function Calendar({ ctx }: { ctx: any }) {
                         </td>
                         {weeks.map(w => {
                           let cls = ''
-                          if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) cls = 'bg-blush'
-                          else if (w >= wPlant && w < wRec) cls = 'bg-sage-light'
-                          else if (w >= wRec && w <= wFin) cls = 'bg-sage'
+                          if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) cls = 'cal-cellule'
+                          else if (w >= wPlant && w < wRec) cls = 'cal-champ'
+                          else if (w >= wRec && w <= wFin) cls = 'cal-recolte'
                           return (
                             <td key={w} className="!p-0.5 text-center">
                               <div className={`w-[18px] h-[14px] rounded-sm mx-auto ${cls}`} />

@@ -100,6 +100,11 @@
     @apply px-3.5 py-2.5 border-b border-lin-dark text-sm;
   }
 
+  /* ─── Calendrier : couleurs pastel ── */
+  .cal-cellule { background-color: #f5d98e; }   /* jaune pastel */
+  .cal-champ   { background-color: #e8b06d; }   /* orange pastel */
+  .cal-recolte { background-color: #9dc08b; }   /* vert pastel */
+
   /* Tableau de vérification (style Excel) */
   .thv {
     @apply px-2 py-2 text-center text-[0.6rem] font-bold uppercase tracking-wider whitespace-nowrap;
