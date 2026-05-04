@@ -175,3 +175,28 @@ export function formatDateShort(d: string | null): string {
     day: '2-digit', month: '2-digit'
   })
 }
+
+/**
+ * Calcule la surface occupée sur une planche pendant une période donnée.
+ * Deux cultures peuvent partager la même planche si leurs périodes ne se chevauchent pas.
+ * Période d'occupation d'une culture = [date_semis, date_fin].
+ * Chevauchement : A.start <= B.end AND B.start <= A.end
+ */
+export function getOverlappingM2(
+  plantings: { surface_m2: number; date_semis: string; date_fin: string | null; id: string }[],
+  dateSemis: string,
+  dateFin: string | null,
+  excludeId?: string
+): number {
+  const s1 = dateSemis
+  const f1 = dateFin || '2099-12-31'
+  return plantings
+    .filter(p => excludeId ? p.id !== excludeId : true)
+    .filter(p => {
+      const s2 = p.date_semis
+      const f2 = p.date_fin || '2099-12-31'
+      // Chevauchement : les deux périodes se croisent
+      return s1 <= f2 && s2 <= f1
+    })
+    .reduce((sum, p) => sum + (p.surface_m2 || 0), 0)
+}

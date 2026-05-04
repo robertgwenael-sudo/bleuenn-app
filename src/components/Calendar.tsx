@@ -1,6 +1,6 @@
 'use client'
 import { useState, Fragment } from 'react'
-import { getWeekNumber } from '@/lib/types'
+import { getWeekNumber, getOverlappingM2 } from '@/lib/types'
 import type { PlantingFull, Garden } from '@/lib/types'
 import Modal from '@/components/Modal'
 
@@ -121,8 +121,7 @@ function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; 
   const [loading, setLoading] = useState(false)
 
   const allPlantings: PlantingFull[] = ctx.plantings || []
-  const otherPlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id && p.id !== planting.id)
-  const usedM2 = otherPlantings.reduce((sum: number, p: PlantingFull) => sum + (p.surface_m2 || 0), 0)
+  const samePlanchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id)
 
   let plancheM2 = 0
   for (const g of (ctx.gardens || [])) {
@@ -130,13 +129,11 @@ function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; 
       if (pl.id === planting.planche_id) { plancheM2 = pl.surface_m2; break }
     }
   }
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
 
   const jc = planting.jours_cellule || 0
   const jch = planting.jours_champ || 0
   const jr = planting.jours_recolte || 21
-  let previewPlantation = '', previewRecolte = '', previewFin = ''
+  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
   if (dateSemis) {
     const ds = new Date(dateSemis + 'T00:00:00')
     const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
@@ -145,7 +142,13 @@ function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; 
     previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
     previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
     previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    previewFinDate = df.toISOString().slice(0, 10)
   }
+
+  // Calcul temporel : seules les cultures dont la période chevauche comptent
+  const usedM2 = dateSemis ? getOverlappingM2(samePlanchePlantings, dateSemis, previewFinDate || planting.date_fin, planting.id) : 0
+  const availableM2 = Math.max(0, plancheM2 - usedM2)
+  const isOverCapacity = surfaceM2 > availableM2
 
   const submit = async () => {
     if (!dateSemis || isOverCapacity || surfaceM2 <= 0) return

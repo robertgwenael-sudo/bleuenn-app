@@ -1,6 +1,6 @@
 'use client'
 import { Fragment, useState } from 'react'
-import { getWeekNumber, formatDateShort } from '@/lib/types'
+import { getWeekNumber, formatDateShort, getOverlappingM2 } from '@/lib/types'
 import type { PlantingFull, Garden, CultureCatalog } from '@/lib/types'
 import Modal from '@/components/Modal'
 
@@ -12,8 +12,7 @@ function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; 
   const [loading, setLoading] = useState(false)
 
   const allPlantings: PlantingFull[] = ctx.plantings || []
-  const otherPlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id && p.id !== planting.id)
-  const usedM2 = otherPlantings.reduce((sum: number, p: PlantingFull) => sum + (p.surface_m2 || 0), 0)
+  const samePlanchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id)
 
   let plancheM2 = 0
   for (const g of (ctx.gardens || [])) {
@@ -21,14 +20,12 @@ function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; 
       if (pl.id === planting.planche_id) { plancheM2 = pl.surface_m2; break }
     }
   }
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
 
   // Preview dates dynamiques
   const jc = planting.jours_cellule || 0
   const jch = planting.jours_champ || 0
   const jr = planting.jours_recolte || 21
-  let previewPlantation = '', previewRecolte = '', previewFin = ''
+  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
   if (dateSemis) {
     const ds = new Date(dateSemis + 'T00:00:00')
     const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
@@ -37,7 +34,13 @@ function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; 
     previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
     previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
     previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    previewFinDate = df.toISOString().slice(0, 10)
   }
+
+  // Calcul temporel : surface occupée pendant la période de cette culture
+  const usedM2 = dateSemis ? getOverlappingM2(samePlanchePlantings, dateSemis, previewFinDate || planting.date_fin, planting.id) : 0
+  const availableM2 = Math.max(0, plancheM2 - usedM2)
+  const isOverCapacity = surfaceM2 > availableM2
 
   const submit = async () => {
     if (!dateSemis || isOverCapacity || surfaceM2 <= 0) return
@@ -121,13 +124,10 @@ function AddCultureForm({ plancheId, plancheM2, ctx, onClose }: {
 }) {
   const catalog: CultureCatalog[] = ctx.catalog || []
   const allPlantings: PlantingFull[] = ctx.plantings || []
-  const usedM2 = allPlantings
-    .filter((p: PlantingFull) => p.planche_id === plancheId)
-    .reduce((sum: number, p: PlantingFull) => sum + (p.surface_m2 || 0), 0)
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
+  const samePlanchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === plancheId)
 
   const [cultureId, setCultureId] = useState('')
-  const [surfaceM2, setSurfaceM2] = useState(Math.min(1, availableM2))
+  const [surfaceM2, setSurfaceM2] = useState(1)
   const [dateSemis, setDateSemis] = useState('')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
@@ -137,10 +137,9 @@ function AddCultureForm({ plancheId, plancheM2, ctx, onClose }: {
   ).sort((a, b) => a.name.localeCompare(b.name))
 
   const selected = catalog.find(c => c.id === cultureId)
-  const isOverCapacity = surfaceM2 > availableM2
 
   // Preview dates
-  let previewPlantation = '', previewRecolte = '', previewFin = ''
+  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
   if (dateSemis && selected) {
     const jc = selected.jours_cellule || 0
     const jch = selected.jours_champ || 0
@@ -152,7 +151,15 @@ function AddCultureForm({ plancheId, plancheM2, ctx, onClose }: {
     previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
     previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
     previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    previewFinDate = df.toISOString().slice(0, 10)
   }
+
+  // Calcul temporel de la surface occupée pendant la période de la nouvelle culture
+  const usedM2 = (dateSemis && previewFinDate)
+    ? getOverlappingM2(samePlanchePlantings, dateSemis, previewFinDate)
+    : samePlanchePlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
+  const availableM2 = Math.max(0, plancheM2 - usedM2)
+  const isOverCapacity = surfaceM2 > availableM2
 
   const submit = async () => {
     if (!cultureId || !dateSemis || isOverCapacity || surfaceM2 <= 0) return
@@ -165,7 +172,11 @@ function AddCultureForm({ plancheId, plancheM2, ctx, onClose }: {
   return (
     <div className="space-y-4">
       <h3 className="font-serif text-xl">Ajouter une culture</h3>
-      <p className="text-xs text-terre">{availableM2.toFixed(1)} m² disponibles sur cette planche</p>
+      <p className="text-xs text-terre">
+        {availableM2.toFixed(1)} m² disponibles sur cette planche
+        {dateSemis && previewFinDate && <span className="text-sage ml-1">(pendant la période {dateSemis} → {previewFinDate})</span>}
+        {(!dateSemis || !previewFinDate) && <span className="text-terre/60 ml-1">(choisissez une culture et date de semis pour le calcul temporel)</span>}
+      </p>
 
       <div>
         <label className="block text-xs font-semibold mb-1">Rechercher une culture</label>
