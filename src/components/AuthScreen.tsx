@@ -21,41 +21,79 @@ export default function AuthScreen({ signIn, signUp }: {
     const err = await fn(email, password)
     setLoading(false)
     if (err) setError(err.message)
-    else if (mode === 'register') setSuccess('Compte créé ! Vérifiez vos emails.')
+    else if (mode === 'register') setSuccess('Compte cree ! Verifiez vos emails.')
   }
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4">
-      <div className="card max-w-md w-full p-10">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{
+        background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)',
+      }}
+    >
+      {/* Decorative elements */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-30"
+        style={{
+          backgroundImage: `
+            radial-gradient(ellipse at 20% 20%, #d4a0a033 0%, transparent 50%),
+            radial-gradient(ellipse at 80% 80%, #6b7f5e22 0%, transparent 50%),
+            radial-gradient(ellipse at 50% 0%, #c9a96e15 0%, transparent 40%)
+          `,
+        }}
+      />
+
+      <div className="relative z-10 max-w-md w-full">
+        {/* Logo area */}
         <div className="text-center mb-8">
-          <h1 className="font-serif italic text-4xl text-blush-dark">Bleuenn</h1>
-          <p className="text-terre text-sm mt-1">Ferme Florale — Gestion de culture</p>
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/80 shadow-card mb-4 border border-rose/20">
+            <span className="text-3xl">&#x273F;</span>
+          </div>
+          <h1 className="font-serif italic text-5xl text-feuille-dark tracking-wide">Bleuenn</h1>
+          <div className="floral-divider mt-3 max-w-[200px] mx-auto">
+            <span className="text-or text-[0.6rem]">Ferme Florale</span>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-brun mb-1.5">Email</label>
-            <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+        {/* Card */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-card p-10 shadow-card-lg border border-white/60">
+          <h2 className="font-serif text-xl text-center text-brun mb-6">
+            {mode === 'login' ? 'Bienvenue' : 'Creer un compte'}
+          </h2>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Email</label>
+              <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                placeholder="marine@ferme.fr" />
+            </div>
+            <div>
+              <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Mot de passe</label>
+              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
+                placeholder="6 caracteres minimum" />
+            </div>
+
+            {error && <p className="text-rose-deep text-sm bg-rose-pale rounded-btn px-3 py-2">{error}</p>}
+            {success && <p className="text-feuille text-sm bg-sage-pale rounded-btn px-3 py-2">{success}</p>}
+
+            <button className="btn btn-sage w-full text-base py-3" disabled={loading}>
+              {loading ? '...' : mode === 'login' ? 'Se connecter' : 'Creer mon compte'}
+            </button>
+          </form>
+
+          <div className="floral-divider mt-6 mb-4">
+            <span className="text-or/50 text-[0.55rem]">ou</span>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-brun mb-1.5">Mot de passe</label>
-            <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
-          </div>
 
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          {success && <p className="text-green-700 text-sm">{success}</p>}
+          <p className="text-center text-sm text-terre">
+            {mode === 'login' ? (
+              <>Pas encore de compte ? <button className="text-pivoine font-bold hover:underline" onClick={() => setMode('register')}>S&apos;inscrire</button></>
+            ) : (
+              <>Deja inscrit ? <button className="text-pivoine font-bold hover:underline" onClick={() => setMode('login')}>Se connecter</button></>
+            )}
+          </p>
+        </div>
 
-          <button className="btn btn-sage w-full" disabled={loading}>
-            {loading ? '…' : mode === 'login' ? 'Se connecter' : 'Créer un compte'}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-terre mt-4">
-          {mode === 'login' ? (
-            <>Pas de compte ? <button className="text-sage font-semibold underline" onClick={() => setMode('register')}>S'inscrire</button></>
-          ) : (
-            <>Déjà inscrit ? <button className="text-sage font-semibold underline" onClick={() => setMode('login')}>Se connecter</button></>
-          )}
+        <p className="text-center text-[0.65rem] text-terre/40 mt-6 tracking-wider">
+          Gestion de ferme florale — Calendrier automatique
         </p>
       </div>
     </div>

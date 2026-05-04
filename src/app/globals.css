@@ -2,72 +2,155 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Lato:wght@300;400;700;900&display=swap');
 
 @layer base {
   body {
-    @apply font-sans text-brun bg-cream;
+    @apply font-sans text-brun bg-lin antialiased;
+    font-feature-settings: 'kern' 1, 'liga' 1;
   }
   h1, h2, h3, h4 {
     @apply font-serif text-brun;
+    font-weight: 500;
+  }
+  ::selection {
+    background: #d4a0a055;
   }
 }
 
 @layer components {
+
+  /* ─── Badges ──────────────────────── */
   .badge {
-    @apply inline-block px-2.5 py-0.5 rounded-full text-[0.7rem] font-semibold uppercase tracking-wider;
+    @apply inline-block px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest;
   }
-  .badge-rr { @apply bg-green-50 text-green-800; }
-  .badge-mp { @apply bg-orange-50 text-orange-800; }
-  .badge-ru { @apply bg-blue-50 text-blue-800; }
-  .badge-semer { @apply bg-blush-light text-blush-dark; }
-  .badge-germination { @apply bg-yellow-50 text-yellow-700; }
-  .badge-plante { @apply bg-sage-pale text-sage; }
-  .badge-recolte { @apply bg-green-50 text-green-700; }
-  .badge-termine { @apply bg-cream-dark text-terre; }
+  .badge-rr { @apply bg-sage-pale text-sage-dark; }
+  .badge-mp { @apply bg-or-light/40 text-or-dark; }
+  .badge-ru { @apply bg-lavande-pale text-lavande; }
+  .badge-semer { @apply bg-rose-pale text-rose-deep; }
+  .badge-germination { @apply bg-or-light/30 text-or-dark; }
+  .badge-plante { @apply bg-sage-pale text-sage-dark; }
+  .badge-recolte { @apply bg-pivoine-light/40 text-pivoine-dark; }
+  .badge-termine { @apply bg-lin-dark text-terre; }
 
+  /* ─── Cards ───────────────────────── */
   .card {
-    @apply bg-white rounded-card p-5 shadow-card transition-all duration-200 hover:shadow-card-lg hover:-translate-y-0.5;
+    @apply bg-white rounded-card p-5 shadow-card
+      border border-lin-dark/60
+      transition-all duration-300 ease-out;
+  }
+  .card:hover {
+    @apply shadow-card-lg -translate-y-0.5;
   }
 
+  /* ─── Boutons ─────────────────────── */
   .btn {
-    @apply px-5 py-2.5 rounded-lg font-sans text-sm font-semibold transition-all duration-200 cursor-pointer border-none;
+    @apply px-5 py-2.5 rounded-btn font-sans text-sm font-bold
+      transition-all duration-200 cursor-pointer border-none
+      tracking-wide;
   }
-  .btn-sage { @apply bg-sage text-white hover:bg-sage-light; }
-  .btn-blush { @apply bg-blush text-brun hover:bg-blush-dark hover:text-white; }
-  .btn-outline { @apply bg-transparent border border-sage text-sage hover:bg-sage hover:text-white; }
-  .btn-danger { @apply bg-red-50 text-red-700 hover:bg-red-100; }
+  .btn-sage {
+    @apply bg-feuille text-white;
+    background: linear-gradient(135deg, #3d5a3a 0%, #5a7a56 100%);
+  }
+  .btn-sage:hover {
+    @apply shadow-md;
+    background: linear-gradient(135deg, #4a6b47 0%, #6b8c67 100%);
+    transform: translateY(-1px);
+  }
+  .btn-rose {
+    @apply text-white;
+    background: linear-gradient(135deg, #c77d8a 0%, #d4a0a0 100%);
+  }
+  .btn-rose:hover {
+    background: linear-gradient(135deg, #b56b78 0%, #c88f8f 100%);
+    transform: translateY(-1px);
+  }
+  .btn-blush { @apply bg-rose text-brun hover:bg-rose-dark hover:text-white; }
+  .btn-outline {
+    @apply bg-transparent border-2 border-sage/40 text-sage-dark;
+  }
+  .btn-outline:hover {
+    @apply bg-sage text-white border-sage;
+  }
+  .btn-danger {
+    @apply bg-rose-pale text-rose-deep border border-rose/30;
+  }
+  .btn-danger:hover {
+    @apply bg-rose-light text-rose-deep;
+  }
   .btn-sm { @apply px-3 py-1.5 text-xs; }
 
+  /* ─── Inputs ──────────────────────── */
   .input {
-    @apply w-full px-3.5 py-2.5 border border-cream-dark rounded-lg font-sans text-sm bg-white text-brun
-      focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage-pale;
+    @apply w-full px-4 py-2.5 border border-lin-dark rounded-btn
+      font-sans text-sm bg-white text-brun
+      shadow-inner-soft
+      focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage-pale
+      placeholder:text-terre-light/50
+      transition-all duration-200;
   }
 
+  /* ─── Tables ──────────────────────── */
   .table-header {
-    @apply bg-sage-pale text-brun px-3.5 py-3 text-left font-semibold text-xs uppercase tracking-wider;
+    @apply bg-feuille/5 text-brun px-3.5 py-3 text-left font-bold text-[0.68rem] uppercase tracking-widest
+      border-b-2 border-sage/20;
   }
   .table-cell {
-    @apply px-3.5 py-2.5 border-b border-cream-dark text-sm;
+    @apply px-3.5 py-2.5 border-b border-lin-dark text-sm;
   }
 
   /* Tableau de vérification (style Excel) */
   .thv {
-    @apply px-2 py-2 text-center text-[0.6rem] font-semibold uppercase tracking-wider whitespace-nowrap;
+    @apply px-2 py-2 text-center text-[0.6rem] font-bold uppercase tracking-wider whitespace-nowrap;
   }
   .tdv {
     @apply px-2 py-1.5 whitespace-nowrap;
   }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
+/* ─── Scrollbar champêtre ──────────── */
+::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #c9c0b6; border-radius: 3px; }
+::-webkit-scrollbar-thumb {
+  background: #c9a96e55;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c9a96e99;
+}
 
-/* Animation */
+/* ─── Animations ───────────────────── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-in { animation: fadeIn 0.3s ease forwards; }
+@keyframes fadeInSoft {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-fade-in { animation: fadeIn 0.35s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+.animate-fade-soft { animation: fadeInSoft 0.5s ease forwards; }
+.animate-slide-left { animation: slideInLeft 0.3s ease forwards; }
+
+/* ─── Déco florale subtile ─────────── */
+.floral-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #c9a96e;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.floral-divider::before,
+.floral-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #c9a96e44, transparent);
+}

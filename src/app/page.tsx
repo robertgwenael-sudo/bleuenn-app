@@ -40,10 +40,12 @@ export default function Home() {
   // Loading
   if (ctx.loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-cream">
-        <div className="text-center">
-          <h1 className="font-serif italic text-3xl text-blush-dark mb-2">Bleuenn</h1>
-          <p className="text-terre text-sm">Chargement…</p>
+      <div className="flex items-center justify-center min-h-screen"
+        style={{ background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)' }}>
+        <div className="text-center animate-fade-in">
+          <span className="text-4xl block mb-3">&#x273F;</span>
+          <h1 className="font-serif italic text-3xl text-feuille-dark mb-2">Bleuenn</h1>
+          <p className="text-terre text-sm tracking-wider">Chargement...</p>
         </div>
       </div>
     )
@@ -52,12 +54,14 @@ export default function Home() {
   // No season yet → onboarding
   if (ctx.seasons.length === 0 && !showOnboarding) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-cream">
+      <div className="flex items-center justify-center min-h-screen"
+        style={{ background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)' }}>
         <div className="card max-w-md text-center p-10">
-          <h1 className="font-serif italic text-3xl text-blush-dark mb-2">Bleuenn</h1>
-          <p className="text-terre mb-6">Bienvenue ! Créez votre première saison pour commencer.</p>
+          <span className="text-3xl block mb-3">&#x273F;</span>
+          <h1 className="font-serif italic text-3xl text-feuille-dark mb-2">Bleuenn</h1>
+          <p className="text-terre mb-6">Bienvenue ! Creez votre premiere saison pour commencer.</p>
           <button className="btn btn-sage" onClick={() => setShowOnboarding(true)}>
-            Créer ma première saison
+            Creer ma premiere saison
           </button>
         </div>
       </div>
@@ -74,9 +78,9 @@ export default function Home() {
     <div className="flex min-h-screen">
       {/* Mobile toggle */}
       <button
-        className="lg:hidden fixed top-4 left-4 z-50 bg-brun-dark text-cream rounded-lg px-3 py-2 text-lg"
+        className="lg:hidden fixed top-4 left-4 z-50 bg-feuille-dark text-white rounded-btn px-3 py-2 text-lg shadow-md"
         onClick={() => setMobileOpen(!mobileOpen)}
-      >☰</button>
+      >&#x2261;</button>
 
       <Sidebar
         sections={SECTIONS}
