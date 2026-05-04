@@ -486,7 +486,7 @@ export default function Verification({ ctx }: { ctx: any }) {
                         return (
                           <tr className="bg-cream/60 border-b border-sage/20">
                             <td className="tdv text-right text-[0.6rem] font-bold text-terre" colSpan={2}>↳ {plGroup.plancheName}</td>
-                            <td className="tdv text-right border-r border-cream-dark text-[0.6rem] font-bold text-terre">{stSurface}</td>
+                            <td className="tdv text-right border-r border-cream-dark text-[0.6rem] font-bold text-terre">{stSurface}/{plGroup.plancheM2} m²</td>
                             <td className="tdv text-right text-[0.6rem] font-bold">{stPlants}</td>
                             <td className="tdv" />
                             <td className="tdv" />

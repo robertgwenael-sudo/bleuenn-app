@@ -20,13 +20,11 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
     byName[p.culture_name].push(p)
   })
 
-  // Market weeks 1-27 = calendar weeks 14-40
-  const mWeeks = Array.from({ length: 27 }, (_, i) => i + 1)
-  const calWeeks = mWeeks.map(m => m + 13)
+  // All 52 weeks of the year
+  const weeks = Array.from({ length: 52 }, (_, i) => i + 1)
 
   // Count per week
-  const availCount = mWeeks.map((_, i) => {
-    const cw = calWeeks[i]
+  const availCount = weeks.map(cw => {
     return Object.values(byName).filter(cults =>
       cults.some(c => {
         if (!c.date_recolte || !c.date_fin) return false
@@ -40,7 +38,7 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
   return (
     <div>
       <h2 className="font-serif text-3xl mb-1">Disponibilité des fleurs</h2>
-      <p className="text-terre text-sm mb-5">Semaines de marché 1 à 27 (semaines calendrier 14 à 40)</p>
+      <p className="text-terre text-sm mb-5">Vue annuelle — semaines 1 à 52</p>
 
       <div className="flex gap-3 flex-wrap mb-5">
         <select className="input !w-auto" value={filterGarden} onChange={e => setFilterGarden(e.target.value)}>
@@ -54,10 +52,10 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
       </div>
 
       {/* Weekly counts */}
-      <div className="flex gap-2 flex-wrap mb-5">
-        {mWeeks.slice(0, 20).map((m, i) => (
-          <div key={m} className="bg-white px-3 py-1 rounded-full text-[0.7rem] shadow-card">
-            S{m}: <strong className="text-sage">{availCount[i]}</strong>
+      <div className="flex gap-1.5 flex-wrap mb-5">
+        {weeks.map((w, i) => (
+          <div key={w} className={`px-2 py-1 rounded-full text-[0.6rem] shadow-card ${availCount[i] > 0 ? 'bg-sage-pale text-sage-dark' : 'bg-white text-terre'}`}>
+            S{w}: <strong>{availCount[i]}</strong>
           </div>
         ))}
       </div>
@@ -66,11 +64,10 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
         <table className="w-full text-xs">
           <thead>
             <tr>
-              <th className="table-header text-left min-w-[150px]">Culture</th>
-              {mWeeks.map((m, i) => (
-                <th key={m} className="table-header text-center !px-1.5 !py-2">
-                  S{m}
-                  <br /><span className="text-[0.5rem] font-normal text-terre">({calWeeks[i]})</span>
+              <th className="table-header text-left min-w-[150px] sticky left-0 bg-white z-10">Culture</th>
+              {weeks.map(w => (
+                <th key={w} className="table-header text-center !px-1.5 !py-2 min-w-[36px]">
+                  S{w}
                 </th>
               ))}
             </tr>
@@ -84,16 +81,15 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
                     {cults[0].culture_type}
                   </span>
                 </td>
-                {mWeeks.map((_, i) => {
-                  const cw = calWeeks[i]
+                {weeks.map(w => {
                   const avail = cults.some(c => {
                     if (!c.date_recolte || !c.date_fin) return false
                     const wr = getWeekNumber(new Date(c.date_recolte + 'T00:00:00'))
                     const wf = getWeekNumber(new Date(c.date_fin + 'T00:00:00'))
-                    return cw >= wr && cw <= wf
+                    return w >= wr && w <= wf
                   })
                   return (
-                    <td key={i} className={`table-cell text-center !px-1 !py-1 ${avail ? 'bg-sage-pale text-sage font-bold' : 'bg-cream-dark text-gray-300'}`}>
+                    <td key={w} className={`table-cell text-center !px-1 !py-1 ${avail ? 'bg-sage-pale text-sage font-bold' : 'bg-cream-dark text-gray-300'}`}>
                       {avail ? '●' : '·'}
                     </td>
                   )
@@ -101,7 +97,7 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
               </tr>
             ))}
             {Object.keys(byName).length === 0 && (
-              <tr><td colSpan={28} className="table-cell text-center text-terre py-8">
+              <tr><td colSpan={53} className="table-cell text-center text-terre py-8">
                 La disponibilité se calcule automatiquement depuis vos plantations.
               </td></tr>
             )}

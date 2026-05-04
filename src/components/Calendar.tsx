@@ -1,7 +1,8 @@
 'use client'
 import { useState, Fragment } from 'react'
 import { getWeekNumber } from '@/lib/types'
-import type { PlantingFull } from '@/lib/types'
+import type { PlantingFull, Garden } from '@/lib/types'
+import Modal from '@/components/Modal'
 
 // Calcul des totaux par semaine pour une liste de plantings
 function calcWeeklyTotals(plantings: PlantingFull[]) {
@@ -101,8 +102,112 @@ function SubtotalRows({ label, plantings, weeks, isGlobal }: {
   )
 }
 
+// ─── Formulaire édition plantation ──────────────────
+function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; ctx: any; onClose: () => void }) {
+  const [dateSemis, setDateSemis] = useState(planting.date_semis)
+  const [surfaceM2, setSurfaceM2] = useState(planting.surface_m2)
+  const [notes, setNotes] = useState(planting.notes || '')
+  const [loading, setLoading] = useState(false)
+
+  const allPlantings: PlantingFull[] = ctx.plantings || []
+  const otherPlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id && p.id !== planting.id)
+  const usedM2 = otherPlantings.reduce((sum: number, p: PlantingFull) => sum + (p.surface_m2 || 0), 0)
+
+  let plancheM2 = 0
+  for (const g of (ctx.gardens || [])) {
+    for (const pl of (g.planches || [])) {
+      if (pl.id === planting.planche_id) { plancheM2 = pl.surface_m2; break }
+    }
+  }
+  const availableM2 = Math.max(0, plancheM2 - usedM2)
+  const isOverCapacity = surfaceM2 > availableM2
+
+  const jc = planting.jours_cellule || 0
+  const jch = planting.jours_champ || 0
+  const jr = planting.jours_recolte || 21
+  let previewPlantation = '', previewRecolte = '', previewFin = ''
+  if (dateSemis) {
+    const ds = new Date(dateSemis + 'T00:00:00')
+    const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
+    const dr = new Date(dp); dr.setDate(dr.getDate() + jch)
+    const df = new Date(dr); df.setDate(df.getDate() + jr)
+    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+  }
+
+  const submit = async () => {
+    if (!dateSemis || isOverCapacity || surfaceM2 <= 0) return
+    setLoading(true)
+    await ctx.updatePlanting(planting.id, { date_semis: dateSemis, surface_m2: surfaceM2, notes: notes || null })
+    setLoading(false)
+    onClose()
+  }
+
+  const handleDelete = async () => {
+    if (confirm(`Supprimer ${planting.culture_name} de cette planche ?`)) {
+      await ctx.deletePlanting(planting.id)
+      onClose()
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="font-serif text-xl">Modifier — {planting.culture_name}</h3>
+
+      <div className="bg-sage-pale rounded-lg p-3 text-xs space-y-1">
+        <p><strong>Type :</strong> {planting.culture_type === 'RR' ? 'Récolte Répétitive' : planting.culture_type === 'MP' ? 'Moyen Producteur' : 'Récolte Unique'}</p>
+        <p><strong>Planche :</strong> {planting.planche_name} — <strong>Jardin :</strong> {planting.garden_name}</p>
+        <p><strong>J. cellule :</strong> {jc} — <strong>J. champ :</strong> {jch} — <strong>J. récolte :</strong> {jr}</p>
+        <p><strong>Plants :</strong> {planting.plants_count} — <strong>Tiges nettes :</strong> {planting.tiges_estimees}</p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">Surface allouée (m²)</label>
+        <input
+          className={`input ${isOverCapacity ? '!border-red-400 !bg-red-50' : ''}`}
+          type="number" min={0.5} max={plancheM2} step={0.5}
+          value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)}
+        />
+        {isOverCapacity && <p className="text-[0.7rem] text-red-600 mt-1 font-semibold">Max {availableM2} m² disponibles.</p>}
+        {!isOverCapacity && surfaceM2 > 0 && <p className="text-[0.7rem] text-terre mt-1">Il restera {(availableM2 - surfaceM2).toFixed(1)} m² disponibles.</p>}
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">Date de semis</label>
+        <input className="input" type="date" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
+      </div>
+
+      {previewPlantation && (
+        <div className="bg-cream-dark rounded-lg p-3 text-xs space-y-1">
+          <p className="font-semibold text-brun">Dates recalculées :</p>
+          <p>Plantation : <strong>{previewPlantation}</strong></p>
+          <p>Début récolte : <strong>{previewRecolte}</strong></p>
+          <p>Fin récolte : <strong>{previewFin}</strong></p>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">Notes</label>
+        <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes optionnelles…" />
+      </div>
+
+      <div className="flex gap-3">
+        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
+        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !dateSemis || isOverCapacity || surfaceM2 <= 0}>
+          {loading ? '…' : 'Enregistrer'}
+        </button>
+      </div>
+      <button className="btn btn-danger w-full text-xs" onClick={handleDelete}>
+        Supprimer cette culture de la planche
+      </button>
+    </div>
+  )
+}
+
 export default function Calendar({ ctx }: { ctx: any }) {
   const [filterGarden, setFilterGarden] = useState('')
+  const [selectedPlanting, setSelectedPlanting] = useState<PlantingFull | null>(null)
   const plantings: PlantingFull[] = ctx.plantings || []
 
   let data = plantings
@@ -159,6 +264,11 @@ export default function Calendar({ ctx }: { ctx: any }) {
         </select>
       </div>
 
+      {/* Modal édition */}
+      <Modal open={!!selectedPlanting} onClose={() => setSelectedPlanting(null)}>
+        {selectedPlanting && <EditPlantingForm planting={selectedPlanting} ctx={ctx} onClose={() => setSelectedPlanting(null)} />}
+      </Modal>
+
       <div className="overflow-x-auto">
         <table className="min-w-[1200px] w-full">
           <thead>
@@ -206,9 +316,9 @@ export default function Calendar({ ctx }: { ctx: any }) {
                     const wFin = p.date_fin ? getWeekNumber(new Date(p.date_fin + 'T00:00:00')) : 99
 
                     return (
-                      <tr key={p.id} className="hover:bg-cream/50">
+                      <tr key={p.id} className="hover:bg-sage-pale/30 cursor-pointer transition-colors" onClick={() => setSelectedPlanting(p)}>
                         <td className="table-cell !py-1.5 pl-4">
-                          <span className="text-xs font-semibold text-brun">{p.culture_name}</span>
+                          <span className="text-xs font-semibold text-feuille underline decoration-dotted underline-offset-2">{p.culture_name}</span>
                           <span className="text-[0.6rem] text-terre ml-2">{p.planche_name}</span>
                         </td>
                         <td className="table-cell !py-1.5 text-center text-[0.6rem] font-semibold text-brun">{p.plants_count || '—'}</td>
