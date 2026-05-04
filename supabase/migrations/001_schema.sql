@@ -145,7 +145,7 @@ begin
   select * into pl from public.planches where id = new.planche_id;
 
   -- Résoudre les valeurs (override ou catalogue)
-  j_cellule := coalesce(new.jours_cellule_override, cat.jours_cellule, 0);
+  j_cellule := coalesce(nullif(new.jours_cellule_override, 0), cat.jours_cellule, 0);
   j_champ   := coalesce(new.jours_champ_override, cat.jours_champ);
   j_recolte := coalesce(new.jours_recolte_override, cat.jours_recolte, 21);
   rend      := coalesce(new.rendement_override, cat.rendement_plant, 1);
@@ -343,7 +343,7 @@ select
   p.culture_id,
   p.season_id,
   p.date_semis,
-  p.date_semis + coalesce(p.jours_cellule_override, c.jours_cellule, 0) as date_plantation,
+  p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0) as date_plantation,
   p.date_recolte,
   p.date_fin,
   p.plants_count,
@@ -354,7 +354,7 @@ select
   p.notes as planting_notes,
   c.name as culture_name,
   c.type as culture_type,
-  coalesce(p.jours_cellule_override, c.jours_cellule, 0) as jours_cellule,
+  coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0) as jours_cellule,
   coalesce(p.jours_champ_override, c.jours_champ) as jours_champ,
   coalesce(p.jours_recolte_override, c.jours_recolte, 21) as jours_recolte,
   coalesce(p.rendement_override, c.rendement_plant) as rendement,
