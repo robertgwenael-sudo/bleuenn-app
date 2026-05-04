@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { getWeekNumber } from '@/lib/types'
 import type { PlantingFull } from '@/lib/types'
 
@@ -18,6 +18,21 @@ export default function Calendar({ ctx }: { ctx: any }) {
     seen.add(k)
     return true
   })
+
+  // Regrouper par jardin
+  const gardenMap = new Map<string, { gardenId: string; gardenName: string; plantings: PlantingFull[] }>()
+  for (const p of unique) {
+    const gid = p.garden_id
+    if (!gardenMap.has(gid)) {
+      gardenMap.set(gid, { gardenId: gid, gardenName: p.garden_name, plantings: [] })
+    }
+    gardenMap.get(gid)!.plantings.push(p)
+  }
+  // Trier les cultures par nom dans chaque jardin
+  const gardenGroups = Array.from(gardenMap.values()).sort((a, b) => a.gardenName.localeCompare(b.gardenName))
+  for (const g of gardenGroups) {
+    g.plantings.sort((a, b) => a.culture_name.localeCompare(b.culture_name))
+  }
 
   const weeks = Array.from({ length: 52 }, (_, i) => i + 1)
   const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
@@ -51,7 +66,7 @@ export default function Calendar({ ctx }: { ctx: any }) {
         <table className="min-w-[1200px] w-full">
           <thead>
             <tr>
-              <th className="table-header text-left min-w-[180px]">Culture</th>
+              <th className="table-header text-left min-w-[220px]">Culture</th>
               {weeks.map(w => (
                 <th key={w} className="table-header text-center !px-0.5 !py-1 text-[0.55rem] min-w-[22px]">{w}</th>
               ))}
@@ -66,39 +81,51 @@ export default function Calendar({ ctx }: { ctx: any }) {
             </tr>
           </thead>
           <tbody>
-            {unique.map(p => {
-              const wSemis = getWeekNumber(new Date(p.date_semis + 'T00:00:00'))
-              const wPlant = getWeekNumber(new Date(p.date_plantation + 'T00:00:00'))
-              const wRec = p.date_recolte ? getWeekNumber(new Date(p.date_recolte + 'T00:00:00')) : 99
-              const wFin = p.date_fin ? getWeekNumber(new Date(p.date_fin + 'T00:00:00')) : 99
-
-              return (
-                <tr key={p.id} className="hover:bg-cream/50">
-                  <td className="table-cell !py-1">
-                    <strong className="text-xs">{p.culture_name}</strong>
-                    <br />
-                    <span className="text-[0.6rem] text-terre">{p.garden_name} · {p.planche_name}</span>
-                  </td>
-                  {weeks.map(w => {
-                    let cls = ''
-                    if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) cls = 'bg-blush'
-                    else if (w >= wPlant && w < wRec) cls = 'bg-sage-light'
-                    else if (w >= wRec && w <= wFin) cls = 'bg-sage'
-                    return (
-                      <td key={w} className="!p-0.5 text-center">
-                        <div className={`w-[18px] h-[14px] rounded-sm mx-auto ${cls}`} />
-                      </td>
-                    )
-                  })}
-                </tr>
-              )
-            })}
-            {unique.length === 0 && (
+            {unique.length === 0 ? (
               <tr>
                 <td colSpan={53} className="table-cell text-center text-terre py-8">
                   Ajoutez des cultures pour voir le calendrier se construire automatiquement.
                 </td>
               </tr>
+            ) : (
+              gardenGroups.map(group => (
+                <Fragment key={group.gardenId}>
+                  {/* En-tête du jardin */}
+                  <tr>
+                    <td colSpan={53} className="bg-sage/10 border-b border-sage/20 px-3 py-2">
+                      <span className="font-serif font-semibold text-sm text-brun">{group.gardenName}</span>
+                      <span className="text-[0.65rem] text-terre ml-2">({group.plantings.length} culture{group.plantings.length > 1 ? 's' : ''})</span>
+                    </td>
+                  </tr>
+                  {/* Une ligne par culture */}
+                  {group.plantings.map(p => {
+                    const wSemis = getWeekNumber(new Date(p.date_semis + 'T00:00:00'))
+                    const wPlant = getWeekNumber(new Date(p.date_plantation + 'T00:00:00'))
+                    const wRec = p.date_recolte ? getWeekNumber(new Date(p.date_recolte + 'T00:00:00')) : 99
+                    const wFin = p.date_fin ? getWeekNumber(new Date(p.date_fin + 'T00:00:00')) : 99
+
+                    return (
+                      <tr key={p.id} className="hover:bg-cream/50">
+                        <td className="table-cell !py-1.5 pl-4">
+                          <span className="text-xs font-semibold text-brun">{p.culture_name}</span>
+                          <span className="text-[0.6rem] text-terre ml-2">{p.planche_name}</span>
+                        </td>
+                        {weeks.map(w => {
+                          let cls = ''
+                          if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) cls = 'bg-blush'
+                          else if (w >= wPlant && w < wRec) cls = 'bg-sage-light'
+                          else if (w >= wRec && w <= wFin) cls = 'bg-sage'
+                          return (
+                            <td key={w} className="!p-0.5 text-center">
+                              <div className={`w-[18px] h-[14px] rounded-sm mx-auto ${cls}`} />
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                </Fragment>
+              ))
             )}
           </tbody>
         </table>
