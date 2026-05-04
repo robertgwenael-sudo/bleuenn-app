@@ -28,7 +28,7 @@ const SECTIONS = [
   { id: 'verification', label: 'Verification', icon: '📋' },
 ] as const
 
-const VALID_IDS = new Set(SECTIONS.map(s => s.id))
+const VALID_IDS: Set<string> = new Set(SECTIONS.map(s => s.id))
 
 function getHashSection(): string {
   if (typeof window === 'undefined') return 'dashboard'
