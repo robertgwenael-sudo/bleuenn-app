@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useBleuenn } from '@/hooks/useBleuenn'
 import Sidebar from '@/components/Sidebar'
 import AuthScreen from '@/components/AuthScreen'
@@ -28,11 +28,33 @@ const SECTIONS = [
   { id: 'verification', label: 'Verification', icon: '📋' },
 ] as const
 
+const VALID_IDS = new Set(SECTIONS.map(s => s.id))
+
+function getHashSection(): string {
+  if (typeof window === 'undefined') return 'dashboard'
+  const hash = window.location.hash.replace('#', '')
+  return VALID_IDS.has(hash) ? hash : 'dashboard'
+}
+
 export default function Home() {
   const ctx = useBleuenn()
-  const [section, setSection] = useState<string>('dashboard')
+  const [section, setSectionState] = useState<string>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+
+  // Lire le hash au montage
+  useEffect(() => {
+    setSectionState(getHashSection())
+    const onHash = () => setSectionState(getHashSection())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // Setter qui met à jour le hash ET le state
+  const setSection = useCallback((id: string) => {
+    window.location.hash = id
+    setSectionState(id)
+  }, [])
 
   // Not logged in
   if (!ctx.user && !ctx.loading) {

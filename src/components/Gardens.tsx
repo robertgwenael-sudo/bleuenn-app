@@ -523,19 +523,28 @@ export default function Gardens({ ctx }: { ctx: any }) {
                         }} />
                       </div>
                       {plPlantings.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {plPlantings.map((p: PlantingFull) => (
-                            <button
-                              key={p.id}
-                              className="flex items-center gap-1 text-xs bg-white/60 hover:bg-white rounded px-1.5 py-0.5 cursor-pointer transition border border-transparent hover:border-sage/30"
-                              onClick={() => { setSelectedPlanting(p); setModal('editPlanting') }}
-                              title="Cliquer pour modifier ou supprimer"
-                            >
-                              <span className="font-medium">{p.culture_name}</span>
-                              <span className="text-terre">({p.surface_m2} m²)</span>
-                              <StatusBadge status={getPlantingStatus(p)} />
-                            </button>
-                          ))}
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          {plPlantings.map((p: PlantingFull) => {
+                            const ds = new Date(p.date_semis + 'T00:00:00')
+                            const dp = new Date(p.date_plantation + 'T00:00:00')
+                            const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+                            return (
+                              <button
+                                key={p.id}
+                                className="flex items-center gap-2 text-xs bg-white/60 hover:bg-white rounded-lg px-2.5 py-1.5 cursor-pointer transition border border-transparent hover:border-sage/30 text-left w-full"
+                                onClick={() => { setSelectedPlanting(p); setModal('editPlanting') }}
+                                title="Cliquer pour modifier ou supprimer"
+                              >
+                                <span className="font-semibold text-brun min-w-[90px]">{p.culture_name}</span>
+                                <span className="text-terre">{p.surface_m2} m²</span>
+                                <span className="text-terre/70">|</span>
+                                <span className="text-terre" title="Entrée cellule">Semis {fmtShort(ds)}</span>
+                                <span className="text-terre/70">→</span>
+                                <span className="text-terre" title="Date plantation">Plant. {fmtShort(dp)}</span>
+                                <span className="ml-auto"><StatusBadge status={getPlantingStatus(p)} /></span>
+                              </button>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
