@@ -445,6 +445,41 @@ function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; 
   )
 }
 
+// ─── Nom éditable inline ──────────────────────────
+function EditableName({ value, onSave, className }: { value: string; onSave: (v: string) => void; className?: string }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  if (!editing) {
+    return (
+      <span
+        className={`cursor-pointer hover:underline hover:decoration-dotted hover:underline-offset-2 ${className || ''}`}
+        onClick={() => { setDraft(value); setEditing(true) }}
+        title="Cliquer pour renommer"
+      >
+        {value}
+      </span>
+    )
+  }
+
+  const save = () => {
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== value) onSave(trimmed)
+    setEditing(false)
+  }
+
+  return (
+    <input
+      className="input !py-1 !px-2 !text-sm !w-auto min-w-[100px]"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={save}
+      onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+      autoFocus
+    />
+  )
+}
+
 // ─── Status badge ──────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   const cls: Record<string, string> = {
@@ -485,7 +520,7 @@ export default function Gardens({ ctx }: { ctx: any }) {
           return (
             <div key={g.id} className="card border-t-4 border-sage !p-5">
               <div className="flex items-start justify-between mb-1">
-                <h3 className="font-serif text-lg">🌱 {g.name}</h3>
+                <h3 className="font-serif text-lg">🌱 <EditableName value={g.name} onSave={v => ctx.updateGarden(g.id, { name: v })} /></h3>
                 <button className="btn btn-danger btn-sm" onClick={() => {
                   if (confirm(`Supprimer ${g.name} et toutes ses planches ?`)) ctx.deleteGarden(g.id)
                 }}>×</button>
@@ -510,7 +545,11 @@ export default function Gardens({ ctx }: { ctx: any }) {
                     <div key={pl.id} className="p-2.5 rounded-lg bg-cream hover:bg-sage-pale transition text-sm">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <strong>{pl.name}</strong>
+                          <EditableName
+                            value={pl.name}
+                            onSave={v => ctx.updatePlanche(pl.id, { name: v })}
+                            className="font-bold"
+                          />
                           <span className="text-terre text-xs ml-1">({plUsedM2}/{pl.surface_m2} m²)</span>
                         </div>
                         <div className="flex items-center gap-1.5">

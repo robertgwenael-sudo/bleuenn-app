@@ -135,6 +135,11 @@ export function useBleuenn() {
     return data
   }
 
+  const updatePlanche = async (id: string, updates: Partial<Planche>) => {
+    await supabase.from('planches').update(updates).eq('id', id)
+    if (activeSeason) await loadSeasonData(activeSeason.id)
+  }
+
   const deletePlanche = async (id: string) => {
     await supabase.from('planches').delete().eq('id', id)
     if (activeSeason) await loadSeasonData(activeSeason.id)
@@ -264,7 +269,7 @@ export function useBleuenn() {
     seasons, activeSeason, switchSeason, createSeason,
     gardens, catalog, plantings, harvests, sales, seedOrders,
     createGarden, updateGarden, deleteGarden,
-    createPlanche, deletePlanche,
+    createPlanche, updatePlanche, deletePlanche,
     createPlanting, updatePlanting, deletePlanting,
     createHarvest, deleteHarvest,
     createSale, deleteSale,
