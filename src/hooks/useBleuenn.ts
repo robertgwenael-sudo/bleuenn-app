@@ -240,29 +240,9 @@ export function useBleuenn() {
   }
 
   const updateCulture = async (id: string, updates: Partial<CultureCatalog>) => {
-    const existing = catalog.find(c => c.id === id)
-    if (existing && !existing.user_id) {
-      // Culture système → dupliquer en copie perso avec les modifications
-      const { id: _id, user_id: _uid, ...rest } = existing
-      const newCulture = { ...rest, ...updates, user_id: user.id }
-      const { data, error } = await supabase.from('culture_catalog').insert(newCulture).select().single()
-      if (error) { console.error('updateCulture (clone) error:', error); return }
-      if (data) {
-        // Mettre à jour les plantings qui référencent l'ancienne culture pour cet utilisateur
-        if (activeSeason) {
-          await supabase.from('plantings').update({ culture_id: data.id })
-            .eq('culture_id', id)
-            .in('season_id', seasons.map(s => s.id))
-        }
-        setCatalog(prev => [...prev.filter(c => c.id !== id), data as CultureCatalog].sort((a, b) => a.name.localeCompare(b.name)))
-      }
-    } else {
-      // Culture perso → mise à jour directe
-      const { error } = await supabase.from('culture_catalog').update(updates).eq('id', id)
-      if (error) { console.error('updateCulture error:', error); return }
-      setCatalog(prev => prev.map(c => c.id === id ? { ...c, ...updates } as CultureCatalog : c))
-    }
-    // Recharger les plantings pour refléter les changements
+    const { error } = await supabase.from('culture_catalog').update(updates).eq('id', id)
+    if (error) { console.error('updateCulture error:', error); return }
+    setCatalog(prev => prev.map(c => c.id === id ? { ...c, ...updates } as CultureCatalog : c))
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 

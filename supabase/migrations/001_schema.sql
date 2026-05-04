@@ -244,8 +244,8 @@ create policy "Users see own profile" on public.profiles for all using (id = aut
 create policy "Users manage own seasons" on public.seasons for all using (user_id = auth.uid());
 create policy "Users see system + own catalog" on public.culture_catalog for select using (user_id is null or user_id = auth.uid());
 create policy "Users manage own catalog" on public.culture_catalog for insert with check (user_id = auth.uid());
-create policy "Users update own catalog" on public.culture_catalog for update using (user_id = auth.uid());
-create policy "Users delete own catalog" on public.culture_catalog for delete using (user_id = auth.uid());
+create policy "Users update catalog" on public.culture_catalog for update using (user_id is null or user_id = auth.uid());
+create policy "Users delete catalog" on public.culture_catalog for delete using (user_id is null or user_id = auth.uid());
 create policy "Users manage own gardens" on public.gardens for all using (user_id = auth.uid());
 
 -- Pour planches et plantings, on passe par les jointures
