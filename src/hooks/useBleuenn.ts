@@ -163,6 +163,21 @@ export function useBleuenn() {
     return data
   }
 
+  const updatePlanting = async (id: string, updates: {
+    date_semis?: string
+    surface_m2?: number
+    jours_cellule_override?: number
+    jours_champ_override?: number
+    jours_recolte_override?: number
+    rendement_override?: number
+    prix_override?: number
+    notes?: string
+  }) => {
+    const { error } = await supabase.from('plantings').update(updates).eq('id', id)
+    if (error) console.error('updatePlanting error:', error)
+    if (activeSeason) await loadSeasonData(activeSeason.id)
+  }
+
   const deletePlanting = async (id: string) => {
     await supabase.from('plantings').delete().eq('id', id)
     if (activeSeason) await loadSeasonData(activeSeason.id)
@@ -237,7 +252,7 @@ export function useBleuenn() {
     gardens, catalog, plantings, harvests, sales, seedOrders,
     createGarden, updateGarden, deleteGarden,
     createPlanche, deletePlanche,
-    createPlanting, deletePlanting,
+    createPlanting, updatePlanting, deletePlanting,
     createHarvest, deleteHarvest,
     createSale, deleteSale,
     upsertSeedOrder, addCulture,

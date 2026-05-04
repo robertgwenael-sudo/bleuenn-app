@@ -211,6 +211,117 @@ function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string; ctx: 
   )
 }
 
+// ─── Formulaire modification plantation ──────────────
+function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; ctx: any; onClose: () => void }) {
+  const [dateSemis, setDateSemis] = useState(planting.date_semis)
+  const [surfaceM2, setSurfaceM2] = useState(planting.surface_m2)
+  const [notes, setNotes] = useState(planting.notes || '')
+  const [loading, setLoading] = useState(false)
+
+  // Surface disponible (en excluant la culture en cours de modification)
+  const allPlantings: PlantingFull[] = ctx.plantings || []
+  const otherPlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id && p.id !== planting.id)
+  const usedM2 = otherPlantings.reduce((sum: number, p: PlantingFull) => sum + (p.surface_m2 || 0), 0)
+
+  let plancheM2 = 0
+  for (const g of (ctx.gardens || [])) {
+    for (const pl of (g.planches || [])) {
+      if (pl.id === planting.planche_id) { plancheM2 = pl.surface_m2; break }
+    }
+  }
+  const availableM2 = Math.max(0, plancheM2 - usedM2)
+  const isOverCapacity = surfaceM2 > availableM2
+
+  // Preview dates
+  const jc = planting.jours_cellule || 0
+  const jch = planting.jours_champ || 0
+  const jr = planting.jours_recolte || 21
+  let previewPlantation = '', previewRecolte = '', previewFin = ''
+  if (dateSemis) {
+    const ds = new Date(dateSemis + 'T00:00:00')
+    const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
+    const dr = new Date(dp); dr.setDate(dr.getDate() + jch)
+    const df = new Date(dr); df.setDate(df.getDate() + jr)
+    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+  }
+
+  const submit = async () => {
+    if (!dateSemis || isOverCapacity || surfaceM2 <= 0) return
+    setLoading(true)
+    await ctx.updatePlanting(planting.id, { date_semis: dateSemis, surface_m2: surfaceM2, notes: notes || null })
+    setLoading(false)
+    onClose()
+  }
+
+  const handleDelete = async () => {
+    if (confirm(`Supprimer ${planting.culture_name} de cette planche ?`)) {
+      await ctx.deletePlanting(planting.id)
+      onClose()
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="font-serif text-xl">Modifier — {planting.culture_name}</h3>
+
+      <div className="bg-sage-pale rounded-lg p-3 text-xs space-y-1">
+        <p><strong>Type :</strong> {planting.culture_type === 'RR' ? 'Récolte Répétitive' : planting.culture_type === 'MP' ? 'Moyen Producteur' : 'Récolte Unique'}</p>
+        <p><strong>Planche :</strong> {planting.planche_name} — <strong>Jardin :</strong> {planting.garden_name}</p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">Surface allouée (m²)</label>
+        <input
+          className={`input ${isOverCapacity ? '!border-red-400 !bg-red-50' : ''}`}
+          type="number" min={0.5} max={plancheM2} step={0.5}
+          value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)}
+        />
+        {isOverCapacity && (
+          <p className="text-[0.7rem] text-red-600 mt-1 font-semibold">
+            Capacité dépassée ! Max {availableM2} m² disponibles.
+          </p>
+        )}
+        {!isOverCapacity && surfaceM2 > 0 && (
+          <p className="text-[0.7rem] text-terre mt-1">
+            Il restera {(availableM2 - surfaceM2).toFixed(1)} m² disponibles.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">Date de semis</label>
+        <input className="input" type="date" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
+      </div>
+
+      {previewPlantation && (
+        <div className="bg-cream-dark rounded-lg p-3 text-xs space-y-1">
+          <p className="font-semibold text-brun">Dates recalculées :</p>
+          <p>Plantation : <strong>{previewPlantation}</strong></p>
+          <p>Début récolte : <strong>{previewRecolte}</strong></p>
+          <p>Fin récolte : <strong>{previewFin}</strong></p>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">Notes</label>
+        <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes optionnelles…" />
+      </div>
+
+      <div className="flex gap-3">
+        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
+        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !dateSemis || isOverCapacity || surfaceM2 <= 0}>
+          {loading ? '…' : 'Enregistrer'}
+        </button>
+      </div>
+      <button className="btn btn-danger w-full text-xs" onClick={handleDelete}>
+        Supprimer cette culture de la planche
+      </button>
+    </div>
+  )
+}
+
 // ─── Status badge ──────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   const cls: Record<string, string> = {
@@ -225,6 +336,7 @@ export default function Gardens({ ctx }: { ctx: any }) {
   const [modal, setModal] = useState<string | null>(null)
   const [selectedGardenId, setSelectedGardenId] = useState('')
   const [selectedPlancheId, setSelectedPlancheId] = useState('')
+  const [selectedPlanting, setSelectedPlanting] = useState<PlantingFull | null>(null)
 
   const gardens: Garden[] = ctx.gardens || []
   const plantings: PlantingFull[] = ctx.plantings || []
@@ -298,11 +410,16 @@ export default function Gardens({ ctx }: { ctx: any }) {
                       {plPlantings.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-1">
                           {plPlantings.map((p: PlantingFull) => (
-                            <div key={p.id} className="flex items-center gap-1 text-xs bg-white/60 rounded px-1.5 py-0.5">
+                            <button
+                              key={p.id}
+                              className="flex items-center gap-1 text-xs bg-white/60 hover:bg-white rounded px-1.5 py-0.5 cursor-pointer transition border border-transparent hover:border-sage/30"
+                              onClick={() => { setSelectedPlanting(p); setModal('editPlanting') }}
+                              title="Cliquer pour modifier ou supprimer"
+                            >
                               <span className="font-medium">{p.culture_name}</span>
                               <span className="text-terre">({p.surface_m2} m²)</span>
                               <StatusBadge status={getPlantingStatus(p)} />
-                            </div>
+                            </button>
                           ))}
                         </div>
                       )}
@@ -336,6 +453,11 @@ export default function Gardens({ ctx }: { ctx: any }) {
       </Modal>
       <Modal open={modal === 'planting'} onClose={() => setModal(null)}>
         <AddPlantingForm plancheId={selectedPlancheId} ctx={ctx} onClose={() => setModal(null)} />
+      </Modal>
+      <Modal open={modal === 'editPlanting'} onClose={() => setModal(null)}>
+        {selectedPlanting && (
+          <EditPlantingForm planting={selectedPlanting} ctx={ctx} onClose={() => setModal(null)} />
+        )}
       </Modal>
     </div>
   )
