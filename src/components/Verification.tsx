@@ -476,6 +476,29 @@ export default function Verification({ ctx }: { ctx: any }) {
                           </tr>
                         )
                       })}
+                      {/* Sous-total planche */}
+                      {plGroup.plantings.length > 1 && (() => {
+                        const stPlants = plGroup.plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
+                        const stTiges = plGroup.plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+                        const stGraines = plGroup.plantings.reduce((s, p) => s + (p.graines_necessaires || 0), 0)
+                        const stRevenu = plGroup.plantings.reduce((s, p) => s + (p.revenu_estime || 0), 0)
+                        const stSurface = plGroup.plantings.reduce((s, p) => s + (p.surface_m2 || 0), 0)
+                        return (
+                          <tr className="bg-cream/60 border-b border-sage/20">
+                            <td className="tdv text-right text-[0.6rem] font-bold text-terre" colSpan={2}>↳ {plGroup.plancheName}</td>
+                            <td className="tdv text-right border-r border-cream-dark text-[0.6rem] font-bold text-terre">{stSurface}</td>
+                            <td className="tdv text-right text-[0.6rem] font-bold">{stPlants}</td>
+                            <td className="tdv" />
+                            <td className="tdv" />
+                            <td className="tdv text-right text-[0.6rem] font-bold">{stTiges}</td>
+                            <td className="tdv" />
+                            <td className="tdv text-right text-[0.6rem] font-bold">{stGraines}</td>
+                            <td className="tdv border-r border-cream-dark" />
+                            <td className="tdv text-right text-[0.6rem] font-bold text-sage">{Math.round(stRevenu)}€</td>
+                            <td colSpan={19} className="tdv" />
+                          </tr>
+                        )
+                      })()}
                       {/* Bouton ajouter une culture à cette planche */}
                       <tr className="border-b border-cream-dark/50">
                         <td colSpan={30} className="px-3 py-1">
