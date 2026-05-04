@@ -239,6 +239,18 @@ export function useBleuenn() {
     return data
   }
 
+  const updateCulture = async (id: string, updates: Partial<CultureCatalog>) => {
+    const { error } = await supabase.from('culture_catalog').update(updates).eq('id', id)
+    if (error) { console.error('updateCulture error:', error); return }
+    setCatalog(prev => prev.map(c => c.id === id ? { ...c, ...updates } as CultureCatalog : c))
+  }
+
+  const deleteCulture = async (id: string) => {
+    const { error } = await supabase.from('culture_catalog').delete().eq('id', id)
+    if (error) { console.error('deleteCulture error:', error); return }
+    setCatalog(prev => prev.filter(c => c.id !== id))
+  }
+
   // ─── Profile ───────────────────────────
   const updateProfile = async (updates: Partial<Profile>) => {
     await supabase.from('profiles').update(updates).eq('id', user.id)
@@ -255,7 +267,7 @@ export function useBleuenn() {
     createPlanting, updatePlanting, deletePlanting,
     createHarvest, deleteHarvest,
     createSale, deleteSale,
-    upsertSeedOrder, addCulture,
+    upsertSeedOrder, addCulture, updateCulture, deleteCulture,
     reload: loadAll,
   }
 }
