@@ -201,56 +201,6 @@ export default function Calendar({ ctx }: { ctx: any }) {
                     )
                   })}
                 </tr>
-                {/* Plants au champ */}
-                <tr>
-                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun whitespace-nowrap">
-                    <span className="inline-block w-3 h-2.5 rounded mr-1.5 align-middle" style={{ backgroundColor: '#e8b06d' }} />
-                    Plants au champ
-                  </td>
-                  <td className="border-t-0" />
-                  <td className="border-t-0" />
-                  {weeks.map((w, i) => {
-                    const v = plantsAuChamp[i]
-                    const pct = maxChamp > 0 ? v / maxChamp : 0
-                    return (
-                      <td key={w} className="!p-0.5 text-center">
-                        {v > 0 ? (
-                          <div className="flex flex-col items-center">
-                            <span className="text-[0.5rem] font-bold text-brun leading-none">{v}</span>
-                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#e8b06d' }} />
-                          </div>
-                        ) : (
-                          <div className="h-[20px]" />
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
-                {/* Plants en récolte */}
-                <tr>
-                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun whitespace-nowrap">
-                    <span className="inline-block w-3 h-2.5 rounded mr-1.5 align-middle" style={{ backgroundColor: '#9dc08b' }} />
-                    Plants en récolte
-                  </td>
-                  <td />
-                  <td />
-                  {weeks.map((w, i) => {
-                    const v = plantsEnRecolte[i]
-                    const pct = maxRecolte > 0 ? v / maxRecolte : 0
-                    return (
-                      <td key={w} className="!p-0.5 text-center">
-                        {v > 0 ? (
-                          <div className="flex flex-col items-center">
-                            <span className="text-[0.5rem] font-bold text-brun leading-none">{v}</span>
-                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#9dc08b' }} />
-                          </div>
-                        ) : (
-                          <div className="h-[20px]" />
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
                 {/* Tiges à récolter par semaine */}
                 <tr className="bg-sage/5">
                   <td className="px-3 py-1.5 text-[0.6rem] font-bold text-feuille whitespace-nowrap">
@@ -271,24 +221,6 @@ export default function Calendar({ ctx }: { ctx: any }) {
                         ) : (
                           <div className="h-[20px]" />
                         )}
-                      </td>
-                    )
-                  })}
-                </tr>
-                {/* Total tous statuts */}
-                <tr className="bg-brun-dark/5">
-                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun border-t border-brun/20 whitespace-nowrap">
-                    Total plants actifs
-                  </td>
-                  <td className="text-center text-[0.6rem] font-bold text-brun border-t border-brun/20">{totalPlants}</td>
-                  <td className="text-center text-[0.6rem] font-bold text-sage border-t border-brun/20">{totalTiges}</td>
-                  {weeks.map((w, i) => {
-                    const total = plantsEnCellule[i] + plantsAuChamp[i] + plantsEnRecolte[i]
-                    return (
-                      <td key={w} className="!p-0.5 text-center border-t border-brun/20">
-                        {total > 0 ? (
-                          <span className="text-[0.5rem] font-bold text-brun">{total}</span>
-                        ) : null}
                       </td>
                     )
                   })}
