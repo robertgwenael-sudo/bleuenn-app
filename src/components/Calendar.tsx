@@ -3,6 +3,104 @@ import { useState, Fragment } from 'react'
 import { getWeekNumber } from '@/lib/types'
 import type { PlantingFull } from '@/lib/types'
 
+// Calcul des totaux par semaine pour une liste de plantings
+function calcWeeklyTotals(plantings: PlantingFull[]) {
+  const plantsEnCellule: number[] = new Array(52).fill(0)
+  const tigesARecolter: number[] = new Array(52).fill(0)
+
+  for (const p of plantings) {
+    const wSemis = getWeekNumber(new Date(p.date_semis + 'T00:00:00'))
+    const wPlant = getWeekNumber(new Date(p.date_plantation + 'T00:00:00'))
+    const wRec = p.date_recolte ? getWeekNumber(new Date(p.date_recolte + 'T00:00:00')) : 99
+    const wFin = p.date_fin ? getWeekNumber(new Date(p.date_fin + 'T00:00:00')) : 99
+    const plants = p.plants_count || 0
+    const tigesNettes = p.tiges_estimees || 0
+    const semainesRecolte = Math.max(1, wFin - wRec + 1)
+    const tigesParSemaine = Math.round(tigesNettes / semainesRecolte)
+
+    for (let i = 0; i < 52; i++) {
+      const w = i + 1
+      if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) {
+        plantsEnCellule[i] += plants
+      }
+      if (w >= wRec && w <= wFin) {
+        tigesARecolter[i] += tigesParSemaine
+      }
+    }
+  }
+
+  return { plantsEnCellule, tigesARecolter }
+}
+
+// Lignes sous-total (plants en cellule + tiges à récolter)
+function SubtotalRows({ label, plantings, weeks, isGlobal }: {
+  label: string; plantings: PlantingFull[]; weeks: number[]; isGlobal?: boolean
+}) {
+  const { plantsEnCellule, tigesARecolter } = calcWeeklyTotals(plantings)
+  const maxCellule = Math.max(...plantsEnCellule)
+  const maxTiges = Math.max(...tigesARecolter)
+  const totalPlants = plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
+  const totalTiges = plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+
+  const borderCls = isGlobal ? 'border-t-2 border-brun/30' : 'border-t border-sage/20'
+  const bgCls = isGlobal ? 'bg-brun-dark/5' : 'bg-cream/40'
+  const labelSize = isGlobal ? 'text-[0.6rem]' : 'text-[0.55rem]'
+  const prefix = isGlobal ? '📊 TOTAL' : `↳ ${label}`
+
+  return (
+    <>
+      <tr className={bgCls}>
+        <td className={`px-3 py-1 ${labelSize} font-bold text-brun ${borderCls} whitespace-nowrap`}>
+          <span className="inline-block w-2.5 h-2 rounded mr-1 align-middle" style={{ backgroundColor: '#f5d98e' }} />
+          {prefix} — Plants en cellule
+        </td>
+        <td className={`text-center ${labelSize} font-bold text-brun ${borderCls}`}>{totalPlants}</td>
+        <td className={`text-center ${labelSize} font-bold text-sage ${borderCls}`}>{totalTiges}</td>
+        {weeks.map((w, i) => {
+          const v = plantsEnCellule[i]
+          const pct = maxCellule > 0 ? v / maxCellule : 0
+          return (
+            <td key={w} className={`!p-0.5 text-center ${borderCls}`}>
+              {v > 0 ? (
+                <div className="flex flex-col items-center">
+                  <span className="text-[0.45rem] font-bold text-brun leading-none">{v}</span>
+                  <div className="w-[14px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 14)}px`, backgroundColor: '#f5d98e' }} />
+                </div>
+              ) : (
+                <div className="h-[16px]" />
+              )}
+            </td>
+          )
+        })}
+      </tr>
+      <tr className={bgCls}>
+        <td className={`px-3 py-1 ${labelSize} font-bold text-feuille whitespace-nowrap`}>
+          <span className="mr-1">✂️</span>
+          {prefix} — Tiges à récolter
+        </td>
+        <td />
+        <td />
+        {weeks.map((w, i) => {
+          const v = tigesARecolter[i]
+          const pct = maxTiges > 0 ? v / maxTiges : 0
+          return (
+            <td key={w} className="!p-0.5 text-center">
+              {v > 0 ? (
+                <div className="flex flex-col items-center">
+                  <span className="text-[0.45rem] font-bold text-feuille leading-none">{v}</span>
+                  <div className="w-[14px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 14)}px`, backgroundColor: '#609c54' }} />
+                </div>
+              ) : (
+                <div className="h-[16px]" />
+              )}
+            </td>
+          )
+        })}
+      </tr>
+    </>
+  )
+}
+
 export default function Calendar({ ctx }: { ctx: any }) {
   const [filterGarden, setFilterGarden] = useState('')
   const plantings: PlantingFull[] = ctx.plantings || []
@@ -28,7 +126,6 @@ export default function Calendar({ ctx }: { ctx: any }) {
     }
     gardenMap.get(gid)!.plantings.push(p)
   }
-  // Trier les cultures par nom dans chaque jardin
   const gardenGroups = Array.from(gardenMap.values()).sort((a, b) => a.gardenName.localeCompare(b.gardenName))
   for (const g of gardenGroups) {
     g.plantings.sort((a, b) => a.culture_name.localeCompare(b.culture_name))
@@ -130,106 +227,149 @@ export default function Calendar({ ctx }: { ctx: any }) {
                       </tr>
                     )
                   })}
+                  {/* Sous-totaux par jardin */}
+                  <SubtotalRows label={group.gardenName} plantings={group.plantings} weeks={weeks} />
                 </Fragment>
               ))
             )}
           </tbody>
 
-          {/* ─── Ligne totaux dynamiques par semaine ─── */}
-          {unique.length > 0 && (() => {
-            // Calcul dynamique par semaine
-            const plantsEnCellule: number[] = new Array(52).fill(0)
-            const plantsAuChamp: number[] = new Array(52).fill(0)
-            const plantsEnRecolte: number[] = new Array(52).fill(0)
-            const tigesARecolter: number[] = new Array(52).fill(0)
-
-            for (const p of unique) {
-              const wSemis = getWeekNumber(new Date(p.date_semis + 'T00:00:00'))
-              const wPlant = getWeekNumber(new Date(p.date_plantation + 'T00:00:00'))
-              const wRec = p.date_recolte ? getWeekNumber(new Date(p.date_recolte + 'T00:00:00')) : 99
-              const wFin = p.date_fin ? getWeekNumber(new Date(p.date_fin + 'T00:00:00')) : 99
-              const plants = p.plants_count || 0
-              const tigesNettes = p.tiges_estimees || 0
-              const semainesRecolte = Math.max(1, wFin - wRec + 1)
-              const tigesParSemaine = Math.round(tigesNettes / semainesRecolte)
-
-              for (let i = 0; i < 52; i++) {
-                const w = i + 1
-                if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) {
-                  plantsEnCellule[i] += plants
-                } else if (w >= wPlant && w < wRec) {
-                  plantsAuChamp[i] += plants
-                } else if (w >= wRec && w <= wFin) {
-                  plantsEnRecolte[i] += plants
-                  tigesARecolter[i] += tigesParSemaine
-                }
-              }
-            }
-
-            const totalPlants = unique.reduce((s, p) => s + (p.plants_count || 0), 0)
-            const totalTiges = unique.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
-
-            const maxCellule = Math.max(...plantsEnCellule)
-            const maxChamp = Math.max(...plantsAuChamp)
-            const maxRecolte = Math.max(...plantsEnRecolte)
-            const maxTiges = Math.max(...tigesARecolter)
-
-            return (
-              <tfoot>
-                {/* Plants en cellule */}
-                <tr>
-                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun border-t-2 border-brun/20 whitespace-nowrap">
-                    <span className="inline-block w-3 h-2.5 rounded mr-1.5 align-middle" style={{ backgroundColor: '#f5d98e' }} />
-                    Plants en cellule
-                  </td>
-                  <td className="text-center text-[0.6rem] font-bold text-brun border-t-2 border-brun/20">{totalPlants}</td>
-                  <td className="text-center text-[0.6rem] font-bold text-sage border-t-2 border-brun/20">{totalTiges}</td>
-                  {weeks.map((w, i) => {
-                    const v = plantsEnCellule[i]
-                    const pct = maxCellule > 0 ? v / maxCellule : 0
-                    return (
-                      <td key={w} className="!p-0.5 text-center border-t-2 border-brun/20">
-                        {v > 0 ? (
-                          <div className="flex flex-col items-center">
-                            <span className="text-[0.5rem] font-bold text-brun leading-none">{v}</span>
-                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#f5d98e' }} />
-                          </div>
-                        ) : (
-                          <div className="h-[20px]" />
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
-                {/* Tiges à récolter par semaine */}
-                <tr className="bg-sage/5">
-                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-feuille whitespace-nowrap">
-                    ✂️ Tiges à récolter
-                  </td>
-                  <td />
-                  <td />
-                  {weeks.map((w, i) => {
-                    const v = tigesARecolter[i]
-                    const pct = maxTiges > 0 ? v / maxTiges : 0
-                    return (
-                      <td key={w} className="!p-0.5 text-center">
-                        {v > 0 ? (
-                          <div className="flex flex-col items-center">
-                            <span className="text-[0.5rem] font-bold text-feuille leading-none">{v}</span>
-                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#609c54' }} />
-                          </div>
-                        ) : (
-                          <div className="h-[20px]" />
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
-              </tfoot>
-            )
-          })()}
+          {/* Total global */}
+          {gardenGroups.length > 1 && (
+            <tfoot>
+              <SubtotalRows label="TOTAL" plantings={unique} weeks={weeks} isGlobal />
+            </tfoot>
+          )}
         </table>
       </div>
+      {/* ─── Récap par jardin ─────────────────── */}
+      {gardenGroups.length > 0 && (
+        <div className="mt-8">
+          <h3 className="font-serif text-xl mb-4">Récapitulatif par jardin</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            {gardenGroups.map(group => {
+              const totalPlants = group.plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
+              const totalTiges = group.plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+              const totalRevenu = group.plantings.reduce((s, p) => s + (p.revenu_estime || 0), 0)
+              return (
+                <div key={group.gardenId} className="card !p-4">
+                  <h4 className="font-serif text-base mb-2">{group.gardenName}</h4>
+                  <div className="text-xs text-terre mb-1">{group.plantings.length} culture{group.plantings.length > 1 ? 's' : ''}</div>
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-brun">{totalPlants}</div>
+                      <div className="text-[0.6rem] text-terre">Plants</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-feuille">{totalTiges}</div>
+                      <div className="text-[0.6rem] text-terre">Tiges nettes</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-sage">{Math.round(totalRevenu)}€</div>
+                      <div className="text-[0.6rem] text-terre">Revenu est.</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {/* Carte total global */}
+            {gardenGroups.length > 1 && (() => {
+              const gTotalPlants = unique.reduce((s, p) => s + (p.plants_count || 0), 0)
+              const gTotalTiges = unique.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+              const gTotalRevenu = unique.reduce((s, p) => s + (p.revenu_estime || 0), 0)
+              return (
+                <div className="card !p-4 border-t-4 border-brun">
+                  <h4 className="font-serif text-base mb-2">📊 Total global</h4>
+                  <div className="text-xs text-terre mb-1">{unique.length} cultures — {gardenGroups.length} jardins</div>
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    <div className="text-center">
+                      <div className="text-xl font-bold text-brun">{gTotalPlants}</div>
+                      <div className="text-[0.6rem] text-terre">Plants</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xl font-bold text-feuille">{gTotalTiges}</div>
+                      <div className="text-[0.6rem] text-terre">Tiges nettes</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xl font-bold text-sage">{Math.round(gTotalRevenu)}€</div>
+                      <div className="text-[0.6rem] text-terre">Revenu est.</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Graphe Plants / Tiges par semaine ──── */}
+      {unique.length > 0 && (() => {
+        const { plantsEnCellule, tigesARecolter } = calcWeeklyTotals(unique)
+        const maxVal = Math.max(...plantsEnCellule, ...tigesARecolter, 1)
+
+        const chartW = 900
+        const chartH = 300
+        const padL = 55
+        const padR = 15
+        const padT = 20
+        const padB = 35
+        const innerW = chartW - padL - padR
+        const innerH = chartH - padT - padB
+
+        const x = (i: number) => padL + (i / 51) * innerW
+        const y = (v: number) => padT + innerH - (v / maxVal) * innerH
+
+        // Area path pour plants en cellule
+        const plantsPath = `M${x(0)},${y(0)} ` +
+          plantsEnCellule.map((v, i) => `L${x(i)},${y(v)}`).join(' ') +
+          ` L${x(51)},${y(0)} Z`
+        const plantsLine = plantsEnCellule.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(v)}`).join(' ')
+
+        // Area path pour tiges
+        const tigesPath = `M${x(0)},${y(0)} ` +
+          tigesARecolter.map((v, i) => `L${x(i)},${y(v)}`).join(' ') +
+          ` L${x(51)},${y(0)} Z`
+        const tigesLine = tigesARecolter.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(v)}`).join(' ')
+
+        // Grille Y
+        const yTicks = [0, 0.25, 0.5, 0.75, 1].map(p => Math.round(maxVal * p))
+
+        return (
+          <div className="mt-4">
+            <h3 className="font-serif text-xl mb-4">Plants en cellule vs Tiges à récolter</h3>
+            <div className="card !p-4 overflow-x-auto">
+              <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full max-w-[900px]" style={{ minWidth: '600px' }}>
+                {/* Grille */}
+                {yTicks.map(v => (
+                  <g key={v}>
+                    <line x1={padL} y1={y(v)} x2={chartW - padR} y2={y(v)} stroke="#e0dcd4" strokeWidth={0.5} />
+                    <text x={padL - 6} y={y(v) + 3} textAnchor="end" className="text-[0.55rem]" fill="#8a7e6b">{v}</text>
+                  </g>
+                ))}
+
+                {/* Axe X - semaines */}
+                {weeks.filter(w => w % 4 === 1).map(w => (
+                  <text key={w} x={x(w - 1)} y={chartH - 8} textAnchor="middle" className="text-[0.5rem]" fill="#8a7e6b">{w}</text>
+                ))}
+
+                {/* Area plants (rouge/rose) */}
+                <path d={plantsPath} fill="rgba(220, 120, 120, 0.25)" />
+                <path d={plantsLine} fill="none" stroke="#dc7878" strokeWidth={1.5} />
+
+                {/* Area tiges (bleu) */}
+                <path d={tigesPath} fill="rgba(100, 150, 220, 0.25)" />
+                <path d={tigesLine} fill="none" stroke="#6496dc" strokeWidth={1.5} />
+
+                {/* Légende */}
+                <rect x={chartW / 2 - 120} y={2} width={10} height={10} rx={2} fill="rgba(220, 120, 120, 0.6)" />
+                <text x={chartW / 2 - 106} y={11} className="text-[0.55rem]" fill="#8a7e6b">Plants en cellule</text>
+                <rect x={chartW / 2 + 10} y={2} width={10} height={10} rx={2} fill="rgba(100, 150, 220, 0.6)" />
+                <text x={chartW / 2 + 24} y={11} className="text-[0.55rem]" fill="#8a7e6b">Tiges à récolter</text>
+              </svg>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
