@@ -94,6 +94,10 @@ export interface PlantingFull extends Planting {
   pincer: boolean
   filet: boolean
   couvre_sol: boolean
+  semis_direct: boolean
+  espacement_cm: number
+  rangs_par_planche: number
+  graines_par_plant: number
   planche_name: string
   planche_m2: number
   garden_name: string
