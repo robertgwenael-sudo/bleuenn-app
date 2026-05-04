@@ -335,14 +335,14 @@ export default function Verification({ ctx }: { ctx: any }) {
       </Modal>
 
       <div className="overflow-x-auto">
-        <table className="min-w-[2600px] w-full text-[0.68rem] border-collapse">
+        <table className="min-w-[2800px] w-full text-[0.68rem] border-collapse">
           <thead>
             <tr className="bg-brun-dark text-cream">
               <th colSpan={3} className="thv border-r border-white/20">PLANCHE</th>
               <th colSpan={7} className="thv border-r border-white/20 bg-blue-900/40">GESTION DE LA PRODUCTION ET DU RENDEMENT</th>
               <th colSpan={4} className="thv border-r border-white/20 bg-amber-900/40">REVENU</th>
               <th colSpan={7} className="thv border-r border-white/20 bg-green-900/40">PRINCIPES DE CULTURE</th>
-              <th colSpan={6} className="thv border-r border-white/20 bg-teal-900/40">CALENDRIER</th>
+              <th colSpan={8} className="thv border-r border-white/20 bg-teal-900/40">CALENDRIER</th>
               <th className="thv bg-red-900/30">⚡</th>
             </tr>
             <tr className="bg-brun text-cream/90">
@@ -373,10 +373,12 @@ export default function Verification({ ctx }: { ctx: any }) {
 
               <th className="thv">Semis</th>
               <th className="thv">Plantation</th>
-              <th className="thv">Recolte</th>
+              <th className="thv">Récolte</th>
               <th className="thv">Fin</th>
-              <th className="thv">S. semis</th>
-              <th className="thv border-r border-white/20">S. fin</th>
+              <th className="thv">W. entrée cell.</th>
+              <th className="thv">W. sortie cell.</th>
+              <th className="thv">W. récolte</th>
+              <th className="thv border-r border-white/20">W. fin réc.</th>
 
               <th className="thv">Actions</th>
             </tr>
@@ -390,7 +392,7 @@ export default function Verification({ ctx }: { ctx: any }) {
               return (
                 <Fragment key={gg.garden.id}>
                   <tr className="bg-sage/15">
-                    <td colSpan={28} className="px-3 py-2 font-serif font-bold text-sm text-brun border-b-2 border-sage/30">
+                    <td colSpan={30} className="px-3 py-2 font-serif font-bold text-sm text-brun border-b-2 border-sage/30">
                       {gg.garden.name}
                       <span className="font-sans font-normal text-terre text-[0.65rem] ml-3">
                         {gg.garden.surface_m2} m² — {gardenPlantingsCount} cultures — {gg.planches.length} planches — Revenu estimé : {Math.round(gardenRevenu)}€
@@ -449,6 +451,8 @@ export default function Verification({ ctx }: { ctx: any }) {
                             <td className="tdv text-center bg-sage/10">{c.date_recolte}</td>
                             <td className="tdv text-center">{c.date_fin}</td>
                             <td className="tdv text-center font-mono text-terre">{c.week_semis}</td>
+                            <td className="tdv text-center font-mono text-terre">{c.week_plantation}</td>
+                            <td className="tdv text-center font-mono text-terre">{c.week_recolte ?? '—'}</td>
                             <td className="tdv text-center font-mono text-terre border-r border-cream-dark">{c.week_fin ?? '—'}</td>
 
                             <td className="tdv text-center" onClick={e => e.stopPropagation()}>
@@ -474,7 +478,7 @@ export default function Verification({ ctx }: { ctx: any }) {
                       })}
                       {/* Bouton ajouter une culture à cette planche */}
                       <tr className="border-b border-cream-dark/50">
-                        <td colSpan={28} className="px-3 py-1">
+                        <td colSpan={30} className="px-3 py-1">
                           <button
                             className="text-[0.65rem] text-sage hover:text-feuille font-medium hover:underline"
                             onClick={() => openAdd(plGroup.plancheId, plGroup.plancheM2)}
@@ -491,7 +495,7 @@ export default function Verification({ ctx }: { ctx: any }) {
 
             {totalPlantings === 0 && (
               <tr>
-                <td colSpan={28} className="text-center text-terre py-10">
+                <td colSpan={30} className="text-center text-terre py-10">
                   Aucune culture enregistrée. Ajoutez des cultures dans Jardins & Planches pour voir le tableau de vérification.
                 </td>
               </tr>
@@ -512,7 +516,7 @@ export default function Verification({ ctx }: { ctx: any }) {
                 <td className="tdv text-right font-bold text-sage text-sm">
                   {Math.round(gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.revenu_estime || 0), 0), 0), 0))}€
                 </td>
-                <td colSpan={17} className="tdv" />
+                <td colSpan={19} className="tdv" />
               </tr>
             </tfoot>
           )}
