@@ -42,31 +42,146 @@ function AddGardenForm({ ctx, onClose }: { ctx: any; onClose: () => void }) {
   )
 }
 
-// ─── Formulaire ajout planche ─────────────────────
+// ─── Formulaire ajout planche + cultures ─────────
+type PlancheCultureRow = { cultureId: string; surfaceM2: number; dateSemis: string }
+
 function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any; onClose: () => void }) {
-  const [name, setName] = useState('')
+  // Auto-numérotation PL
+  const garden = (ctx.gardens || []).find((g: Garden) => g.id === gardenId)
+  const existingPlanches = garden?.planches || []
+  const nextNum = existingPlanches.length + 1
+  const [num, setNum] = useState(nextNum)
   const [m2, setM2] = useState(10)
+  const [cultures, setCultures] = useState<PlancheCultureRow[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const catalog: CultureCatalog[] = ctx.catalog || []
+  const plancheName = `PL ${num}`
+
+  // Surface restante après les cultures ajoutées
+  const usedM2 = cultures.reduce((s, c) => s + c.surfaceM2, 0)
+  const availableM2 = Math.max(0, m2 - usedM2)
+
+  const addCultureRow = () => {
+    setCultures(prev => [...prev, { cultureId: '', surfaceM2: Math.min(1, availableM2), dateSemis: '' }])
+  }
+
+  const updateCultureRow = (idx: number, updates: Partial<PlancheCultureRow>) => {
+    setCultures(prev => prev.map((c, i) => i === idx ? { ...c, ...updates } : c))
+  }
+
+  const removeCultureRow = (idx: number) => {
+    setCultures(prev => prev.filter((_, i) => i !== idx))
+  }
 
   const submit = async () => {
-    if (!name) return
-    await ctx.createPlanche(gardenId, name, m2)
+    setLoading(true)
+    // 1. Créer la planche
+    const planche = await ctx.createPlanche(gardenId, plancheName, m2)
+    if (planche) {
+      // 2. Créer les plantations associées
+      for (const c of cultures) {
+        if (c.cultureId && c.dateSemis && c.surfaceM2 > 0) {
+          await ctx.createPlanting(planche.id, c.cultureId, c.dateSemis, c.surfaceM2)
+        }
+      }
+    }
+    setLoading(false)
     onClose()
   }
 
   return (
     <div className="space-y-4">
       <h3 className="font-serif text-xl">Nouvelle planche</h3>
-      <div>
-        <label className="block text-xs font-semibold mb-1">Nom</label>
-        <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="PL 1" />
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Numero</label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-brun">PL</span>
+            <input className="input !w-20" type="number" min={1} value={num} onChange={e => setNum(+e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Surface (m²)</label>
+          <input className="input" type="number" min={1} step={0.5} value={m2} onChange={e => setM2(+e.target.value)} />
+        </div>
       </div>
-      <div>
-        <label className="block text-xs font-semibold mb-1">Surface (m²)</label>
-        <input className="input" type="number" value={m2} onChange={e => setM2(+e.target.value)} />
+
+      <div className="bg-lin rounded-btn p-3 text-xs text-terre">
+        Planche <strong className="text-brun">{plancheName}</strong> — {m2} m²
+        {cultures.length > 0 && <> — {usedM2}/{m2} m² attribues</>}
       </div>
-      <div className="flex gap-3">
+
+      {/* Cultures associées */}
+      {cultures.length > 0 && (
+        <div className="space-y-3">
+          <div className="floral-divider">
+            <span className="text-[0.55rem]">cultures</span>
+          </div>
+          {cultures.map((row, idx) => {
+            const sel = catalog.find(c => c.id === row.cultureId)
+            // Preview dates
+            let preview = ''
+            if (sel && row.dateSemis) {
+              const ds = new Date(row.dateSemis + 'T00:00:00')
+              const dp = new Date(ds); dp.setDate(dp.getDate() + (sel.jours_cellule || 0))
+              const dr = new Date(dp); dr.setDate(dr.getDate() + sel.jours_champ)
+              preview = `Plantation ${dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} — Recolte ${dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
+            }
+            return (
+              <div key={idx} className="bg-white border border-lin-dark/40 rounded-btn p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[0.65rem] font-bold text-terre uppercase tracking-widest">Culture {idx + 1}</span>
+                  <button className="text-terre/40 hover:text-rose-deep text-sm" onClick={() => removeCultureRow(idx)}>&#x2715;</button>
+                </div>
+                <select className="input text-sm" value={row.cultureId} onChange={e => updateCultureRow(idx, { cultureId: e.target.value })}>
+                  <option value="">— Choisir —</option>
+                  {catalog.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.type}) — {c.prix_tige}€</option>
+                  ))}
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[0.6rem] text-terre mb-0.5">Surface (m²)</label>
+                    <input className="input text-sm" type="number" min={0.5} step={0.5} value={row.surfaceM2}
+                      onChange={e => updateCultureRow(idx, { surfaceM2: +e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-[0.6rem] text-terre mb-0.5">Date de semis</label>
+                    <input className="input text-sm" type="date" value={row.dateSemis}
+                      onChange={e => updateCultureRow(idx, { dateSemis: e.target.value })} />
+                  </div>
+                </div>
+                {preview && <p className="text-[0.65rem] text-sage-dark">{preview}</p>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Jauge surface */}
+      {cultures.length > 0 && (
+        <div>
+          <div className="h-2 bg-lin-dark rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{
+              width: `${Math.min(100, (usedM2 / m2) * 100)}%`,
+              backgroundColor: usedM2 > m2 ? '#b87878' : '#6b7f5e'
+            }} />
+          </div>
+          {usedM2 > m2 && <p className="text-[0.65rem] text-rose-deep font-bold mt-1">Depassement ! {usedM2} m² attribues sur {m2} m²</p>}
+        </div>
+      )}
+
+      <button className="btn btn-outline btn-sm w-full" onClick={addCultureRow} disabled={availableM2 <= 0}>
+        + Ajouter une culture a cette planche
+      </button>
+
+      <div className="flex gap-3 pt-2">
         <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit}>Créer</button>
+        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || usedM2 > m2}>
+          {loading ? '...' : cultures.length > 0 ? `Creer ${plancheName} + ${cultures.length} culture${cultures.length > 1 ? 's' : ''}` : `Creer ${plancheName}`}
+        </button>
       </div>
     </div>
   )
