@@ -98,13 +98,10 @@ create table public.plantings (
   -- La SEULE date saisie par l'utilisateur
   date_semis date not null,
 
-  -- Dates calculées automatiquement (trigger)
-  date_plantation date generated always as (
-    case when jours_cellule_override > 0 then date_semis + jours_cellule_override
-         else date_semis end
-  ) stored,
-  date_recolte date,   -- calculé par trigger (car dépend du catalogue)
-  date_fin date,        -- calculé par trigger
+  -- Dates calculées automatiquement par trigger
+  date_plantation date,  -- calculé par trigger
+  date_recolte date,     -- calculé par trigger
+  date_fin date,         -- calculé par trigger
 
   -- Overrides optionnels (sinon on prend le catalogue)
   jours_cellule_override int default 0,
@@ -154,10 +151,10 @@ begin
   surface   := new.surface_m2;
   espacement := coalesce(cat.espacement_cm, 20);
 
-  -- Calcul des dates
-  new.jours_cellule_override := j_cellule;
-  new.date_recolte := new.date_semis + j_cellule + j_champ;
-  new.date_fin     := new.date_recolte + j_recolte;
+  -- Calcul des dates (on ne touche PAS à jours_cellule_override — il reste à 0 sauf surcharge manuelle)
+  new.date_plantation := new.date_semis + j_cellule;
+  new.date_recolte    := new.date_plantation + j_champ;
+  new.date_fin        := new.date_recolte + j_recolte;
 
   -- Calcul des estimations
   -- Plants par m² basé sur l'espacement (simplifié : rangs * longueur / espacement)
