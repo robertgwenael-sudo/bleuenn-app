@@ -5,11 +5,14 @@
 --   2. Un paramètre du catalogue (J.cellule, J.champ, etc.)
 -- ============================================================
 
--- 1. Supprimer les triggers existants
+-- 1. Supprimer la vue d'abord (elle dépend de date_plantation)
+DROP VIEW IF EXISTS public.plantings_full;
+
+-- 2. Supprimer les triggers existants
 DROP TRIGGER IF EXISTS trg_calc_planting ON public.plantings;
 DROP TRIGGER IF EXISTS trg_propagate_catalog ON public.culture_catalog;
 
--- 2. Convertir date_plantation de GENERATED en colonne normale
+-- 3. Convertir date_plantation de GENERATED en colonne normale
 ALTER TABLE public.plantings DROP COLUMN IF EXISTS date_plantation;
 ALTER TABLE public.plantings ADD COLUMN date_plantation date;
 
