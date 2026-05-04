@@ -530,31 +530,53 @@ export default function Gardens({ ctx }: { ctx: any }) {
                           backgroundColor: plPct > 90 ? '#e57373' : '#7a8c6e'
                         }} />
                       </div>
-                      {plPlantings.length > 0 && (
-                        <div className="flex flex-col gap-1 mt-1.5">
-                          {plPlantings.map((p: PlantingFull) => {
-                            const ds = new Date(p.date_semis + 'T00:00:00')
-                            const dp = new Date(p.date_plantation + 'T00:00:00')
-                            const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-                            return (
-                              <button
-                                key={p.id}
-                                className="flex items-center gap-2 text-xs bg-white/60 hover:bg-white rounded-lg px-2.5 py-1.5 cursor-pointer transition border border-transparent hover:border-sage/30 text-left w-full"
-                                onClick={() => { setSelectedPlanting(p); setModal('editPlanting') }}
-                                title="Cliquer pour modifier ou supprimer"
-                              >
-                                <span className="font-semibold text-brun min-w-[90px]">{p.culture_name}</span>
-                                <span className="text-terre">{p.surface_m2} m²</span>
-                                <span className="text-terre/70">|</span>
-                                <span className="text-terre" title="Entrée cellule">Semis {fmtShort(ds)}</span>
-                                <span className="text-terre/70">→</span>
-                                <span className="text-terre" title="Date plantation">Plant. {fmtShort(dp)}</span>
-                                <span className="ml-auto"><StatusBadge status={getPlantingStatus(p)} /></span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
+                      {plPlantings.length > 0 && (() => {
+                        const sorted = [...plPlantings].sort((a, b) => a.date_semis.localeCompare(b.date_semis))
+                        const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+
+                        // Détecter les successions : une culture dont le semis démarre après la fin d'une précédente
+                        const isSuccession = (p: PlantingFull, idx: number): PlantingFull | null => {
+                          if (idx === 0) return null
+                          for (let j = idx - 1; j >= 0; j--) {
+                            const prev = sorted[j]
+                            if (prev.date_fin && p.date_semis >= prev.date_fin) return prev
+                          }
+                          return null
+                        }
+
+                        return (
+                          <div className="flex flex-col gap-1 mt-1.5">
+                            {sorted.map((p: PlantingFull, idx: number) => {
+                              const ds = new Date(p.date_semis + 'T00:00:00')
+                              const dp = new Date(p.date_plantation + 'T00:00:00')
+                              const succession = isSuccession(p, idx)
+                              return (
+                                <div key={p.id}>
+                                  {succession && (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 text-[0.6rem] text-terre/60 italic">
+                                      <span className="w-3 border-t border-dashed border-terre/30" />
+                                      succession après {succession.culture_name}
+                                    </div>
+                                  )}
+                                  <button
+                                    className="flex items-center gap-2 text-xs bg-white/60 hover:bg-white rounded-lg px-2.5 py-1.5 cursor-pointer transition border border-transparent hover:border-sage/30 text-left w-full"
+                                    onClick={() => { setSelectedPlanting(p); setModal('editPlanting') }}
+                                    title="Cliquer pour modifier ou supprimer"
+                                  >
+                                    <span className="font-semibold text-brun min-w-[90px]">{p.culture_name}</span>
+                                    <span className="text-terre">{p.surface_m2} m²</span>
+                                    <span className="text-terre/70">|</span>
+                                    <span className="text-terre" title="Entrée cellule">Semis {fmtShort(ds)}</span>
+                                    <span className="text-terre/70">→</span>
+                                    <span className="text-terre" title="Date plantation">Plant. {fmtShort(dp)}</span>
+                                    <span className="ml-auto"><StatusBadge status={getPlantingStatus(p)} /></span>
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })}
