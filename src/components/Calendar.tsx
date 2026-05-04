@@ -67,12 +67,16 @@ export default function Calendar({ ctx }: { ctx: any }) {
           <thead>
             <tr>
               <th className="table-header text-left min-w-[220px]">Culture</th>
+              <th className="table-header text-center !px-1.5 text-[0.55rem] min-w-[45px]">Plants</th>
+              <th className="table-header text-center !px-1.5 text-[0.55rem] min-w-[45px]">Tiges</th>
               {weeks.map(w => (
                 <th key={w} className="table-header text-center !px-0.5 !py-1 text-[0.55rem] min-w-[22px]">{w}</th>
               ))}
             </tr>
             <tr>
               <th className="table-header" />
+              <th className="table-header text-center !px-1.5 !py-0.5 text-[0.45rem] text-terre font-normal">nb</th>
+              <th className="table-header text-center !px-1.5 !py-0.5 text-[0.45rem] text-terre font-normal">nettes</th>
               {weeks.map(w => (
                 <th key={w} className="table-header text-center !px-0.5 !py-0.5 text-[0.5rem] text-terre font-normal">
                   {monthNames[Math.min(11, Math.floor((w - 1) / 4.33))]}
@@ -83,7 +87,7 @@ export default function Calendar({ ctx }: { ctx: any }) {
           <tbody>
             {unique.length === 0 ? (
               <tr>
-                <td colSpan={53} className="table-cell text-center text-terre py-8">
+                <td colSpan={55} className="table-cell text-center text-terre py-8">
                   Ajoutez des cultures pour voir le calendrier se construire automatiquement.
                 </td>
               </tr>
@@ -92,7 +96,7 @@ export default function Calendar({ ctx }: { ctx: any }) {
                 <Fragment key={group.gardenId}>
                   {/* En-tête du jardin */}
                   <tr>
-                    <td colSpan={53} className="bg-sage/10 border-b border-sage/20 px-3 py-2">
+                    <td colSpan={55} className="bg-sage/10 border-b border-sage/20 px-3 py-2">
                       <span className="font-serif font-semibold text-sm text-brun">{group.gardenName}</span>
                       <span className="text-[0.65rem] text-terre ml-2">({group.plantings.length} culture{group.plantings.length > 1 ? 's' : ''})</span>
                     </td>
@@ -110,6 +114,8 @@ export default function Calendar({ ctx }: { ctx: any }) {
                           <span className="text-xs font-semibold text-brun">{p.culture_name}</span>
                           <span className="text-[0.6rem] text-terre ml-2">{p.planche_name}</span>
                         </td>
+                        <td className="table-cell !py-1.5 text-center text-[0.6rem] font-semibold text-brun">{p.plants_count || '—'}</td>
+                        <td className="table-cell !py-1.5 text-center text-[0.6rem] font-semibold text-sage">{p.tiges_estimees || '—'}</td>
                         {weeks.map(w => {
                           let cls = ''
                           if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) cls = 'cal-cellule'
@@ -128,6 +134,138 @@ export default function Calendar({ ctx }: { ctx: any }) {
               ))
             )}
           </tbody>
+
+          {/* ─── Ligne totaux dynamiques par semaine ─── */}
+          {unique.length > 0 && (() => {
+            // Calcul du nombre de plants en cellule par semaine
+            const plantsEnCellule: number[] = new Array(52).fill(0)
+            const plantsAuChamp: number[] = new Array(52).fill(0)
+            const plantsEnRecolte: number[] = new Array(52).fill(0)
+
+            for (const p of unique) {
+              const wSemis = getWeekNumber(new Date(p.date_semis + 'T00:00:00'))
+              const wPlant = getWeekNumber(new Date(p.date_plantation + 'T00:00:00'))
+              const wRec = p.date_recolte ? getWeekNumber(new Date(p.date_recolte + 'T00:00:00')) : 99
+              const wFin = p.date_fin ? getWeekNumber(new Date(p.date_fin + 'T00:00:00')) : 99
+              const plants = p.plants_count || 0
+
+              for (let i = 0; i < 52; i++) {
+                const w = i + 1
+                if (p.jours_cellule > 0 && w >= wSemis && w < wPlant) {
+                  plantsEnCellule[i] += plants
+                } else if (w >= wPlant && w < wRec) {
+                  plantsAuChamp[i] += plants
+                } else if (w >= wRec && w <= wFin) {
+                  plantsEnRecolte[i] += plants
+                }
+              }
+            }
+
+            const totalPlants = unique.reduce((s, p) => s + (p.plants_count || 0), 0)
+            const totalTiges = unique.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+
+            const maxCellule = Math.max(...plantsEnCellule)
+            const maxChamp = Math.max(...plantsAuChamp)
+            const maxRecolte = Math.max(...plantsEnRecolte)
+
+            return (
+              <tfoot>
+                {/* Plants en cellule */}
+                <tr>
+                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun border-t-2 border-brun/20 whitespace-nowrap">
+                    <span className="inline-block w-3 h-2.5 rounded mr-1.5 align-middle" style={{ backgroundColor: '#f5d98e' }} />
+                    Plants en cellule
+                  </td>
+                  <td className="text-center text-[0.6rem] font-bold text-brun border-t-2 border-brun/20">{totalPlants}</td>
+                  <td className="text-center text-[0.6rem] font-bold text-sage border-t-2 border-brun/20">{totalTiges}</td>
+                  {weeks.map((w, i) => {
+                    const v = plantsEnCellule[i]
+                    const pct = maxCellule > 0 ? v / maxCellule : 0
+                    return (
+                      <td key={w} className="!p-0.5 text-center border-t-2 border-brun/20">
+                        {v > 0 ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[0.5rem] font-bold text-brun leading-none">{v}</span>
+                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#f5d98e' }} />
+                          </div>
+                        ) : (
+                          <div className="h-[20px]" />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+                {/* Plants au champ */}
+                <tr>
+                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun whitespace-nowrap">
+                    <span className="inline-block w-3 h-2.5 rounded mr-1.5 align-middle" style={{ backgroundColor: '#e8b06d' }} />
+                    Plants au champ
+                  </td>
+                  <td className="border-t-0" />
+                  <td className="border-t-0" />
+                  {weeks.map((w, i) => {
+                    const v = plantsAuChamp[i]
+                    const pct = maxChamp > 0 ? v / maxChamp : 0
+                    return (
+                      <td key={w} className="!p-0.5 text-center">
+                        {v > 0 ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[0.5rem] font-bold text-brun leading-none">{v}</span>
+                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#e8b06d' }} />
+                          </div>
+                        ) : (
+                          <div className="h-[20px]" />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+                {/* Plants en récolte */}
+                <tr>
+                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun whitespace-nowrap">
+                    <span className="inline-block w-3 h-2.5 rounded mr-1.5 align-middle" style={{ backgroundColor: '#9dc08b' }} />
+                    Plants en récolte
+                  </td>
+                  <td />
+                  <td />
+                  {weeks.map((w, i) => {
+                    const v = plantsEnRecolte[i]
+                    const pct = maxRecolte > 0 ? v / maxRecolte : 0
+                    return (
+                      <td key={w} className="!p-0.5 text-center">
+                        {v > 0 ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[0.5rem] font-bold text-brun leading-none">{v}</span>
+                            <div className="w-[16px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 16)}px`, backgroundColor: '#9dc08b' }} />
+                          </div>
+                        ) : (
+                          <div className="h-[20px]" />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+                {/* Total tous statuts */}
+                <tr className="bg-brun-dark/5">
+                  <td className="px-3 py-1.5 text-[0.6rem] font-bold text-brun border-t border-brun/20 whitespace-nowrap">
+                    Total plants actifs
+                  </td>
+                  <td className="text-center text-[0.6rem] font-bold text-brun border-t border-brun/20">{totalPlants}</td>
+                  <td className="text-center text-[0.6rem] font-bold text-sage border-t border-brun/20">{totalTiges}</td>
+                  {weeks.map((w, i) => {
+                    const total = plantsEnCellule[i] + plantsAuChamp[i] + plantsEnRecolte[i]
+                    return (
+                      <td key={w} className="!p-0.5 text-center border-t border-brun/20">
+                        {total > 0 ? (
+                          <span className="text-[0.5rem] font-bold text-brun">{total}</span>
+                        ) : null}
+                      </td>
+                    )
+                  })}
+                </tr>
+              </tfoot>
+            )
+          })()}
         </table>
       </div>
     </div>
