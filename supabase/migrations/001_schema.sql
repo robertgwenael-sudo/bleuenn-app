@@ -176,6 +176,23 @@ create trigger trg_calc_planting
   for each row execute function calc_planting_dates();
 
 -- ============================================================
+-- Trigger : propager les modifications du catalogue aux plantations
+-- Quand on change J.cellule, J.champ, etc. → recalcul automatique
+-- ============================================================
+create or replace function propagate_catalog_changes()
+returns trigger as $$
+begin
+  update public.plantings set date_semis = date_semis
+  where culture_id = new.id;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger trg_propagate_catalog
+  after update on public.culture_catalog
+  for each row execute function propagate_catalog_changes();
+
+-- ============================================================
 -- 7. RÉCOLTES
 -- ============================================================
 create table public.harvests (
@@ -341,9 +358,16 @@ select
   p.season_id,
   p.surface_m2,
   p.date_semis,
-  p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0) as date_plantation,
-  p.date_recolte,
-  p.date_fin,
+  -- Dates calculées dynamiquement depuis le catalogue (pas les colonnes stockées)
+  (p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0))
+    as date_plantation,
+  (p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0)
+                + coalesce(p.jours_champ_override, c.jours_champ))
+    as date_recolte,
+  (p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0)
+                + coalesce(p.jours_champ_override, c.jours_champ)
+                + coalesce(p.jours_recolte_override, c.jours_recolte, 21))
+    as date_fin,
   p.plants_count,
   p.tiges_estimees,
   p.revenu_estime,

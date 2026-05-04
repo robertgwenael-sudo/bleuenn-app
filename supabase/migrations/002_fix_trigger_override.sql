@@ -1,21 +1,24 @@
 -- ============================================================
--- MIGRATION 002 : Fix trigger qui bake les valeurs catalogue
--- dans jours_cellule_override
+-- MIGRATION 002 : Dates dynamiques — catalogue + date_semis
+-- Les dates se recalculent quand on change :
+--   1. La date de semis d'une plantation
+--   2. Un paramètre du catalogue (J.cellule, J.champ, etc.)
 -- ============================================================
 
--- 1. Supprimer le trigger existant
+-- 1. Supprimer les triggers existants
 DROP TRIGGER IF EXISTS trg_calc_planting ON public.plantings;
+DROP TRIGGER IF EXISTS trg_propagate_catalog ON public.culture_catalog;
 
 -- 2. Convertir date_plantation de GENERATED en colonne normale
--- On doit recréer la colonne car ALTER ne peut pas retirer GENERATED
-ALTER TABLE public.plantings DROP COLUMN date_plantation;
+ALTER TABLE public.plantings DROP COLUMN IF EXISTS date_plantation;
 ALTER TABLE public.plantings ADD COLUMN date_plantation date;
 
--- 3. Remettre à zéro les jours_cellule_override qui avaient été
---    écrasés par le trigger (remettre à 0 = "pas de surcharge")
+-- 3. Remettre à zéro les overrides figés par l'ancien trigger
 UPDATE public.plantings SET jours_cellule_override = 0;
 
--- 4. Nouveau trigger corrigé
+-- ============================================================
+-- TRIGGER A : Calcul des dates et estimations sur plantings
+-- ============================================================
 CREATE OR REPLACE FUNCTION calc_planting_dates()
 RETURNS trigger AS $$
 DECLARE
@@ -30,12 +33,10 @@ DECLARE
   espacement numeric;
   plants int;
 BEGIN
-  -- Récupérer les données du catalogue
   SELECT * INTO cat FROM public.culture_catalog WHERE id = new.culture_id;
   SELECT * INTO pl FROM public.planches WHERE id = new.planche_id;
 
-  -- Résoudre les valeurs (override ou catalogue)
-  -- On ne touche PAS à jours_cellule_override : il reste à 0 sauf surcharge manuelle
+  -- Résoudre : override utilisateur (si != 0) sinon catalogue
   j_cellule := coalesce(nullif(new.jours_cellule_override, 0), cat.jours_cellule, 0);
   j_champ   := coalesce(new.jours_champ_override, cat.jours_champ);
   j_recolte := coalesce(new.jours_recolte_override, cat.jours_recolte, 21);
@@ -44,12 +45,12 @@ BEGIN
   surface   := new.surface_m2;
   espacement := coalesce(cat.espacement_cm, 20);
 
-  -- Calcul des dates
+  -- Dates dynamiques
   new.date_plantation := new.date_semis + j_cellule;
   new.date_recolte    := new.date_plantation + j_champ;
   new.date_fin        := new.date_recolte + j_recolte;
 
-  -- Calcul des estimations
+  -- Estimations
   plants := greatest(1, floor(surface * 10000 / (espacement * espacement)));
   IF plants > surface * 50 THEN plants := (surface * 25)::int; END IF;
 
@@ -62,15 +63,39 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 5. Recréer le trigger
 CREATE TRIGGER trg_calc_planting
   BEFORE INSERT OR UPDATE ON public.plantings
   FOR EACH ROW EXECUTE FUNCTION calc_planting_dates();
 
--- 6. Recalculer toutes les plantations existantes (le trigger se déclenche sur UPDATE)
+-- ============================================================
+-- TRIGGER B : Quand le catalogue change → recalculer toutes
+-- les plantations qui utilisent cette culture
+-- ============================================================
+CREATE OR REPLACE FUNCTION propagate_catalog_changes()
+RETURNS trigger AS $$
+BEGIN
+  -- Toucher date_semis déclenche trg_calc_planting → recalcul complet
+  UPDATE public.plantings
+     SET date_semis = date_semis
+   WHERE culture_id = NEW.id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_propagate_catalog
+  AFTER UPDATE ON public.culture_catalog
+  FOR EACH ROW EXECUTE FUNCTION propagate_catalog_changes();
+
+-- ============================================================
+-- Recalculer toutes les plantations existantes
+-- ============================================================
 UPDATE public.plantings SET date_semis = date_semis;
 
--- 7. Recréer la vue (au cas où l'ordre des colonnes a changé)
+-- ============================================================
+-- Vue avec dates calculées dynamiquement depuis le catalogue
+-- (double sécurité : même si les colonnes stockées sont en retard,
+--  la vue montre toujours les bonnes dates)
+-- ============================================================
 DROP VIEW IF EXISTS public.plantings_full;
 
 CREATE OR REPLACE VIEW public.plantings_full AS
@@ -81,9 +106,16 @@ SELECT
   p.season_id,
   p.surface_m2,
   p.date_semis,
-  p.date_plantation,
-  p.date_recolte,
-  p.date_fin,
+  -- Dates calculées dynamiquement depuis le catalogue
+  (p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0))
+    AS date_plantation,
+  (p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0)
+                + coalesce(p.jours_champ_override, c.jours_champ))
+    AS date_recolte,
+  (p.date_semis + coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0)
+                + coalesce(p.jours_champ_override, c.jours_champ)
+                + coalesce(p.jours_recolte_override, c.jours_recolte, 21))
+    AS date_fin,
   p.plants_count,
   p.tiges_estimees,
   p.revenu_estime,
