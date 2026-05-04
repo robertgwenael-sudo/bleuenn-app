@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  body {
+    @apply font-sans text-brun bg-cream;
+  }
+  h1, h2, h3, h4 {
+    @apply font-serif text-brun;
+  }
+}
+
+@layer components {
+  .badge {
+    @apply inline-block px-2.5 py-0.5 rounded-full text-[0.7rem] font-semibold uppercase tracking-wider;
+  }
+  .badge-rr { @apply bg-green-50 text-green-800; }
+  .badge-mp { @apply bg-orange-50 text-orange-800; }
+  .badge-ru { @apply bg-blue-50 text-blue-800; }
+  .badge-semer { @apply bg-blush-light text-blush-dark; }
+  .badge-germination { @apply bg-yellow-50 text-yellow-700; }
+  .badge-plante { @apply bg-sage-pale text-sage; }
+  .badge-recolte { @apply bg-green-50 text-green-700; }
+  .badge-termine { @apply bg-cream-dark text-terre; }
+
+  .card {
+    @apply bg-white rounded-card p-5 shadow-card transition-all duration-200 hover:shadow-card-lg hover:-translate-y-0.5;
+  }
+
+  .btn {
+    @apply px-5 py-2.5 rounded-lg font-sans text-sm font-semibold transition-all duration-200 cursor-pointer border-none;
+  }
+  .btn-sage { @apply bg-sage text-white hover:bg-sage-light; }
+  .btn-blush { @apply bg-blush text-brun hover:bg-blush-dark hover:text-white; }
+  .btn-outline { @apply bg-transparent border border-sage text-sage hover:bg-sage hover:text-white; }
+  .btn-danger { @apply bg-red-50 text-red-700 hover:bg-red-100; }
+  .btn-sm { @apply px-3 py-1.5 text-xs; }
+
+  .input {
+    @apply w-full px-3.5 py-2.5 border border-cream-dark rounded-lg font-sans text-sm bg-white text-brun
+      focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage-pale;
+  }
+
+  .table-header {
+    @apply bg-sage-pale text-brun px-3.5 py-3 text-left font-semibold text-xs uppercase tracking-wider;
+  }
+  .table-cell {
+    @apply px-3.5 py-2.5 border-b border-cream-dark text-sm;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c9c0b6; border-radius: 3px; }
+
+/* Animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.3s ease forwards; }

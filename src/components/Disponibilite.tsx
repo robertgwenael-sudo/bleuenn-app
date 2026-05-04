@@ -1,0 +1,113 @@
+'use client'
+import { useState } from 'react'
+import { getWeekNumber } from '@/lib/types'
+import type { PlantingFull } from '@/lib/types'
+
+export default function Disponibilite({ ctx }: { ctx: any }) {
+  const [filterGarden, setFilterGarden] = useState('')
+  const [filterType, setFilterType] = useState('')
+
+  const plantings: PlantingFull[] = ctx.plantings || []
+
+  let data = plantings
+  if (filterGarden) data = data.filter(p => p.garden_id === filterGarden)
+  if (filterType) data = data.filter(p => p.culture_type === filterType)
+
+  // Group by culture name
+  const byName: Record<string, PlantingFull[]> = {}
+  data.forEach(p => {
+    if (!byName[p.culture_name]) byName[p.culture_name] = []
+    byName[p.culture_name].push(p)
+  })
+
+  // Market weeks 1-27 = calendar weeks 14-40
+  const mWeeks = Array.from({ length: 27 }, (_, i) => i + 1)
+  const calWeeks = mWeeks.map(m => m + 13)
+
+  // Count per week
+  const availCount = mWeeks.map((_, i) => {
+    const cw = calWeeks[i]
+    return Object.values(byName).filter(cults =>
+      cults.some(c => {
+        if (!c.date_recolte || !c.date_fin) return false
+        const wr = getWeekNumber(new Date(c.date_recolte + 'T00:00:00'))
+        const wf = getWeekNumber(new Date(c.date_fin + 'T00:00:00'))
+        return cw >= wr && cw <= wf
+      })
+    ).length
+  })
+
+  return (
+    <div>
+      <h2 className="font-serif text-3xl mb-1">Disponibilité des fleurs</h2>
+      <p className="text-terre text-sm mb-5">Semaines de marché 1 à 27 (semaines calendrier 14 à 40)</p>
+
+      <div className="flex gap-3 flex-wrap mb-5">
+        <select className="input !w-auto" value={filterGarden} onChange={e => setFilterGarden(e.target.value)}>
+          <option value="">Tous les jardins</option>
+          {(ctx.gardens || []).map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+        <select className="input !w-auto" value={filterType} onChange={e => setFilterType(e.target.value)}>
+          <option value="">Tous les types</option>
+          <option value="RR">RR</option><option value="MP">MP</option><option value="RU">RU</option>
+        </select>
+      </div>
+
+      {/* Weekly counts */}
+      <div className="flex gap-2 flex-wrap mb-5">
+        {mWeeks.slice(0, 20).map((m, i) => (
+          <div key={m} className="bg-white px-3 py-1 rounded-full text-[0.7rem] shadow-card">
+            S{m}: <strong className="text-sage">{availCount[i]}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr>
+              <th className="table-header text-left min-w-[150px]">Culture</th>
+              {mWeeks.map((m, i) => (
+                <th key={m} className="table-header text-center !px-1.5 !py-2">
+                  S{m}
+                  <br /><span className="text-[0.5rem] font-normal text-terre">({calWeeks[i]})</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(byName).sort(([a], [b]) => a.localeCompare(b)).map(([name, cults]) => (
+              <tr key={name} className="hover:bg-cream/50">
+                <td className="table-cell !py-1">
+                  <strong>{name}</strong>
+                  <span className={`badge ml-1.5 ${cults[0].culture_type === 'RR' ? 'badge-rr' : cults[0].culture_type === 'MP' ? 'badge-mp' : 'badge-ru'}`}>
+                    {cults[0].culture_type}
+                  </span>
+                </td>
+                {mWeeks.map((_, i) => {
+                  const cw = calWeeks[i]
+                  const avail = cults.some(c => {
+                    if (!c.date_recolte || !c.date_fin) return false
+                    const wr = getWeekNumber(new Date(c.date_recolte + 'T00:00:00'))
+                    const wf = getWeekNumber(new Date(c.date_fin + 'T00:00:00'))
+                    return cw >= wr && cw <= wf
+                  })
+                  return (
+                    <td key={i} className={`table-cell text-center !px-1 !py-1 ${avail ? 'bg-sage-pale text-sage font-bold' : 'bg-cream-dark text-gray-300'}`}>
+                      {avail ? '●' : '·'}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+            {Object.keys(byName).length === 0 && (
+              <tr><td colSpan={28} className="table-cell text-center text-terre py-8">
+                La disponibilité se calcule automatiquement depuis vos plantations.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
