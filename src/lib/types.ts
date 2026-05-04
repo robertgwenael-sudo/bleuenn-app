@@ -64,6 +64,7 @@ export interface Planting {
   planche_id: string
   culture_id: string
   season_id: string
+  surface_m2: number
   date_semis: string
   date_plantation: string
   date_recolte: string
@@ -81,6 +82,7 @@ export interface Planting {
 }
 
 export interface PlantingFull extends Planting {
+  planting_m2: number
   culture_name: string
   culture_type: 'RR' | 'MP' | 'RU'
   jours_cellule: number

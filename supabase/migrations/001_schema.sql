@@ -92,6 +92,9 @@ create table public.plantings (
   culture_id uuid not null references public.culture_catalog(id) on delete restrict,
   season_id uuid not null references public.seasons(id) on delete cascade,
 
+  -- Surface allouée à cette culture sur la planche (en m²)
+  surface_m2 numeric not null default 1,
+
   -- La SEULE date saisie par l'utilisateur
   date_semis date not null,
 
@@ -147,7 +150,8 @@ begin
   j_recolte := coalesce(new.jours_recolte_override, cat.jours_recolte, 21);
   rend      := coalesce(new.rendement_override, cat.rendement_plant, 1);
   prix      := coalesce(new.prix_override, cat.prix_tige, 0.50);
-  surface   := pl.surface_m2;
+  -- Utiliser la surface allouée à cette culture (pas la planche entière)
+  surface   := new.surface_m2;
   espacement := coalesce(cat.espacement_cm, 20);
 
   -- Calcul des dates
@@ -346,6 +350,7 @@ select
   p.tiges_estimees,
   p.revenu_estime,
   p.graines_necessaires,
+  p.surface_m2 as planting_m2,
   p.notes as planting_notes,
   c.name as culture_name,
   c.type as culture_type,

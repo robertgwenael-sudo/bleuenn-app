@@ -141,7 +141,7 @@ export function useBleuenn() {
   }
 
   // ─── CRUD Plantations ─────────────────
-  const createPlanting = async (plancheId: string, cultureId: string, dateSemis: string, overrides?: {
+  const createPlanting = async (plancheId: string, cultureId: string, dateSemis: string, surfaceM2: number, overrides?: {
     jours_cellule_override?: number
     jours_champ_override?: number
     jours_recolte_override?: number
@@ -155,6 +155,7 @@ export function useBleuenn() {
       culture_id: cultureId,
       season_id: activeSeason.id,
       date_semis: dateSemis,
+      surface_m2: surfaceM2,
       ...overrides
     }).select().single()
     if (error) console.error('createPlanting error:', error)

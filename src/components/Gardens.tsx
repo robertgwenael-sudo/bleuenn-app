@@ -76,15 +76,31 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
 function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string; ctx: any; onClose: () => void }) {
   const [cultureId, setCultureId] = useState('')
   const [dateSemis, setDateSemis] = useState('')
+  const [surfaceM2, setSurfaceM2] = useState(1)
   const [loading, setLoading] = useState(false)
 
   const catalog: CultureCatalog[] = ctx.catalog || []
   const selected = catalog.find(c => c.id === cultureId)
 
+  // Calcul de la surface disponible sur la planche
+  const allPlantings: PlantingFull[] = ctx.plantings || []
+  const planchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === plancheId)
+  const usedM2 = planchePlantings.reduce((sum: number, p: PlantingFull) => sum + (p.surface_m2 || 0), 0)
+
+  // Trouver la planche dans les jardins
+  let plancheM2 = 0
+  for (const g of (ctx.gardens || [])) {
+    for (const pl of (g.planches || [])) {
+      if (pl.id === plancheId) { plancheM2 = pl.surface_m2; break }
+    }
+  }
+  const availableM2 = Math.max(0, plancheM2 - usedM2)
+  const isOverCapacity = surfaceM2 > availableM2
+
   const submit = async () => {
-    if (!cultureId || !dateSemis) return
+    if (!cultureId || !dateSemis || isOverCapacity) return
     setLoading(true)
-    await ctx.createPlanting(plancheId, cultureId, dateSemis)
+    await ctx.createPlanting(plancheId, cultureId, dateSemis, surfaceM2)
     setLoading(false)
     onClose()
   }
@@ -104,12 +120,32 @@ function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string; ctx: 
   return (
     <div className="space-y-4">
       <h3 className="font-serif text-xl">Ajouter une culture</h3>
+
+      {/* Jauge de la planche */}
+      <div className="bg-cream rounded-lg p-3">
+        <div className="flex justify-between text-xs mb-1.5">
+          <span className="font-semibold text-brun">Surface de la planche</span>
+          <span className="text-terre">{usedM2} / {plancheM2} m² utilisés — <strong className={availableM2 > 0 ? 'text-sage' : 'text-red-600'}>{availableM2} m² disponibles</strong></span>
+        </div>
+        <div className="h-2 bg-cream-dark rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all" style={{
+            width: `${Math.min(100, (usedM2 / plancheM2) * 100)}%`,
+            backgroundColor: usedM2 / plancheM2 > 0.9 ? '#e57373' : '#7a8c6e'
+          }} />
+        </div>
+        {planchePlantings.length > 0 && (
+          <div className="mt-2 text-[0.65rem] text-terre">
+            Cultures en place : {planchePlantings.map((p: PlantingFull) => `${p.culture_name} (${p.surface_m2} m²)`).join(', ')}
+          </div>
+        )}
+      </div>
+
       <div>
         <label className="block text-xs font-semibold mb-1">Culture</label>
         <select className="input" value={cultureId} onChange={e => setCultureId(e.target.value)}>
           <option value="">— Choisir une culture —</option>
           {catalog.map(c => (
-            <option key={c.id} value={c.id}>{c.name} ({c.type}) — {c.prix_tige}€/tige</option>
+            <option key={c.id} value={c.id}>{c.name} ({c.type}) — {c.prix_tige}/tige</option>
           ))}
         </select>
       </div>
@@ -117,13 +153,36 @@ function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string; ctx: 
       {selected && (
         <div className="bg-sage-pale rounded-lg p-3 text-xs space-y-1">
           <p><strong>Type :</strong> {selected.type === 'RR' ? 'Récolte Répétitive' : selected.type === 'MP' ? 'Moyen Producteur' : 'Récolte Unique'}</p>
-          <p><strong>Cellule :</strong> {selected.jours_cellule}j → <strong>Champ :</strong> {selected.jours_champ}j → <strong>Récolte :</strong> {selected.jours_recolte}j</p>
-          <p><strong>Rendement :</strong> {selected.rendement_plant} tiges/plant — <strong>Prix :</strong> {selected.prix_tige}€</p>
+          <p><strong>Cellule :</strong> {selected.jours_cellule}j — <strong>Champ :</strong> {selected.jours_champ}j — <strong>Récolte :</strong> {selected.jours_recolte}j</p>
+          <p><strong>Rendement :</strong> {selected.rendement_plant} tiges/plant — <strong>Prix :</strong> {selected.prix_tige}</p>
           {selected.pincer && <span className="badge badge-mp mr-1">Pinçage</span>}
           {selected.filet && <span className="badge badge-ru mr-1">Filet</span>}
           {selected.couvre_sol && <span className="badge badge-plante">Couvre-sol</span>}
         </div>
       )}
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">Surface allouée (m²)</label>
+        <input
+          className={`input ${isOverCapacity ? '!border-red-400 !bg-red-50' : ''}`}
+          type="number"
+          min={0.5}
+          max={plancheM2}
+          step={0.5}
+          value={surfaceM2}
+          onChange={e => setSurfaceM2(+e.target.value)}
+        />
+        {isOverCapacity && (
+          <p className="text-[0.7rem] text-red-600 mt-1 font-semibold">
+            Capacité dépassée ! Seulement {availableM2} m² disponibles sur cette planche.
+          </p>
+        )}
+        {!isOverCapacity && surfaceM2 > 0 && (
+          <p className="text-[0.7rem] text-terre mt-1">
+            Il restera {(availableM2 - surfaceM2).toFixed(1)} m² disponibles après cette culture.
+          </p>
+        )}
+      </div>
 
       <div>
         <label className="block text-xs font-semibold mb-1">Date de semis</label>
@@ -136,15 +195,15 @@ function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string; ctx: 
       {previewPlantation && (
         <div className="bg-cream-dark rounded-lg p-3 text-xs space-y-1">
           <p className="font-semibold text-brun">Dates calculées automatiquement :</p>
-          <p>🟤 Plantation : <strong>{previewPlantation}</strong></p>
-          <p>🟢 Début récolte : <strong>{previewRecolte}</strong></p>
-          <p>🟩 Fin récolte : <strong>{previewFin}</strong></p>
+          <p>Plantation : <strong>{previewPlantation}</strong></p>
+          <p>Début récolte : <strong>{previewRecolte}</strong></p>
+          <p>Fin récolte : <strong>{previewFin}</strong></p>
         </div>
       )}
 
       <div className="flex gap-3">
         <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !cultureId || !dateSemis}>
+        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !cultureId || !dateSemis || isOverCapacity || surfaceM2 <= 0}>
           {loading ? '…' : 'Planter'}
         </button>
       </div>
@@ -210,28 +269,43 @@ export default function Gardens({ ctx }: { ctx: any }) {
               <div className="space-y-1.5 mb-3">
                 {planches.map((pl: any) => {
                   const plPlantings = getPlanchePlantings(pl.id)
+                  const plUsedM2 = plPlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
+                  const plPct = pl.surface_m2 > 0 ? (plUsedM2 / pl.surface_m2 * 100) : 0
                   return (
-                    <div key={pl.id} className="flex items-center justify-between p-2.5 rounded-lg bg-cream hover:bg-sage-pale transition text-sm">
-                      <div className="flex-1">
-                        <strong>{pl.name}</strong> <span className="text-terre text-xs">({pl.surface_m2} m²)</span>
-                        {plPlantings.length > 0 && (
-                          <span className="text-terre text-xs ml-2">
-                            — {plPlantings.map(p => p.culture_name).join(', ')}
-                          </span>
-                        )}
+                    <div key={pl.id} className="p-2.5 rounded-lg bg-cream hover:bg-sage-pale transition text-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <strong>{pl.name}</strong>
+                          <span className="text-terre text-xs ml-1">({plUsedM2}/{pl.surface_m2} m²)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => { setSelectedPlancheId(pl.id); setModal('planting') }}
+                          >+ Culture</button>
+                          <button className="text-terre hover:text-red-600 text-xs ml-1" onClick={() => {
+                            if (confirm('Supprimer cette planche ?')) ctx.deletePlanche(pl.id)
+                          }}>×</button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        {plPlantings.map(p => (
-                          <StatusBadge key={p.id} status={getPlantingStatus(p)} />
-                        ))}
-                        <button
-                          className="btn btn-sm btn-outline ml-2"
-                          onClick={() => { setSelectedPlancheId(pl.id); setModal('planting') }}
-                        >+ Culture</button>
-                        <button className="text-terre hover:text-red-600 text-xs ml-1" onClick={() => {
-                          if (confirm('Supprimer cette planche ?')) ctx.deletePlanche(pl.id)
-                        }}>×</button>
+                      {/* Barre d'occupation de la planche */}
+                      <div className="h-1.5 bg-cream-dark rounded-full overflow-hidden mt-1.5 mb-1">
+                        <div className="h-full rounded-full transition-all" style={{
+                          width: `${Math.min(100, plPct)}%`,
+                          backgroundColor: plPct > 90 ? '#e57373' : '#7a8c6e'
+                        }} />
                       </div>
+                      {plPlantings.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {plPlantings.map((p: PlantingFull) => (
+                            <div key={p.id} className="flex items-center gap-1 text-xs bg-white/60 rounded px-1.5 py-0.5">
+                              <span className="font-medium">{p.culture_name}</span>
+                              <span className="text-terre">({p.surface_m2} m²)</span>
+                              <StatusBadge status={getPlantingStatus(p)} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
