@@ -50,18 +50,28 @@ function SubtotalRows({ label, plantings, weeks, isGlobal }: {
 
   return (
     <>
+      {/* Ligne résumé avec totaux Plants / Tiges */}
       <tr className={bgCls}>
-        <td className={`px-3 py-1 ${labelSize} font-bold text-brun ${borderCls} whitespace-nowrap`}>
-          <span className="inline-block w-2.5 h-2 rounded mr-1 align-middle" style={{ backgroundColor: '#f5d98e' }} />
-          {prefix} — Plants en cellule
+        <td className={`px-3 py-1.5 ${labelSize} font-bold text-brun ${borderCls} whitespace-nowrap`}>
+          {prefix}
         </td>
         <td className={`text-center ${labelSize} font-bold text-brun ${borderCls}`}>{totalPlants}</td>
         <td className={`text-center ${labelSize} font-bold text-sage ${borderCls}`}>{totalTiges}</td>
+        <td colSpan={52} className={`${borderCls}`} />
+      </tr>
+      {/* Plants en cellule par semaine */}
+      <tr className={bgCls}>
+        <td className={`px-3 py-1 ${labelSize} text-brun whitespace-nowrap`}>
+          <span className="inline-block w-2.5 h-2 rounded mr-1 align-middle" style={{ backgroundColor: '#f5d98e' }} />
+          Plants en cellule
+        </td>
+        <td />
+        <td />
         {weeks.map((w, i) => {
           const v = plantsEnCellule[i]
           const pct = maxCellule > 0 ? v / maxCellule : 0
           return (
-            <td key={w} className={`!p-0.5 text-center ${borderCls}`}>
+            <td key={w} className="!p-0.5 text-center">
               {v > 0 ? (
                 <div className="flex flex-col items-center">
                   <span className="text-[0.45rem] font-bold text-brun leading-none">{v}</span>
@@ -74,10 +84,11 @@ function SubtotalRows({ label, plantings, weeks, isGlobal }: {
           )
         })}
       </tr>
+      {/* Tiges à récolter par semaine */}
       <tr className={bgCls}>
-        <td className={`px-3 py-1 ${labelSize} font-bold text-feuille whitespace-nowrap`}>
+        <td className={`px-3 py-1 ${labelSize} text-feuille whitespace-nowrap`}>
           <span className="mr-1">✂️</span>
-          {prefix} — Tiges à récolter
+          Tiges à récolter
         </td>
         <td />
         <td />
