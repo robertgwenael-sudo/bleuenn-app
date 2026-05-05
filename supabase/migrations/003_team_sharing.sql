@@ -155,3 +155,99 @@ begin
   return json_build_object('ok', true, 'season_id', v_season_id, 'season_name', v_season_name);
 end;
 $$ language plpgsql security definer;
+
+-- ============================================================
+-- 8. Invitations par email
+-- ============================================================
+
+-- Table des invitations en attente (pour les emails pas encore inscrits)
+create table public.pending_invites (
+  id uuid primary key default uuid_generate_v4(),
+  season_id uuid not null references public.seasons(id) on delete cascade,
+  email text not null,
+  invited_by uuid not null references public.profiles(id),
+  created_at timestamptz default now(),
+  unique(season_id, email)
+);
+
+alter table public.pending_invites enable row level security;
+
+create policy "Team owners manage invites"
+  on public.pending_invites for all
+  using (season_id in (select season_id from public.team_members where user_id = auth.uid() and role = 'owner'));
+
+-- Fonction : inviter par email
+-- Si le profil existe → ajout direct dans team_members
+-- Sinon → enregistrement dans pending_invites
+create or replace function public.invite_by_email(p_season_id uuid, p_email text)
+returns json as $$
+declare
+  v_target_id uuid;
+  v_already boolean;
+begin
+  -- Vérifier que l'appelant est owner
+  if not public.is_team_owner(p_season_id) then
+    return json_build_object('error', 'Seul le propriétaire peut inviter');
+  end if;
+
+  -- Chercher si le profil existe (via auth.users)
+  select id into v_target_id
+  from auth.users
+  where email = lower(trim(p_email));
+
+  if v_target_id is not null then
+    -- Vérifier si déjà membre
+    select exists(
+      select 1 from public.team_members where season_id = p_season_id and user_id = v_target_id
+    ) into v_already;
+
+    if v_already then
+      return json_build_object('status', 'already_member', 'message', 'Déjà membre de l''équipe');
+    end if;
+
+    -- Ajout direct
+    insert into public.team_members (season_id, user_id, role)
+    values (p_season_id, v_target_id, 'member');
+
+    return json_build_object('status', 'added', 'message', 'Membre ajouté directement');
+  else
+    -- Email pas encore inscrit → invitation en attente
+    insert into public.pending_invites (season_id, email, invited_by)
+    values (p_season_id, lower(trim(p_email)), auth.uid())
+    on conflict (season_id, email) do nothing;
+
+    return json_build_object('status', 'pending', 'message', 'Invitation enregistrée — sera activée à l''inscription');
+  end if;
+end;
+$$ language plpgsql security definer;
+
+-- Fonction appelée après inscription : convertir les invitations en attente
+-- À brancher sur un trigger after insert sur profiles
+create or replace function public.convert_pending_invites()
+returns trigger as $$
+declare
+  v_email text;
+  r record;
+begin
+  -- Récupérer l'email depuis auth.users
+  select email into v_email from auth.users where id = new.id;
+
+  if v_email is not null then
+    for r in select * from public.pending_invites where email = lower(v_email) loop
+      insert into public.team_members (season_id, user_id, role)
+      values (r.season_id, new.id, 'member')
+      on conflict (season_id, user_id) do nothing;
+
+      delete from public.pending_invites where id = r.id;
+    end loop;
+  end if;
+
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- Trigger : quand un profil est créé, convertir ses invitations
+drop trigger if exists trg_convert_invites on public.profiles;
+create trigger trg_convert_invites
+  after insert on public.profiles
+  for each row execute function public.convert_pending_invites();

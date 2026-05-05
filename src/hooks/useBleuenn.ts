@@ -344,6 +344,34 @@ export function useBleuenn() {
     return { ok: true, seasonId: data.season_id, seasonName: data.season_name }
   }
 
+  const inviteByEmail = async (email: string) => {
+    if (!activeSeason) return { error: 'Pas de saison active' }
+    const { data, error } = await supabase.rpc('invite_by_email', {
+      p_season_id: activeSeason.id,
+      p_email: email.trim().toLowerCase()
+    })
+    if (error) return { error: error.message }
+    // Si ajouté directement, recharger les membres
+    if (data?.status === 'added') {
+      await loadTeamMembers(activeSeason.id)
+    }
+    return data
+  }
+
+  const getPendingInvites = async () => {
+    if (!activeSeason) return []
+    const { data } = await supabase
+      .from('pending_invites')
+      .select('*')
+      .eq('season_id', activeSeason.id)
+      .order('created_at')
+    return data || []
+  }
+
+  const cancelInvite = async (inviteId: string) => {
+    await supabase.from('pending_invites').delete().eq('id', inviteId)
+  }
+
   const removeMember = async (memberId: string) => {
     await supabase.from('team_members').delete().eq('id', memberId)
     if (activeSeason) await loadTeamMembers(activeSeason.id)
@@ -364,7 +392,7 @@ export function useBleuenn() {
     upsertSeedOrder, addCulture, updateCulture, deleteCulture,
     teamMembers, isOwner,
     enableInviteLink, disableInviteLink, regenerateInviteToken,
-    joinByToken, removeMember,
+    joinByToken, inviteByEmail, getPendingInvites, cancelInvite, removeMember,
     reload: loadAll,
   }
 }
