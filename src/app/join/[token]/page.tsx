@@ -47,7 +47,7 @@ export default function JoinPage() {
       style={{ background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)' }}>
       <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
         <span className="text-4xl block mb-3">&#x273F;</span>
-        <h1 className="font-serif italic text-3xl mb-4" style={{ color: '#3d5a3a' }}>Bleuenn</h1>
+        <h1 className="font-serif italic text-3xl mb-4" style={{ color: '#6a8a62' }}>Bleuenn</h1>
 
         {status === 'loading' && (
           <p className="text-sm" style={{ color: '#8a7e6b' }}>Vérification…</p>
@@ -61,7 +61,7 @@ export default function JoinPage() {
             <a
               href={`/?join=${token}`}
               className="inline-block px-6 py-3 rounded-xl text-white text-sm font-bold"
-              style={{ background: 'linear-gradient(135deg, #3d5a3a 0%, #5a7a56 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #6a8a62 0%, #8aaa80 100%)' }}
             >
               Se connecter
             </a>
@@ -75,7 +75,7 @@ export default function JoinPage() {
         {status === 'success' && (
           <div>
             <div className="text-2xl mb-2">✓</div>
-            <p className="text-sm font-semibold" style={{ color: '#3d5a3a' }}>
+            <p className="text-sm font-semibold" style={{ color: '#6a8a62' }}>
               {seasonName ? `Bienvenue dans "${seasonName}" !` : 'Vous avez rejoint l\'équipe !'}
             </p>
             <p className="text-xs mt-2" style={{ color: '#8a7e6b' }}>Redirection…</p>
@@ -88,7 +88,7 @@ export default function JoinPage() {
             <a
               href="/"
               className="inline-block px-6 py-3 rounded-xl text-white text-sm font-bold"
-              style={{ background: 'linear-gradient(135deg, #3d5a3a 0%, #5a7a56 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #6a8a62 0%, #8aaa80 100%)' }}
             >
               Retour à l'accueil
             </a>

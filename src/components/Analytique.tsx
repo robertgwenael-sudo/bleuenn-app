@@ -108,7 +108,7 @@ export default function Analytique({ ctx }: { ctx: any }) {
 
   // Couleurs par type
   const typeColor: Record<string, string> = {
-    'RR': '#7a8c6e', 'MP': '#c9a96e', 'RU': '#9b7cb8'
+    'RR': '#8a9e7a', 'MP': '#c9a96e', 'RU': '#9b7cb8'
   }
 
   return (
@@ -180,7 +180,7 @@ export default function Analytique({ ctx }: { ctx: any }) {
                     width={barW}
                     height={barH}
                     rx={2}
-                    fill="#7a8c6e"
+                    fill="#8a9e7a"
                     opacity={0.6}
                   />
                 )
@@ -203,7 +203,7 @@ export default function Analytique({ ctx }: { ctx: any }) {
               ))}
 
               {/* Légende */}
-              <rect x={chartW / 2 - 140} y={2} width={10} height={10} rx={2} fill="#7a8c6e" opacity={0.6} />
+              <rect x={chartW / 2 - 140} y={2} width={10} height={10} rx={2} fill="#8a9e7a" opacity={0.6} />
               <text x={chartW / 2 - 126} y={11} className="text-[0.5rem]" fill="#8a7e6b">CA hebdo</text>
               <line x1={chartW / 2 - 10} y1={7} x2={chartW / 2 + 30} y2={7} stroke="#c77d8a" strokeWidth={2} strokeDasharray="6 3" />
               <text x={chartW / 2 + 34} y={11} className="text-[0.5rem]" fill="#8a7e6b">CA cumulé</text>

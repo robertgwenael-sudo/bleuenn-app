@@ -70,7 +70,7 @@ export default function Dashboard({ ctx }: { ctx: any }) {
   const channels = ['Marche', 'Fleuriste', 'Abo.', 'Mariage', 'Deuil']
   const channelFull = ['Marché', 'Fleuriste', 'Abonnements', 'Mariage', 'Deuil']
   const channelCA = channelFull.map(c => sales.filter((v: any) => v.channel === c).reduce((s: number, v: any) => s + (v.total || 0), 0))
-  const channelColors = ['#3d5a3a', '#8b7355', '#c77d8a', '#6b7f5e', '#c9a96e']
+  const channelColors = ['#6a8a62', '#8b7355', '#cc909a', '#8a9e7a', '#c9a96e']
 
   return (
     <div>
@@ -81,10 +81,10 @@ export default function Dashboard({ ctx }: { ctx: any }) {
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
-        <KPI icon="&#x273F;" accent="#6b7f5e" label="Tiges potentielles" value={Math.round(totalTiges).toLocaleString('fr-FR')} sub="saison complete" />
-        <KPI icon="&#x2740;" accent="#c77d8a" label="CA potentiel" value={`${totalCA.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`} sub="sur toutes les cultures" />
+        <KPI icon="&#x273F;" accent="#8a9e7a" label="Tiges potentielles" value={Math.round(totalTiges).toLocaleString('fr-FR')} sub="saison complete" />
+        <KPI icon="&#x2740;" accent="#cc909a" label="CA potentiel" value={`${totalCA.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`} sub="sur toutes les cultures" />
         <KPI icon="&#x25CB;" accent="#c9a96e" label="Surface totale" value={`${totalM2} m²`} sub={`${(ctx.gardens || []).length} jardins`} />
-        <KPI icon="&#x2698;" accent="#3d5a3a" label="Cultures actives" value={String(actives)} sub={`${enRecolte} en recolte`} />
+        <KPI icon="&#x2698;" accent="#6a8a62" label="Cultures actives" value={String(actives)} sub={`${enRecolte} en recolte`} />
       </div>
 
       {/* Barre objectif */}
@@ -97,7 +97,7 @@ export default function Dashboard({ ctx }: { ctx: any }) {
           <div className="h-full rounded-full transition-all duration-1000 ease-out"
             style={{
               width: `${pct}%`,
-              background: 'linear-gradient(90deg, #3d5a3a, #6b7f5e, #c77d8a)',
+              background: 'linear-gradient(90deg, #6a8a62, #8a9e7a, #cc909a)',
             }} />
         </div>
       </div>
@@ -116,7 +116,7 @@ export default function Dashboard({ ctx }: { ctx: any }) {
               { label: 'MP — Moyen', value: plantings.filter((p: PlantingFull) => p.culture_type === 'MP').length },
               { label: 'RU — Unique', value: plantings.filter((p: PlantingFull) => p.culture_type === 'RU').length },
             ]}
-            colors={['#3d5a3a', '#c9a96e', '#9b8ec4']}
+            colors={['#6a8a62', '#c9a96e', '#9b8ec4']}
           />
         </div>
       </div>

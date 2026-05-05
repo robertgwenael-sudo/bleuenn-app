@@ -12,7 +12,7 @@ export default function Sidebar({ sections, activeSection, onNav, ctx, mobileOpe
     <nav className={`fixed inset-y-0 left-0 w-64 flex flex-col z-40 transition-transform duration-300
       ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       style={{
-        background: 'linear-gradient(180deg, #2a3f28 0%, #3d5a3a 40%, #4a6547 100%)',
+        background: 'linear-gradient(180deg, #4a6048 0%, #5e7a58 40%, #6a8a65 100%)',
       }}
     >
       {/* Logo & ferme */}

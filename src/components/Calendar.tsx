@@ -100,7 +100,7 @@ function SubtotalRows({ label, plantings, weeks, isGlobal }: {
               {v > 0 ? (
                 <div className="flex flex-col items-center">
                   <span className="text-[0.45rem] font-bold text-feuille leading-none">{v}</span>
-                  <div className="w-[14px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 14)}px`, backgroundColor: '#609c54' }} />
+                  <div className="w-[14px] mt-0.5 rounded-sm" style={{ height: `${Math.max(2, pct * 14)}px`, backgroundColor: '#8ab880' }} />
                 </div>
               ) : (
                 <div className="h-[16px]" />

@@ -51,19 +51,19 @@
   }
   .btn-sage {
     @apply bg-feuille text-white;
-    background: linear-gradient(135deg, #3d5a3a 0%, #5a7a56 100%);
+    background: linear-gradient(135deg, #6a8a62 0%, #8aaa80 100%);
   }
   .btn-sage:hover {
     @apply shadow-md;
-    background: linear-gradient(135deg, #4a6b47 0%, #6b8c67 100%);
+    background: linear-gradient(135deg, #5e7a58 0%, #7a9a72 100%);
     transform: translateY(-1px);
   }
   .btn-rose {
     @apply text-white;
-    background: linear-gradient(135deg, #c77d8a 0%, #d4a0a0 100%);
+    background: linear-gradient(135deg, #cc909a 0%, #d4a8a8 100%);
   }
   .btn-rose:hover {
-    background: linear-gradient(135deg, #b56b78 0%, #c88f8f 100%);
+    background: linear-gradient(135deg, #c08088 0%, #c89898 100%);
     transform: translateY(-1px);
   }
   .btn-blush { @apply bg-rose text-brun hover:bg-rose-dark hover:text-white; }

@@ -4,23 +4,23 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Verts champêtres
-        sage: { DEFAULT: '#6b7f5e', light: '#8fa77d', pale: '#e9efe5', dark: '#4a5c3e' },
-        feuille: { DEFAULT: '#3d5a3a', dark: '#2a3f28', light: '#5a7a56' },
-        // Roses floraux
-        rose: { DEFAULT: '#d4a0a0', light: '#f0d5d5', pale: '#faf0f0', dark: '#b87878', deep: '#9e5e5e' },
-        pivoine: { DEFAULT: '#c77d8a', light: '#e4b3bc', dark: '#a15a67' },
+        // Verts doux champêtres
+        sage: { DEFAULT: '#8a9e7a', light: '#a8bda0', pale: '#eef3eb', dark: '#62785a' },
+        feuille: { DEFAULT: '#5e7a58', dark: '#3f5a3a', light: '#7a9a72' },
+        // Roses floraux doux
+        rose: { DEFAULT: '#d4a8a8', light: '#f0d9d9', pale: '#faf2f2', dark: '#c08888', deep: '#a06868' },
+        pivoine: { DEFAULT: '#cc909a', light: '#e8c0c8', dark: '#a86878' },
         // Neutres chauds
-        lin: { DEFAULT: '#f5f0e8', dark: '#e8dfd3', light: '#faf7f2' },
+        lin: { DEFAULT: '#f7f3ed', dark: '#ece5db', light: '#fbf9f6' },
         ivoire: { DEFAULT: '#fefcf8', dark: '#f5f0e6' },
-        terre: { DEFAULT: '#8b7355', light: '#b09a7d', dark: '#6b5740' },
-        brun: { DEFAULT: '#4a3f35', dark: '#2d2620', light: '#6b5f52' },
+        terre: { DEFAULT: '#9a8872', light: '#b8a894', dark: '#7a6850' },
+        brun: { DEFAULT: '#5a5048', dark: '#3a3230', light: '#7a706a' },
         // Accents
-        or: { DEFAULT: '#c9a96e', light: '#e0cc9f', dark: '#a68840' },
-        lavande: { DEFAULT: '#9b8ec4', light: '#c7bee0', pale: '#eeeaf5' },
+        or: { DEFAULT: '#d4b87a', light: '#e8d8a8', dark: '#b89850' },
+        lavande: { DEFAULT: '#a898c8', light: '#cec4e0', pale: '#f0ecf5' },
         // Anciennes couleurs (backward compat)
-        cream: { DEFAULT: '#faf7f2', dark: '#e8dfd3' },
-        blush: { DEFAULT: '#d4a0a0', light: '#f0d5d5', dark: '#b87878' },
+        cream: { DEFAULT: '#fbf8f4', dark: '#ece5db' },
+        blush: { DEFAULT: '#d4a8a8', light: '#f0d9d9', dark: '#c08888' },
       },
       fontFamily: {
         serif: ['Cormorant Garamond', 'Georgia', 'serif'],

@@ -22,7 +22,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
 
   const channels = ['Marché', 'Fleuriste', 'Abonnements', 'Mariage', 'Deuil']
   const channelCA = channels.map(c => sales.filter(v => v.channel === c).reduce((s, v) => s + (v.total || 0), 0))
-  const channelColors = ['#7a8c6e', '#8b6f5c', '#e8c4b0', '#a3b296', '#c9967a']
+  const channelColors = ['#8a9e7a', '#a08a72', '#e8c4b0', '#a8c0a0', '#c9967a']
   const maxCA = Math.max(...channelCA, 1)
 
   const submit = async () => {

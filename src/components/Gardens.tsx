@@ -250,7 +250,7 @@ function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string; ctx: 
         <div className="h-2 bg-cream-dark rounded-full overflow-hidden">
           <div className="h-full rounded-full transition-all" style={{
             width: `${Math.min(100, (usedM2 / plancheM2) * 100)}%`,
-            backgroundColor: usedM2 / plancheM2 > 0.9 ? '#e57373' : '#7a8c6e'
+            backgroundColor: usedM2 / plancheM2 > 0.9 ? '#e57373' : '#8a9e7a'
           }} />
         </div>
         {planchePlantings.length > 0 && (
@@ -566,7 +566,7 @@ export default function Gardens({ ctx }: { ctx: any }) {
                       <div className="h-1.5 bg-cream-dark rounded-full overflow-hidden mt-1.5 mb-1">
                         <div className="h-full rounded-full transition-all" style={{
                           width: `${Math.min(100, plPct)}%`,
-                          backgroundColor: plPct > 90 ? '#e57373' : '#7a8c6e'
+                          backgroundColor: plPct > 90 ? '#e57373' : '#8a9e7a'
                         }} />
                       </div>
                       {plPlantings.length > 0 && (() => {
