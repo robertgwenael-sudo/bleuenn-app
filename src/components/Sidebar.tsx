@@ -1,4 +1,5 @@
 'use client'
+import TeamPanel from '@/components/TeamPanel'
 
 export default function Sidebar({ sections, activeSection, onNav, ctx, mobileOpen }: {
   sections: readonly { id: string; label: string; icon: string }[]
@@ -48,8 +49,9 @@ export default function Sidebar({ sections, activeSection, onNav, ctx, mobileOpe
         ))}
       </div>
 
-      {/* Pied : saison + déconnexion */}
+      {/* Pied : équipe + saison + déconnexion */}
       <div className="px-6 py-4 border-t border-white/10 space-y-2">
+        <TeamPanel ctx={ctx} />
         {ctx.seasons.length > 0 && (
           <select
             className="w-full px-3 py-2 rounded-btn bg-white/10 text-white/80 text-xs border border-white/10 focus:outline-none focus:border-rose/40"

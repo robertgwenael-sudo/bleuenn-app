@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import type {
   Season, Garden, Planche, CultureCatalog, PlantingFull,
-  Harvest, Sale, SeedOrder, Profile
+  Harvest, Sale, SeedOrder, Profile, TeamMember
 } from '@/lib/types'
 
 const supabase = createClient()
@@ -19,6 +19,7 @@ export function useBleuenn() {
   const [harvests, setHarvests] = useState<Harvest[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [seedOrders, setSeedOrders] = useState<SeedOrder[]>([])
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
 
   // ─── Auth ───────────────────────────────
@@ -53,21 +54,37 @@ export function useBleuenn() {
     if (!user) return
     setLoading(true)
 
-    const [profRes, seasRes, catRes] = await Promise.all([
+    // Charger les saisons via team_members (inclut celles partagées)
+    const [profRes, memberRes, catRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
-      supabase.from('seasons').select('*').eq('user_id', user.id).order('year'),
+      supabase.from('team_members').select('season_id').eq('user_id', user.id),
       supabase.from('culture_catalog').select('*').or(`user_id.is.null,user_id.eq.${user.id}`).order('name'),
     ])
 
     setProfile(profRes.data)
     setCatalog(catRes.data || [])
 
-    const allSeasons = seasRes.data || []
+    const memberSeasonIds = (memberRes.data || []).map((m: any) => m.season_id)
+
+    let allSeasons: Season[] = []
+    if (memberSeasonIds.length > 0) {
+      const { data } = await supabase.from('seasons').select('*').in('id', memberSeasonIds).order('year')
+      allSeasons = data || []
+    }
+    // Fallback : saisons propres (au cas où team_members pas encore peuplé)
+    if (allSeasons.length === 0) {
+      const { data } = await supabase.from('seasons').select('*').eq('user_id', user.id).order('year')
+      allSeasons = data || []
+    }
+
     setSeasons(allSeasons)
     const active = allSeasons.find(s => s.is_active) || allSeasons[0] || null
     setActiveSeason(active)
 
-    if (active) await loadSeasonData(active.id)
+    if (active) {
+      await loadSeasonData(active.id)
+      await loadTeamMembers(active.id)
+    }
     setLoading(false)
   }, [user])
 
@@ -101,7 +118,13 @@ export function useBleuenn() {
     const { data } = await supabase.from('seasons').insert({
       user_id: user.id, name, year, revenue_goal: goal, is_active: true
     }).select().single()
-    if (data) await loadAll()
+    if (data) {
+      // Inscrire le créateur comme owner
+      await supabase.from('team_members').insert({
+        season_id: data.id, user_id: user.id, role: 'owner'
+      })
+      await loadAll()
+    }
     return data
   }
 
@@ -263,6 +286,71 @@ export function useBleuenn() {
     setProfile(prev => prev ? { ...prev, ...updates } : prev)
   }
 
+  // ─── Équipe ───────────────────────────
+  const loadTeamMembers = async (seasonId: string) => {
+    const { data } = await supabase
+      .from('team_members')
+      .select('*, profiles(email, owner_name)')
+      .eq('season_id', seasonId)
+      .order('joined_at')
+    const members: TeamMember[] = (data || []).map((m: any) => ({
+      ...m,
+      email: m.profiles?.email,
+      owner_name: m.profiles?.owner_name,
+    }))
+    setTeamMembers(members)
+  }
+
+  const enableInviteLink = async () => {
+    if (!activeSeason) return null
+    const { data } = await supabase
+      .from('seasons')
+      .update({ invite_enabled: true })
+      .eq('id', activeSeason.id)
+      .select('invite_token')
+      .single()
+    if (data) {
+      setActiveSeason(prev => prev ? { ...prev, invite_enabled: true, invite_token: data.invite_token } : prev)
+    }
+    return data?.invite_token
+  }
+
+  const disableInviteLink = async () => {
+    if (!activeSeason) return
+    await supabase.from('seasons').update({ invite_enabled: false }).eq('id', activeSeason.id)
+    setActiveSeason(prev => prev ? { ...prev, invite_enabled: false } : prev)
+  }
+
+  const regenerateInviteToken = async () => {
+    if (!activeSeason) return null
+    const newToken = crypto.randomUUID()
+    const { data } = await supabase
+      .from('seasons')
+      .update({ invite_token: newToken, invite_enabled: true })
+      .eq('id', activeSeason.id)
+      .select('invite_token')
+      .single()
+    if (data) {
+      setActiveSeason(prev => prev ? { ...prev, invite_token: data.invite_token, invite_enabled: true } : prev)
+    }
+    return data?.invite_token
+  }
+
+  const joinByToken = async (token: string) => {
+    const { data, error } = await supabase.rpc('join_season_by_token', { p_token: token })
+    if (error) return { error: error.message }
+    if (data?.error) return { error: data.error }
+    await loadAll()
+    return { ok: true, seasonId: data.season_id, seasonName: data.season_name }
+  }
+
+  const removeMember = async (memberId: string) => {
+    await supabase.from('team_members').delete().eq('id', memberId)
+    if (activeSeason) await loadTeamMembers(activeSeason.id)
+  }
+
+  const isOwner = teamMembers.some(m => m.user_id === user?.id && m.role === 'owner')
+
   return {
     user, profile, loading,
     signIn, signUp, signOut, updateProfile,
@@ -274,6 +362,9 @@ export function useBleuenn() {
     createHarvest, deleteHarvest,
     createSale, deleteSale,
     upsertSeedOrder, addCulture, updateCulture, deleteCulture,
+    teamMembers, isOwner,
+    enableInviteLink, disableInviteLink, regenerateInviteToken,
+    joinByToken, removeMember,
     reload: loadAll,
   }
 }

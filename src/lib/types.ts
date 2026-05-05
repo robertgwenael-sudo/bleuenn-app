@@ -16,6 +16,18 @@ export interface Season {
   year: number
   revenue_goal: number
   is_active: boolean
+  invite_token?: string
+  invite_enabled?: boolean
+}
+
+export interface TeamMember {
+  id: string
+  season_id: string
+  user_id: string
+  role: 'owner' | 'member'
+  joined_at: string
+  email?: string       // jointure profiles
+  owner_name?: string  // jointure profiles
 }
 
 export interface CultureCatalog {
