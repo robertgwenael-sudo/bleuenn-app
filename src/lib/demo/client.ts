@@ -314,7 +314,7 @@ class DemoQuery implements PromiseLike<Result> {
           // Migration 005 : season_id recopié du parent, line_total généré
           if (t === 'sale_lines' || t === 'order_lines') {
             if ('line_total' in v) return { data: null, error: { code: '428C9', message: 'cannot insert a non-DEFAULT value into column "line_total" (colonne générée)' } }
-            const parent = t === 'sale_lines' ? d.sales.find((x: Row) => x.id === row.sale_id) : d.orders.find((x: Row) => x.id === row.order_id)
+            const parent = t === 'sale_lines' ? d.sales.find((x: Row) => x.id === row.sale_id) : (d as any).orders.find((x: Row) => x.id === row.order_id)
             if (!parent) return { data: null, error: { code: 'P0001', message: `${t === 'sale_lines' ? 'Vente' : 'Commande'} ${row.sale_id ?? row.order_id} introuvable` } }
             row.season_id = parent.season_id
             row.line_total = totalLigneDemo(row)
@@ -422,6 +422,63 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
   const me = currentUser()
   if (!me) return { data: null, error: { message: 'Connexion requise' } }
   const isOwner = (sid: string) => d.team_members.some(m => m.season_id === sid && m.user_id === me.id && m.role === 'owner')
+
+  // ─── Écritures atomiques (migration 007), rejouées avec les règles de la démo ──
+  const q = (t: string) => new DemoQuery(t) as any
+  const lignes = (sid: string, key: 'sale_id' | 'order_id', arr: Row[]) => (arr ?? []).map(l => ({
+    [key]: sid, culture_id: l.culture_id ?? null, label: l.label, unit: l.unit ?? 'tige',
+    quantity: l.quantity, stems_per_unit: l.stems_per_unit ?? 1, unit_price: l.unit_price,
+  }))
+  const venteAvecLignes = async (v: Row, arr: Row[]): Promise<Result> => {
+    if (!arr?.length) return { data: null, error: { message: 'Une vente doit avoir au moins une ligne' } }
+    const r = await q('sales').insert({
+      season_id: v.season_id, user_id: me.id, date: v.date, channel: v.channel, client_id: v.client_id || null,
+      client: v.client ?? null, notes: v.notes ?? null, order_id: v.order_id || null, tiges: 0, prix_unitaire: 0,
+    }).select().single()
+    if (r.error) return r
+    const r2 = await q('sale_lines').insert(lignes(r.data.id, 'sale_id', arr))
+    if (r2.error) { await q('sales').delete().eq('id', r.data.id); return r2 }
+    return { data: r.data.id, error: null }
+  }
+  if (fn === 'enregistrer_vente') return venteAvecLignes(args.p_sale, args.p_lines)
+  if (fn === 'enregistrer_commande') {
+    const o = args.p_order as Row
+    let id = args.p_order_id as string | null
+    if (!id) {
+      const r = await q('orders').insert({ ...o, status: o.status ?? 'confirmee' }).select().single()
+      if (r.error) return r
+      id = r.data.id
+    } else {
+      const cur = (d as any).orders.find((x: Row) => x.id === id)
+      if (!cur || cur.status === 'livree') return { data: null, error: { message: 'Commande introuvable, inaccessible ou déjà livrée' } }
+      const { season_id: _s, ...maj } = o
+      const r = await q('orders').update(maj).eq('id', id)
+      if (r.error) return r
+      await q('order_lines').delete().eq('order_id', id)
+    }
+    if (args.p_lines?.length) {
+      const r = await q('order_lines').insert(lignes(id!, 'order_id', args.p_lines))
+      if (r.error) return r
+    }
+    return { data: id, error: null }
+  }
+  if (fn === 'livrer_commande') {
+    const o = (d as any).orders.find((x: Row) => x.id === args.p_order_id)
+    if (!o) return { data: null, error: { message: 'Commande introuvable ou inaccessible' } }
+    if (o.sale_id || o.status === 'livree') return { data: null, error: { message: 'Commande déjà livrée et facturée' } }
+    if (o.status === 'annulee') return { data: null, error: { message: 'Commande annulée' } }
+    const r = await venteAvecLignes({ ...args.p_sale, season_id: o.season_id, order_id: o.id, client_id: args.p_sale?.client_id ?? o.client_id }, args.p_lines)
+    if (r.error) return r
+    await q('orders').update({ sale_id: r.data, status: 'livree' }).eq('id', o.id)
+    return r
+  }
+  if (fn === 'supprimer_vente') {
+    const o = (d as any).orders.find((x: Row) => x.sale_id === args.p_sale_id)
+    if (o) await q('orders').update({ status: 'prete', sale_id: null }).eq('id', o.id)
+    const r = await q('sales').delete().eq('id', args.p_sale_id)
+    if (r.error) return r
+    return { data: o?.id ?? null, error: null }
+  }
 
   if (fn === 'season_team') {
     const sid = args.p_season_id

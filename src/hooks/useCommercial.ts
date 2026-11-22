@@ -153,33 +153,30 @@ export function useCommercial(ctx: CtxCommercial) {
   }
 
   // ─── Commandes ───────────────────────────────────────────
-  const insererLignesCommande = async (orderId: string, lignes: LigneVenteAInserer[]) => {
-    if (lignes.length === 0) return
-    ok(await supabase.from('order_lines').insert(lignes.map(l => ({ ...l, order_id: orderId }))) as Res<null>, 'enregistrement des lignes de commande')
-  }
+  // Écritures atomiques côté base (migration 007) : en-tête et lignes passent
+  // ensemble ou pas du tout, plus de suppression de secours depuis le navigateur.
+  const lignesJson = (lignes: LigneVenteAInserer[]) => lignes.map(l => ({
+    culture_id: l.culture_id ?? null, label: l.label, unit: l.unit, quantity: l.quantity,
+    stems_per_unit: l.stems_per_unit, unit_price: l.unit_price,
+  }))
 
   const createOrder = async (v: CommandeSaisie, lignes: LigneVenteAInserer[]) => {
     const { seasonId: sid } = exigerSaison()
-    const r = await supabase.from('orders').insert({ ...v, season_id: sid }).select().single()
-    const o = ok<Order>(r as Res<Order>, 'création de la commande')
     try {
-      await insererLignesCommande(o.id, lignes)
-    } catch (e) {
-      // Pas de commande vide laissée derrière une erreur
-      await supabase.from('orders').delete().eq('id', o.id)
-      throw e
+      const id = ok<string>(await supabase.rpc('enregistrer_commande', {
+        p_order_id: null, p_order: { ...v, season_id: sid }, p_lines: lignesJson(lignes),
+      }) as Res<string>, 'création de la commande')
+      return { ...v, id, season_id: sid } as unknown as Order
     } finally {
       await load()
     }
-    return o
   }
 
-  /** Remplace l'en-tête et les lignes (lignes supprimées puis réinsérées). */
+  /** Remplace l'en-tête et les lignes, d'un bloc. */
   const updateOrder = async (id: string, v: CommandeSaisie, lignes: LigneVenteAInserer[]) => {
     try {
-      ok(await supabase.from('orders').update(v).eq('id', id) as Res<null>, 'modification de la commande')
-      ok(await supabase.from('order_lines').delete().eq('order_id', id) as Res<null>, 'remplacement des lignes de commande')
-      await insererLignesCommande(id, lignes)
+      ok(await supabase.rpc('enregistrer_commande', { p_order_id: id, p_order: v, p_lines: lignesJson(lignes) }) as Res<string>,
+        'modification de la commande')
     } finally {
       await load()
     }
@@ -201,67 +198,51 @@ export function useCommercial(ctx: CtxCommercial) {
   }
 
   /**
-   * « Livrer et facturer » : la vente, puis ses lignes avec le `sale_id`,
-   * puis la commande (sale_id, livrée). Si une étape échoue après la
-   * création de la vente, la vente est retirée : pas de vente orpheline
-   * ni de commande facturée deux fois.
+   * « Livrer et facturer » : vente, lignes et commande soldée en une seule
+   * transaction (livrer_commande). La base verrouille la commande : un double
+   * clic ou deux téléphones ne peuvent pas facturer deux fois.
    */
   const livrerEtFacturer = async (order: Order, opts: { date: string; canal?: SaleChannel }) => {
     const { userId: uid } = exigerSaison()
     const client = order.client_id ? clientsParId.get(order.client_id) ?? null : null
     const lignes = lignesParCommande.get(order.id) ?? []
     const prep = commandeVersVente({ order, lignes, userId: uid, client, date: opts.date, canal: opts.canal })
-    const r = await supabase.from('sales').insert(prep.vente).select().single()
-    const vente = ok<Sale>(r as Res<Sale>, 'création de la vente')
     try {
-      ok(await supabase.from('sale_lines').insert(prep.lignes.map(l => ({ ...l, sale_id: vente.id }))) as Res<null>, 'enregistrement des lignes de vente')
-      ok(await supabase.from('orders').update({ sale_id: vente.id, status: 'livree' }).eq('id', order.id) as Res<null>, 'passage de la commande en livrée')
-    } catch (e) {
-      const annul = await supabase.from('sales').delete().eq('id', vente.id)
-      if (annul.error) {
-        console.error('[commercial] vente orpheline à supprimer à la main', vente.id, annul.error)
-        toast.error('Vente créée sans commande soldée', { description: 'Supprimez-la dans Ventes avant de réessayer.' })
-      }
-      throw e
+      const id = ok<string>(await supabase.rpc('livrer_commande', {
+        p_order_id: order.id,
+        p_sale: { date: prep.vente.date, channel: prep.vente.channel, client: prep.vente.client, notes: prep.vente.notes },
+        p_lines: lignesJson(prep.lignes),
+      }) as Res<string>, 'livraison et facturation')
+      return { vente: { ...prep.vente, id } as unknown as Sale, total_centimes: prep.total_centimes }
     } finally {
       marquerPerime()
       await load()
     }
-    return { vente, total_centimes: prep.total_centimes }
   }
 
   // ─── Ventes ──────────────────────────────────────────────
   const createSale = async (v: VenteSaisie, lignes: LigneVenteAInserer[]) => {
-    const { seasonId: sid, userId: uid } = exigerSaison()
+    const { seasonId: sid } = exigerSaison()
     if (lignes.length === 0) throw new Error('Vente sans ligne')
     const t = totauxLignes(lignes)
     const client = v.client_id ? clientsParId.get(v.client_id) : undefined
-    const r = await supabase.from('sales').insert({
-      season_id: sid, user_id: uid, date: v.date, channel: v.channel,
-      client_id: v.client_id, client: client?.name ?? null, notes: v.notes,
-      // Indicatifs : recalculés par sale_recompute() à l'insertion des lignes
-      tiges: t.tiges, prix_unitaire: t.prix_moyen_tige_centimes === null ? 0 : centimesEnEuros(t.prix_moyen_tige_centimes),
-      cultures_sold: t.libelles,
-    }).select().single()
-    const vente = ok<Sale>(r as Res<Sale>, 'création de la vente')
     try {
-      ok(await supabase.from('sale_lines').insert(lignes.map(l => ({ ...l, sale_id: vente.id }))) as Res<null>, 'enregistrement des lignes de vente')
-    } catch (e) {
-      await supabase.from('sales').delete().eq('id', vente.id)
-      throw e
+      const id = ok<string>(await supabase.rpc('enregistrer_vente', {
+        p_sale: { season_id: sid, date: v.date, channel: v.channel, client_id: v.client_id, client: client?.name ?? null, notes: v.notes },
+        p_lines: lignesJson(lignes),
+      }) as Res<string>, 'création de la vente')
+      return { vente: { id, season_id: sid, ...v } as unknown as Sale, total_centimes: t.total_centimes }
     } finally {
       marquerPerime()
       await load()
     }
-    return { vente, total_centimes: t.total_centimes }
   }
 
   const deleteSale = async (id: string) => {
     const commande = orders.find(o => o.sale_id === id)
     try {
-      ok(await supabase.from('sales').delete().eq('id', id) as Res<null>, 'suppression de la vente')
-      // La commande soldée par cette vente redevient « prête » (sale_id remis à null par la base)
-      if (commande) ok(await supabase.from('orders').update({ status: 'prete', sale_id: null }).eq('id', commande.id) as Res<null>, 'retour de la commande en « prête »')
+      // La commande soldée par cette vente redevient « prête » dans la même transaction
+      ok(await supabase.rpc('supprimer_vente', { p_sale_id: id }) as Res<string | null>, 'suppression de la vente')
     } finally {
       marquerPerime()
       await load()

@@ -183,16 +183,20 @@ export interface SeedOrder {
 // Helpers
 export type PlantingStatus = 'À semer' | 'En germination' | 'Planté' | 'En récolte' | 'Terminé'
 
-export function getPlantingStatus(p: PlantingFull): PlantingStatus {
-  const now = new Date()
-  const ds = new Date(p.date_semis + 'T00:00:00')
-  const dp = new Date(p.date_plantation + 'T00:00:00')
-  const dr = new Date(p.date_recolte + 'T00:00:00')
-  const df = new Date(p.date_fin + 'T00:00:00')
-  if (now < ds) return 'À semer'
-  if (now >= ds && now < dp && p.jours_cellule > 0) return 'En germination'
-  if (now >= dp && now < dr) return 'Planté'
-  if (now >= dr && now <= df) return 'En récolte'
+/** Date du jour à Paris, `YYYY-MM-DD` (l'appareil peut être dans un autre fuseau). */
+export function aujourdhuiParisISO(): string {
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date())
+}
+
+/**
+ * Statut d'une plantation au jour donné (Paris par défaut). Comparaison de
+ * dates civiles `YYYY-MM-DD` : pas de décalage de fuseau, fin de récolte incluse.
+ */
+export function getPlantingStatus(p: PlantingFull, jour: string = aujourdhuiParisISO()): PlantingStatus {
+  if (jour < p.date_semis) return 'À semer'
+  if (jour < p.date_plantation && p.jours_cellule > 0) return 'En germination'
+  if (jour < p.date_recolte) return 'Planté'
+  if (jour <= p.date_fin) return 'En récolte'
   return 'Terminé'
 }
 
