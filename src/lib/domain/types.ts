@@ -865,3 +865,35 @@ export interface CommandeFigee {
 // ============================================================
 // TVA (014) : FIN DE SECTION
 // ============================================================
+// Saisons civiles (migration 016)
+// ============================================================
+// Une saison = une année civile. Bornes générées par la base à partir de
+// `year` (facultatives : absentes tant que 016 n'est pas appliquée).
+export interface Season {
+  /** 1er janvier de `year` (colonne générée, 016). */
+  date_debut?: DateISO | null
+  /** 31 décembre de `year` (colonne générée, 016). */
+  date_fin?: DateISO | null
+  /** Nom avant 016 (« Saison 2 — 2026 ») quand il différait de l'année. */
+  nom_initial?: string | null
+}
+
+/** Ligne de `plantations_hors_annee_de_recolte(ferme)` (016). */
+export interface PlantationHorsAnnee {
+  planting_id: string
+  culture_name: string
+  date_recolte: DateISO
+  saison_actuelle: string
+  annee_actuelle: number
+  saison_cible: string | null
+  annee_cible: number
+}
+
+/** Résultat de `reprendre_plan_dans_saison(source, cible, décalage)` (016). */
+export interface ResultatReprise {
+  copiees: number
+  vivaces_en_place: number
+  deja_prevues: number
+  hors_annee: number
+}
+// ============================ fin 016 ========================

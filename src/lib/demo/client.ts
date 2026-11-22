@@ -19,6 +19,7 @@ import { OBJETS_JOURNAL_DEMO } from './seeds/journal'
 import { emettreAvoirDemo, emettreFactureDemo, enregistrerPaiementDemo, invoicesStatusDemo, refusFacturesDemo } from './seeds/factures'
 import { rpcAchatsDemo, refusSuppressionAchats } from './seeds/achats'
 import { ligneSetTvaDemo, numeroCommandeDemo, venteSetTotauxDemo } from './seeds/tva'
+import { bornesSaisonDemo, refusSaisonEnDouble, repriseApresDuplication, rpcSaisonsDemo, type OutilsDemo } from './seeds/saisons'
 import { aujourdhuiParisISO } from '../types'
 import { calculerProduction, tauxDeLaFerme, type Calcul } from '../domain/production'
 import {
@@ -180,6 +181,11 @@ function plantingsFull(): Row[] {
     })
   }
   return out
+}
+
+/** Outils de la démo passés aux fonctions de 016 (seeds/saisons.ts). */
+function outilsSaisons(): OutilsDemo {
+  return { plantingsFull, calcPlanting, uuid, aujourdhui: aujourdhuiParisISO() }
 }
 
 // ─── Vue planting_actuals (migration 005) : réel cumulé par plantation ──
@@ -556,7 +562,12 @@ class DemoQuery implements PromiseLike<Result> {
           if (errJournal) return { data: null, error: errJournal }
           const errGestion = gestionAvantEcriture(d, t, row, null, currentUser()?.id ?? null)  // triggers 012
           if (errGestion) return { data: null, error: errGestion }
-          if (t === 'seasons') row.invite_token ??= uuid()
+          if (t === 'seasons') {
+            row.invite_token ??= uuid()
+            bornesSaisonDemo(row)                       // colonnes générées (016)
+            const doublon = refusSaisonEnDouble(d.seasons, row)  // trigger season_une_par_annee (016)
+            if (doublon) return { data: null, error: doublon }
+          }
           if (t === 'team_members') row.joined_at ??= new Date().toISOString()
           if (t === 'suppliers') {
             row.created_by ??= currentUser()?.id ?? null
@@ -745,6 +756,8 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
   if (fn === 'enregistrer_vente') return venteAvecLignes(args.p_sale, args.p_lines)
   const rpc012 = await rpcGestionDemo(fn, args, d as any, me.id, q)  // migration 012
   if (rpc012) return rpc012
+  const rpc016 = rpcSaisonsDemo(fn, args, d, isOwner, outilsSaisons())  // migration 016
+  if (rpc016) return rpc016
   if (fn === 'enregistrer_commande') {
     const o = args.p_order as Row
     let id = args.p_order_id as string | null
@@ -856,24 +869,16 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
     const shift = Number(args.p_shift_years ?? 1)
     const now = new Date().toISOString()
     const nid = uuid()
-    d.seasons.push({ id: nid, user_id: me.id, farm_id: src.farm_id, name: args.p_name, year: Number(args.p_year),
+    const nouvelle = bornesSaisonDemo({ id: nid, user_id: me.id, farm_id: src.farm_id, name: args.p_name, year: Number(args.p_year),
       revenue_goal: src.revenue_goal, is_active: false, invite_token: uuid(), invite_enabled: false, created_at: now })
+    const doublon = refusSaisonEnDouble(d.seasons, nouvelle)  // trigger season_une_par_annee (016)
+    if (doublon) return { data: null, error: doublon }
+    d.seasons.push(nouvelle)
     for (const m of fms().filter(x => x.farm_id === src.farm_id))
       d.team_members.push({ id: uuid(), season_id: nid, user_id: m.user_id, role: m.role, joined_at: now })
-    // make_interval(years => n) : un 29 février devient un 28 février
-    const shiftDate = (ds: string) => {
-      const [y, mo, j] = ds.split('-').map(Number)
-      const ny = y + shift
-      const last = new Date(Date.UTC(ny, mo, 0)).getUTCDate()
-      return `${String(ny).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(Math.min(j, last)).padStart(2, '0')}`
-    }
-    // 013 : une vivace en place ne se replante pas
-    const vivace = (p: Row) => d.culture_catalog.find(c => c.id === p.culture_id)?.cycle === 'vivace'
-    for (const p of d.plantings.filter(x => x.season_id === src.id && !vivace(x))) {
-      const row: Row = { ...p, id: uuid(), season_id: nid, date_semis: shiftDate(p.date_semis), created_at: now }
-      calcPlanting(row)
-      d.plantings.push(row)
-    }
+    // 016 : mêmes exclusions que reprendre_plan_dans_saison (vivaces en place, hors année, déjà prévues)
+    const r = repriseApresDuplication(d, outilsSaisons(), src.id, nid, shift)
+    if (r.error) { d.seasons.splice(d.seasons.indexOf(nouvelle), 1); return r }
     return { data: nid, error: null }
   }
   if (fn === 'join_season_by_token') {

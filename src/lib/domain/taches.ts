@@ -127,12 +127,20 @@ function depuisStockee(t: StoredTask): Tache {
  *  * une tâche libre (auto_key null) est ajoutée telle quelle ;
  *  * une ligne à auto_key sans tâche générée correspondante (hors période,
  *    ou plan modifié) est ignorée — `lignesOrphelines` la retrouve.
+ *  * l'auto_key contient l'id de la plantation : si la plantation a changé
+ *    de saison (rattachement à l'année de récolte, migration 016), la ligne
+ *    de l'ancienne saison est reprise faute de ligne dans la nouvelle, pour
+ *    qu'une tâche faite ne réapparaisse pas « à faire ».
  */
 export function fusionnerTaches(generees: Tache[], stockees: StoredTask[]): Tache[] {
   const parCle = new Map<string, StoredTask>()
-  for (const s of stockees) if (s.auto_key) parCle.set(`${s.season_id}|${s.auto_key}`, s)
+  const parAutoKey = new Map<string, StoredTask>()
+  for (const s of stockees) if (s.auto_key) {
+    parCle.set(`${s.season_id}|${s.auto_key}`, s)
+    if (!parAutoKey.has(s.auto_key)) parAutoKey.set(s.auto_key, s)
+  }
   const fusion = generees.map(g => {
-    const s = g.auto_key ? parCle.get(`${g.season_id}|${g.auto_key}`) : undefined
+    const s = g.auto_key ? (parCle.get(`${g.season_id}|${g.auto_key}`) ?? parAutoKey.get(g.auto_key)) : undefined
     if (!s) return g
     return {
       ...g, task_id: s.id, fait: s.done_at !== null, done_at: s.done_at, done_by: s.done_by,
@@ -145,8 +153,9 @@ export function fusionnerTaches(generees: Tache[], stockees: StoredTask[]): Tach
 
 /** Lignes à auto_key qui ne correspondent à aucune tâche générée sur toute la durée du plan. */
 export function lignesOrphelines(plantings: PlantingTaches[], stockees: StoredTask[]): StoredTask[] {
-  const cles = new Set(plantings.flatMap(tachesDUnePlantation).map(t => `${t.season_id}|${t.auto_key}`))
-  return stockees.filter(s => s.auto_key && !cles.has(`${s.season_id}|${s.auto_key}`))
+  // auto_key = '<kind>:<planting_id>' : unique sur la ferme, quelle que soit la saison
+  const cles = new Set(plantings.flatMap(tachesDUnePlantation).map(t => t.auto_key))
+  return stockees.filter(s => s.auto_key && !cles.has(s.auto_key))
 }
 
 export function trierTaches(taches: Tache[]): Tache[] {

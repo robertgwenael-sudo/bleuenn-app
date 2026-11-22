@@ -83,7 +83,7 @@ test('fiche fournisseur et page d’impression du bon', async ({ page }) => {
   await page.getByRole('button', { name: /^Semencerie de Kerlann/ }).click()
   const fiche = page.getByRole('dialog', { name: /Semencerie de Kerlann/ })
   await expect(fiche.getByRole('link', { name: 'commandes@kerlann-semences.exemple' })).toHaveAttribute('href', 'mailto:commandes@kerlann-semences.exemple')
-  await expect(fiche).toContainText('Saison 2025')
+  await expect(fiche).toContainText('2025') // 016 : la saison porte le nom de son année
   await fiche.getByRole('link', { name: 'Imprimer BC-2025-007' }).click()
 
   await expect(page.getByRole('heading', { name: 'Bon de commande', level: 1 })).toBeVisible()

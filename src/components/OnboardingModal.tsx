@@ -10,7 +10,7 @@ export default function OnboardingModal({ ctx, onClose }: { ctx: any; onClose: (
   const [farmName, setFarmName] = useState('Bleuenn')
   const [ownerName, setOwnerName] = useState('')
   const anneeCourante = Number((ctx.today || new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date())).slice(0, 4))
-  const [seasonName, setSeasonName] = useState(`Saison ${anneeCourante}`)
+  const [seasonName, setSeasonName] = useState(String(anneeCourante))
   const [year, setYear] = useState(anneeCourante)
   const [goal, setGoal] = useState(15000)
   const [loading, setLoading] = useState(false)
@@ -35,7 +35,7 @@ export default function OnboardingModal({ ctx, onClose }: { ctx: any; onClose: (
       <p className="mt-2 text-sm text-fg-muted">
         {step === 1
           ? 'Votre ferme est permanente : ses jardins, ses planches et son équipe restent d’une saison à l’autre.'
-          : 'La saison sert au suivi (objectif de chiffre d’affaires, bilan). Composez ensuite vos jardins et planches : le calendrier se calculera à partir des dates de semis.'}
+          : 'Une saison est une année civile, du 1er janvier au 31 décembre ; elle sert au suivi (objectif de chiffre d’affaires, bilan). Une plantation est rangée dans la saison de sa première récolte. Composez ensuite vos jardins et planches : le calendrier se calculera à partir des dates de semis.'}
       </p>
 
       {step === 1 && (
@@ -50,7 +50,7 @@ export default function OnboardingModal({ ctx, onClose }: { ctx: any; onClose: (
         <form className="mt-7 space-y-5" onSubmit={e => { e.preventDefault(); handleFinish() }}>
           <Field label="Nom de la saison"><Input className="h-11" value={seasonName} onChange={e => setSeasonName(e.target.value)} /></Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Année"><Input className="h-11" type="number" inputMode="numeric" value={year} onChange={e => setYear(+e.target.value)} /></Field>
+            <Field label="Année civile"><Input className="h-11" type="number" inputMode="numeric" value={year} onChange={e => setYear(+e.target.value)} /></Field>
             <Field label="Objectif CA (€)"><Input className="h-11" type="number" inputMode="numeric" value={goal} onChange={e => setGoal(+e.target.value)} /></Field>
           </div>
           <div className="flex gap-3 pt-1">

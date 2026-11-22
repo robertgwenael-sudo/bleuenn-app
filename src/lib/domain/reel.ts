@@ -11,18 +11,21 @@
 // qu'une répartition inventée.
 // ============================================================
 
-import { ajouterJours, cleSemaine, dansIntervalle, joursEntre, lundiDeSemaine, type Intervalle } from './dates'
-import { produitCentimes, repartirEntier } from './montants'
+import { ajouterJours, cleSemaine, dansIntervalle, ecartJours, joursEntre, lundiDeSemaine, type Intervalle } from './dates'
+import { eurosEnCentimes, produitCentimes, repartirEntier } from './montants'
 import { montantLigne, totalVente, type VenteCalcul } from './ventes'
 import type {
-  Centimes, CultureType, DateISO, HarvestLite, Loss, LossReason, PlantingActual, PlantingFull,
+  Centimes, CultureType, DateISO, EurosNumeric, HarvestLite, Loss, LossReason, PlantingActual, PlantingFull,
 } from './types'
 import { LOSS_REASONS } from './types'
 
 export type PlantingReel = Pick<PlantingFull,
   'id' | 'culture_id' | 'culture_name' | 'culture_type' | 'garden_id' | 'garden_name'
   | 'date_recolte' | 'date_fin' | 'tiges_estimees' | 'prix_tige'
-> & Partial<Pick<PlantingFull, 'planche_name' | 'season_id'>>
+> & Partial<Pick<PlantingFull, 'planche_name' | 'season_id'>> & {
+  /** Revenu estimé calculé en base (trigger) ; s'il est là, il fait foi pour le CA prévu. */
+  revenu_estime?: EurosNumeric | null
+}
 
 export type LossLite = Pick<Loss, 'planting_id' | 'culture_id' | 'date' | 'tiges' | 'reason'>
 
@@ -30,8 +33,8 @@ export type LossLite = Pick<Loss, 'planting_id' | 'culture_id' | 'date' | 'tiges
 // Répartition du prévu dans le temps
 // ------------------------------------------------------------
 /**
- * Répartition des tiges estimées d'une plantation sur ses jours de récolte,
- * selon le type de culture. CHOIX DISCUTABLE, à faire valider :
+ * Jours de récolte d'une plantation selon le type de culture (la
+ * répartition par semaine, elle, passe par `semainesDeRecoltePrevues`) :
  *
  *  * RR (récolte répétitive : cosmos, zinnia, dahlia…) : production étalée
  *    UNIFORMÉMENT sur toute la période [date_recolte, date_fin]. En réalité
@@ -72,17 +75,86 @@ export interface PrevuSemaine {
   tiges: number
 }
 
+/**
+ * Semaines de récolte prévues d'une plantation (règle validée par Marine,
+ * 22/11/2026, celle de son tableur : « tiges vendues par semaine = tiges
+ * nettes / nombre de semaines de récolte ») :
+ *  * nombre de semaines = ARRONDI SUPÉRIEUR de jours de récolte / 7 (au
+ *    moins une), jours de récolte = date_fin − date_recolte ;
+ *  * semaines ISO consécutives à partir de celle de date_recolte, DATÉES :
+ *    une récolte à cheval sur le 1er janvier garde décembre puis janvier ;
+ *  * puis la règle de type ci-dessus sur ces semaines : RR toutes, MP la
+ *    première moitié (arrondie au supérieur), RU la première.
+ * Chaque semaine retenue pèse autant ; `repartirEntier` fait tomber la somme
+ * exactement sur les tiges nettes et sur le revenu.
+ */
+export function semainesDeRecoltePrevues(p: Pick<PlantingReel, 'culture_type' | 'date_recolte' | 'date_fin'>): DateISO[] {
+  const jours = Math.max(0, ecartJours(p.date_recolte, p.date_fin))
+  const n = Math.max(1, Math.ceil(jours / 7))
+  const premier = lundiDeSemaine(p.date_recolte)
+  return selonType(p.culture_type, Array.from({ length: n }, (_, i) => ajouterJours(premier, 7 * i)))
+}
+
+/** Poids des semaines de récolte (une part égale chacune), pour `repartirEntier`. */
+export function joursDeRecolteParSemaine(p: Pick<PlantingReel, 'culture_type' | 'date_recolte' | 'date_fin'>): { lundi: DateISO; jours: number }[] {
+  return semainesDeRecoltePrevues(p).map(lundi => ({ lundi, jours: 1 }))
+}
+
 /** Tiges prévues d'une plantation, par semaine ISO (lundi). */
 export function repartitionPrevue(p: PlantingReel): PrevuSemaine[] {
-  const jours = joursDeRecoltePrevus(p)
-  const parSemaine = new Map<DateISO, number>()
-  for (const j of jours) {
-    const l = lundiDeSemaine(j)
-    parSemaine.set(l, (parSemaine.get(l) ?? 0) + 1)
+  const semaines = joursDeRecolteParSemaine(p)
+  const parts = repartirEntier(tigesEstimees(p), semaines.map(s => s.jours))
+  return semaines.map((s, i) => ({ lundi: s.lundi, tiges: parts[i] }))
+}
+
+export interface PrevuSemaineValorise extends PrevuSemaine {
+  centimes: Centimes
+}
+
+/**
+ * Tiges ET chiffre d'affaires prévus d'une plantation, par semaine, en
+ * centimes entiers. Le CA total (`caTotal`, en général le revenu estimé de
+ * la plantation) est réparti avec les mêmes poids que les tiges, par plus
+ * forts restes : la somme des semaines retombe exactement sur `caTotal`.
+ */
+export function repartitionPrevueValorisee(p: PlantingReel, caTotal: Centimes): PrevuSemaineValorise[] {
+  const semaines = joursDeRecolteParSemaine(p)
+  const poids = semaines.map(s => s.jours)
+  const tiges = repartirEntier(tigesEstimees(p), poids)
+  const centimes = repartirEntier(caTotal, poids)
+  return semaines.map((s, i) => ({ lundi: s.lundi, tiges: tiges[i], centimes: centimes[i] }))
+}
+
+/**
+ * CA prévu d'une plantation en centimes : son revenu estimé (calculé en
+ * base) s'il est renseigné, sinon tiges estimées × prix à la tige. Lève une
+ * erreur si aucun des deux n'est calculable (jamais de 0 € silencieux).
+ * Source unique du CA prévu pour Analytique, Prévu/réel et Disponibilités.
+ */
+export function caPrevuPlantation(p: PlantingReel): Centimes {
+  if (p.revenu_estime !== null && p.revenu_estime !== undefined && p.revenu_estime !== '') return eurosEnCentimes(p.revenu_estime)
+  if (p.prix_tige === null || p.prix_tige === undefined || (p.prix_tige as unknown) === '') {
+    throw new Error(`${p.culture_name} : prix à la tige manquant, CA non calculable`)
   }
-  const lundis = Array.from(parSemaine.keys()).sort()
-  const parts = repartirEntier(tigesEstimees(p), lundis.map(l => parSemaine.get(l) ?? 0))
-  return lundis.map((lundi, i) => ({ lundi, tiges: parts[i] }))
+  return caPrevu(tigesEstimees(p), p.prix_tige)
+}
+
+/**
+ * Tiges prévues par semaine sur une liste de lundis (même ordre), toutes
+ * plantations confondues ; une plantation sans dates ou sans tiges
+ * estimées est ignorée ici et doit être signalée par l'écran.
+ */
+export function tigesPrevuesParSemaine(plantings: PlantingReel[], lundis: DateISO[]): number[] {
+  const index = new Map(lundis.map((l, i) => [l, i]))
+  const out = lundis.map(() => 0)
+  for (const p of plantings) {
+    if (!p.date_recolte || !p.date_fin || !Number.isFinite(Number(p.tiges_estimees))) continue
+    for (const s of repartitionPrevue(p)) {
+      const i = index.get(s.lundi)
+      if (i !== undefined) out[i] += s.tiges
+    }
+  }
+  return out
 }
 
 /** CA prévu en centimes : tiges × prix à la tige. */
@@ -132,7 +204,7 @@ export function reelParPlantation(plantings: PlantingReel[], actuals: PlantingAc
     return {
       planting_id: p.id, culture_id: p.culture_id, culture_name: p.culture_name,
       garden_id: p.garden_id, garden_name: p.garden_name, planche_name: p.planche_name ?? null,
-      ...bilan(est, a?.tiges_recoltees ?? 0, a?.tiges_perdues ?? 0, caPrevu(est, p.prix_tige), null),
+      ...bilan(est, a?.tiges_recoltees ?? 0, a?.tiges_perdues ?? 0, caPrevuPlantation(p), null),
     }
   })
 }
@@ -220,10 +292,11 @@ export function reelParSemaine(args: {
     return a
   }
   for (const p of args.plantings) {
-    for (const s of repartitionPrevue(p)) {
+    // CA réparti comme les tiges : la somme des semaines retombe sur le revenu estimé
+    for (const s of repartitionPrevueValorisee(p, caPrevuPlantation(p))) {
       const a = acc(s.lundi)
       a.prevu += s.tiges
-      a.caP += caPrevu(s.tiges, p.prix_tige)
+      a.caP += s.centimes
     }
   }
   for (const h of args.recoltes) acc(h.date).rec += h.tiges

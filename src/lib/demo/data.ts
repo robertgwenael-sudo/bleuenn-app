@@ -143,7 +143,7 @@ export function buildDemoDb() {
     // Vivaces en place depuis 2025 : achillée (fleurit chaque juin), ancolie (chaque mai)
     [3, 0, 'Achillée', '2025-06-01', 5], [3, 0, 'Feuillage de menthe', '2026-04-01', 5],
     [3, 2, 'Ancolie', '2025-05-15', 4],
-    [3, 1, 'Eucalyptus', '2026-02-05', 10],
+    [3, 1, 'Eucalyptus', '2026-02-05', 8],  // 2 m² laissés à la pivoine vivace (seed saisons)
     [3, 2, 'Scabieuse', '2026-04-12', 4], [3, 2, 'Bleuet', '2026-10-12', 4],
     [3, 3, 'Dahlia', '2026-04-01', 8],
     [3, 4, 'Cosmos', '2026-06-01', 4], [3, 4, 'Zinnia', '2026-06-10', 4],

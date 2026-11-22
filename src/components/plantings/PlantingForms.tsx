@@ -13,6 +13,8 @@ import { CycleBadge } from './Cycle'
 // 015 : capacité des tables de semis, alerte non bloquante
 import { useControlePepiniere } from '@/hooks/useControlePepiniere'
 import { AlertePepiniere } from '@/components/semis/AlertePepiniere'
+// 016 : saison proposée = année de la première récolte, modifiable
+import { ChoixSaison } from '@/components/saisons/ChoixSaison'
 
 // ─── Vérification d'occupation (toutes saisons, par dates) ──────────
 // Le calcul vient du domaine (`conflitsSiAjout`, `libreAPartirDu`) et porte
@@ -322,7 +324,8 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
 // surface et sa date (pré-remplies : surface libre restante, date tirée de
 // la 1ère implantation possible). Les conflits avertissent sans bloquer,
 // en comptant aussi les autres cultures cochées. Une seule écriture.
-type Ligne = { cultureId: string; dateSemis: string; surface: number; achatPlant: boolean }
+// seasonId vide = saison de l'année de la première récolte (016)
+type Ligne = { cultureId: string; dateSemis: string; surface: number; achatPlant: boolean; seasonId: string }
 const projetId = (cultureId: string) => `projet:${cultureId}`
 const arrondiDemiM2 = (x: number) => Math.floor(x * 2) / 2
 
@@ -353,7 +356,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
     if (lignes.some(l => l.cultureId === c.id)) { setLignes(prev => prev.filter(l => l.cultureId !== c.id)); return }
     const dateSemis = dateSuggeree(c, today)
     // Surface libre sur la période de cette culture, déduction faite des autres cultures cochées
-    const brouillon: Ligne = { cultureId: c.id, dateSemis, surface: 1, achatPlant: false }
+    const brouillon: Ligne = { cultureId: c.id, dateSemis, surface: 1, achatPlant: false, seasonId: '' }
     const pic = verifierOccupation(ctx, plancheId, projetDe(brouillon),
       lignes.map(occupationDe).filter((x): x is PlantingOccupation => x !== null)).picAutres
     const libre = arrondiDemiM2(planche.plancheM2 - pic)
@@ -375,6 +378,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
     setLoading(true)
     const n = await ctx.createPlantings(plancheId, lignes.map(l => ({
       culture_id: l.cultureId, date_semis: l.dateSemis, surface_m2: l.surface, achat_plant: l.achatPlant,
+      ...(l.seasonId ? { season_id: l.seasonId } : {}),
     })))
     setLoading(false)
     if (!n) return
@@ -448,6 +452,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
                   </Field>
                   <div className="pb-3"><CaseAchatPlant checked={l.achatPlant} onChange={b => maj(l.cultureId, { achatPlant: b })} /></div>
                 </div>
+                <ChoixSaison ctx={ctx} dateRecolte={v.dates?.recolte ?? null} value={l.seasonId} onChange={id => maj(l.cultureId, { seasonId: id })} />
                 {v.dates && <DatesPreview compact title="" vivace={vivace} delaiNonConfirme={delaiAConfirmer(c)} plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={fmtDate(v.dates.recolte, anneeRef)} fin={fmtDate(v.dates.fin, anneeRef)} />}
                 <AvertissementSaisie projetId={projetId(l.cultureId)} conflits={v.conflits} plancheM2={v.plancheM2} surface={l.surface} libre={v.libre}
                   semisSuggere={v.semisSuggere} dateSemis={l.dateSemis} onUseDate={d => maj(l.cultureId, { dateSemis: d })} today={today} />
@@ -458,7 +463,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
         </ul>
       )}
 
-      <p className="text-xs text-fg-subtle">Plantations rattachées à {ctx.activeSeason?.name || 'la saison active'}. Le calendrier se calcule à partir de la date saisie.</p>
+      <p className="text-xs text-fg-subtle">Chaque plantation est rattachée à la saison de l'année de sa première récolte, modifiable. Le calendrier se calcule à partir de la date saisie.</p>
 
       <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onClose}>Annuler</Button>

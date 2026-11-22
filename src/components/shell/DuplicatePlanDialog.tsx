@@ -4,11 +4,12 @@ import { toast } from 'sonner'
 import { AlertTriangle, CheckCircle2, CopyPlus } from 'lucide-react'
 import type { PlantingFull, Season } from '@/lib/types'
 import {
-  conflitsDuplication, formatDateLongue, formatJourMois, maxDate, minDate, projeterDuplication,
+  apercuReprise, conflitsDuplication, formatDateLongue, formatJourMois, maxDate, minDate, projeterDuplication,
   type ConflitDuplication,
 } from '@/lib/domain'
 import { Button, Dialog, Field, Input, Select, cn } from '@/components/ui'
 import { calculables, nomAvecSaison, phraseConflit } from '@/components/plantings/Occupation'
+import { versPreparation } from '@/components/saisons/preparation'
 
 /**
  * « Reprendre ce plan l'année suivante » : aperçu de `projeterDuplication`
@@ -31,18 +32,18 @@ export function DuplicatePlanDialog({ ctx, open, onOpenChange }: { ctx: any; ope
   // Réinitialise à l'ouverture : saison active, +1 an
   useEffect(() => {
     if (!open || !active) return
-    setSourceId(active.id); setShift(1); setYear(active.year + 1); setName(`Saison ${active.year + 1}`)
+    setSourceId(active.id); setShift(1); setYear(active.year + 1); setName(String(active.year + 1))
     setTried(false)
   }, [open, active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeSource = (id: string) => {
     const s = farmSeasons.find(x => x.id === id)
     setSourceId(id)
-    if (s) { setYear(s.year + shift); setName(`Saison ${s.year + shift}`) }
+    if (s) { setYear(s.year + shift); setName(String(s.year + shift)) }
   }
   const changeShift = (n: number) => {
     setShift(n)
-    if (source && Number.isInteger(n)) { setYear(source.year + n); setName(`Saison ${source.year + n}`) }
+    if (source && Number.isInteger(n)) { setYear(source.year + n); setName(String(source.year + n)) }
   }
 
   const farmPlantings: PlantingFull[] = ctx.farmPlantings || []
@@ -51,8 +52,13 @@ export function DuplicatePlanDialog({ ctx, open, onOpenChange }: { ctx: any; ope
 
   const apercu = useMemo(() => {
     if (!source || !shiftOk) return null
-    const src = calculables(farmPlantings.filter(p => p.season_id === source.id))
-    const projets = projeterDuplication(src, shift, { name: name || `Saison ${year}`, year })
+    // 016 : la base ne reprend ni les vivaces en place, ni les plantations récoltées hors de l'année source
+    const tous = calculables(farmPlantings.filter(p => p.season_id === source.id))
+    const reprise = apercuReprise({ source: tous.map(p => versPreparation(p, ctx.catalog)), cible: [], anneeSource: source.year, decalageAnnees: shift })
+    const gardees = new Set(reprise.copies.map(c => c.id))
+    const src = tous.filter(p => gardees.has(p.id))
+    const exclues = { vivaces: reprise.vivacesEnPlace.length, horsAnnee: reprise.horsAnnee.length }
+    const projets = projeterDuplication(src, shift, { name: name || String(year), year })
     let conflits: ConflitDuplication[] = []
     let erreur: string | null = null
     try {
@@ -60,17 +66,20 @@ export function DuplicatePlanDialog({ ctx, open, onOpenChange }: { ctx: any; ope
     } catch (e: any) {
       erreur = e?.message || String(e)
     }
-    return { src, projets, conflits, erreur }
-  }, [source, shift, shiftOk, farmPlantings, planches, name, year])
+    return { src, projets, conflits, erreur, exclues }
+  }, [source, shift, shiftOk, farmPlantings, planches, name, year, ctx.catalog])
 
   const nameErr = tried && !name.trim() ? 'Donnez un nom à la nouvelle saison.' : undefined
-  const yearErr = tried && (!Number.isInteger(year) || year < 2000 || year > 2100) ? 'Année invalide.' : undefined
+  // Saison = année civile (016) : une seule saison par année dans la ferme.
+  const anneePrise = farmSeasons.find(s => s.year === year)
+  const yearErr = tried && (!Number.isInteger(year) || year < 2000 || year > 2100) ? 'Année invalide.'
+    : tried && anneePrise ? `La saison ${year} existe déjà (« ${anneePrise.name} »).` : undefined
   const doublon = farmSeasons.find(s => s.name.trim().toLowerCase() === name.trim().toLowerCase())
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault()
     setTried(true)
-    if (!source || !name.trim() || !shiftOk || !Number.isInteger(year)) return
+    if (!source || !name.trim() || !shiftOk || !Number.isInteger(year) || anneePrise) return
     setLoading(true)
     const id = await ctx.duplicatePlan(source.id, name.trim(), year, shift)
     if (id) {
@@ -115,7 +124,8 @@ export function DuplicatePlanDialog({ ctx, open, onOpenChange }: { ctx: any; ope
           <Field label="Nom de la nouvelle saison" error={nameErr} hint={!nameErr && doublon ? `Une saison « ${doublon.name} » existe déjà.` : undefined}>
             <Input value={name} onChange={e => setName(e.target.value)} />
           </Field>
-          <Field label="Année de gestion" error={yearErr}>
+          <Field label="Année civile" error={yearErr}
+            hint={!yearErr ? (anneePrise ? `La saison ${year} existe déjà : choisissez une autre année.` : `Du 1er janvier au 31 décembre ${year || ''}.`) : undefined}>
             <Input type="number" inputMode="numeric" value={year || ''} onChange={e => setYear(Math.trunc(+e.target.value))} />
           </Field>
         </div>
@@ -133,6 +143,14 @@ export function DuplicatePlanDialog({ ctx, open, onOpenChange }: { ctx: any; ope
                 <strong>{projets.length} plantation{projets.length > 1 ? 's' : ''}</strong>
                 {periode && <> du {formatDateLongue(periode.debut)} au {formatDateLongue(periode.fin)}</>}
               </p>
+              {apercu && (apercu.exclues.vivaces > 0 || apercu.exclues.horsAnnee > 0) && (
+                <p className="mb-2 text-xs text-fg-muted">
+                  Non reprises : {[
+                    apercu.exclues.vivaces ? `${apercu.exclues.vivaces} vivace${apercu.exclues.vivaces > 1 ? 's' : ''} en place (elles refleurissent sans replantation)` : '',
+                    apercu.exclues.horsAnnee ? `${apercu.exclues.horsAnnee} plantation${apercu.exclues.horsAnnee > 1 ? 's' : ''} dont la première récolte n’est pas en ${source?.year}` : '',
+                  ].filter(Boolean).join(' ; ')}.
+                </p>
+              )}
               <ul className="max-h-44 divide-y divide-border overflow-y-auto rounded-xl border border-border text-xs">
                 {[...projets].sort((a, b) => a.date_semis.localeCompare(b.date_semis)).map(p => (
                   <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-1.5">
