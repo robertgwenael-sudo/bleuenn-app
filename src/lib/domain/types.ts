@@ -261,3 +261,157 @@ export interface TimeEntry {
 export interface FarmTauxHoraire {
   taux_horaire: EurosNumeric | null
 }
+
+// ------------------------------------------------------------
+// Factures, avoirs, paiements (010)
+// ------------------------------------------------------------
+/** Réglages de facturation d'une ferme (`farm_billing`, une ligne par ferme). */
+export interface FarmBilling {
+  farm_id: string
+  raison_sociale: string | null
+  adresse: string | null
+  /** SIREN (9 chiffres) ou SIRET (14 chiffres), chiffres seuls. */
+  siret: string | null
+  email: string | null
+  telephone: string | null
+  /** Mention d'absence de TVA, mot pour mot d'après le comptable. Jamais de valeur par défaut. */
+  mention_tva: string | null
+  /** Délai de paiement par défaut ; null ou 0 = à réception. */
+  delai_paiement_jours: number | null
+  conditions_paiement: string | null
+  penalites_retard: string | null
+  indemnite_recouvrement: string | null
+  iban: string | null
+  bic: string | null
+  mentions_libres: string | null
+  prefixe_facture: string
+  prefixe_avoir: string
+  updated_by?: string | null
+  updated_at?: string
+}
+
+export type InvoiceKind = 'facture' | 'avoir'
+
+/** Instantané du vendeur, figé à l'émission. */
+export interface VendeurFige {
+  raison_sociale: string
+  adresse: string
+  siret: string
+  email?: string
+  telephone?: string
+  iban?: string
+  bic?: string
+  mentions_libres?: string
+}
+
+/** Instantané de l'acheteur, figé à l'émission. */
+export interface AcheteurFige {
+  client_id?: string
+  nom?: string
+  adresse?: string
+  email?: string
+  /** SIREN du client (facturation électronique 2027), facultatif. */
+  siren?: string
+  /** Adresse de livraison si différente, facultative. */
+  adresse_livraison?: string
+  professionnel?: boolean
+}
+
+export interface Invoice {
+  id: string
+  farm_id: string
+  season_id: string
+  client_id: string | null
+  kind: InvoiceKind
+  numero: string
+  annee: number
+  sequence: number
+  date_emission: DateISO
+  date_vente_debut: DateISO
+  date_vente_fin: DateISO
+  date_echeance: DateISO | null
+  vendeur: VendeurFige
+  acheteur: AcheteurFige
+  /** numeric(12,2) ; négatif pour un avoir. */
+  total: EurosNumeric
+  mention_tva: string
+  conditions_paiement: string | null
+  penalites_retard: string | null
+  indemnite_recouvrement: string | null
+  notes: string | null
+  /** Avoir : la facture corrigée. */
+  avoir_de: string | null
+  /** Avoir : motif obligatoire. */
+  motif: string | null
+  /** Facture : l'avoir qui l'annule. */
+  annulee_par: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface InvoiceLine {
+  id: string
+  invoice_id: string
+  farm_id: string
+  position: number
+  sale_id: string | null
+  sale_date: DateISO | null
+  culture_id: string | null
+  label: string
+  unit: LineUnit
+  quantity: EurosNumeric
+  stems_per_unit: number
+  unit_price: EurosNumeric
+  line_total: EurosNumeric
+}
+
+export interface InvoiceSale {
+  id: string
+  invoice_id: string
+  farm_id: string
+  sale_id: string | null
+  /** Lien libéré par cet avoir : la vente redevient facturable. */
+  liberee_par_avoir: string | null
+  created_at: string
+}
+
+export const PAYMENT_MODES = ['virement', 'cheque', 'especes', 'carte', 'autre'] as const
+export type PaymentMode = (typeof PAYMENT_MODES)[number]
+
+export interface Payment {
+  id: string
+  invoice_id: string
+  farm_id: string
+  date: DateISO
+  /** > 0 encaissement ; < 0 contre-passation ou remboursement. */
+  amount: EurosNumeric
+  mode: PaymentMode
+  reference: string | null
+  notes: string | null
+  contrepasse_de: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export type InvoiceStatut = 'a_payer' | 'partielle' | 'payee' | 'en_retard' | 'annulee' | 'avoir'
+
+/** Vue `invoices_status` (security_invoker), calculée à la lecture. */
+export interface InvoiceStatusRow {
+  id: string
+  farm_id: string
+  season_id: string
+  client_id: string | null
+  kind: InvoiceKind
+  numero: string
+  date_emission: DateISO
+  date_echeance: DateISO | null
+  total: EurosNumeric
+  client_nom: string | null
+  avoir_de: string | null
+  annulee_par: string | null
+  numero_lie: string | null
+  paye: EurosNumeric
+  reste_du: EurosNumeric
+  statut: InvoiceStatut
+  jours_de_retard: number | null
+}
