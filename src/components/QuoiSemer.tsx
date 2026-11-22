@@ -9,8 +9,8 @@
 import { useMemo, useState } from 'react'
 import { Calculator, Flower2, PackageOpen, Settings2, Sprout, Table2, Warehouse } from 'lucide-react'
 import {
-  besoinsGraines, capacitePepiniere, chargePepiniere, lignesQuoiSemer, occupationsCellule, parJardin,
-  type CapacitePepiniere, type PeriodeSemis,
+  besoinsGraines, capacitePepiniere, chargePepiniere, controlerSemis, lignesQuoiSemer, occupationsCellule, parJardin,
+  type CapacitePepiniere, type ControlePepiniere, type PeriodeSemis,
 } from '@/lib/domain/production'
 import type { PlantingProduction } from '@/lib/domain'
 import { fenetreGlissante } from '@/lib/domain/dates'
@@ -76,7 +76,21 @@ export default function QuoiSemer({ ctx }: { ctx: any }) {
     const trous = prod.pepiniere.etat === 'ok' ? prod.pepiniere.plaque.trous : prod.pepiniere.plaque?.trous ?? null
     const occ = occupationsCellule(calcul.lignes, trous)
     const bornes = periode === 'glissant' ? fenetreGlissante(aujourdhui) : undefined
-    return { capacite, erreur, occ, semaines: chargePepiniere(occ.occupations, capacite, bornes) }
+    const semaines = chargePepiniere(occ.occupations, capacite, bornes)
+    // Pour chaque semaine en dépassement : propositions pour le semis le plus
+    // récent du jour de pic (le plus facile à décaler). Alerte, jamais un refus.
+    const propositions = new Map<string, { culture: string; planche: string; controle: ControlePepiniere }>()
+    for (const sem of semaines) {
+      if (!sem.depassement || !capacite) continue
+      const dernier = [...sem.cultures].sort((a, b) => (a.debut < b.debut ? 1 : -1))[0]
+      const ligne = calcul.lignes.find(l => l.planting.id === dernier?.planting_id)
+      if (!ligne) continue
+      propositions.set(sem.cle, {
+        culture: ligne.planting.culture_name, planche: `${ligne.planting.garden_name} ${ligne.planting.planche_name}`,
+        controle: controlerSemis({ ligne, autres: occ.occupations, capacite, trousParPlaque: trous }),
+      })
+    }
+    return { capacite, erreur, occ, semaines, propositions }
   }, [prod.pepiniere, calcul.lignes, periode, aujourdhui])
   const nbDepassements = pep.semaines.filter(s => s.depassement).length
 
@@ -145,8 +159,9 @@ export default function QuoiSemer({ ctx }: { ctx: any }) {
             <p className="mb-3 text-xs text-fg-muted">
               Chaque semis occupe ses mottes (plants + {nb(prod.taux.semis)} %) en plaques entières, de l’entrée en cellule à la plantation.
               Plants achetés et semis directs n’occupent rien. Jour le plus chargé de chaque semaine, toute la ferme.
+              Un dépassement est signalé, il n’empêche jamais d’enregistrer un semis.
             </p>
-            <ChargePepiniere semaines={pep.semaines} capacite={pep.capacite} occupations={pep.occ} />
+            <ChargePepiniere semaines={pep.semaines} capacite={pep.capacite} occupations={pep.occ} propositions={pep.propositions} />
           </Card>
         </div>
       )}

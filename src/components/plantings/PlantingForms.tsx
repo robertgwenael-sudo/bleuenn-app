@@ -9,6 +9,9 @@ import {
   segmentsOccupation, dureeJours, type PlantingOccupation,
 } from '@/lib/domain'
 import { AvertissementSaisie, calculables } from './Occupation'
+// 015 : capacité des tables de semis, alerte non bloquante
+import { useControlePepiniere } from '@/hooks/useControlePepiniere'
+import { AlertePepiniere } from '@/components/semis/AlertePepiniere'
 
 // ─── Vérification d'occupation (toutes saisons, par dates) ──────────
 // Le calcul vient du domaine (`conflitsSiAjout`, `libreAPartirDu`) et porte
@@ -112,6 +115,8 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
   const [surfaceM2, setSurfaceM2] = useState(planting.surface_m2)
   const [notes, setNotes] = useState(planting.planting_notes ?? planting.notes ?? '')
   const [loading, setLoading] = useState(false)
+  const pepiniere = useControlePepiniere(ctx)
+  const controlePep = pepiniere.controler({ id: planting.id, culture_id: planting.culture_id, date_semis: dateSemis, surface_m2: surfaceM2, base: planting })
 
   const jc = planting.jours_cellule || 0
   const jch = planting.jours_champ || 0
@@ -129,6 +134,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
     setLoading(true)
     await ctx.updatePlanting(planting.id, { date_semis: dateSemis, surface_m2: surfaceM2, notes: notes || null })
     setLoading(false)
+    pepiniere.avertir(controlePep, planting.culture_name)
     toast.success(`${planting.culture_name} mis à jour`, {
       description: v.conflits.length ? 'Attention : la planche est en conflit de surface sur cette période.' : `Semis le ${formatJourMois(dateSemis, anneeRef)}`,
     })
@@ -173,6 +179,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
 
       <AvertissementSaisie projetId={planting.id} conflits={v.conflits} plancheM2={v.plancheM2} surface={surfaceM2} libre={v.libre}
         semisSuggere={v.semisSuggere} dateSemis={dateSemis} onUseDate={setDateSemis} today={today} />
+      <AlertePepiniere controle={controlePep} culture={planting.culture_name} />
 
       {v.dates && <DatesPreview title="Dates recalculées" plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={formatJourMois(v.dates.recolte, anneeRef)} fin={formatJourMois(v.dates.fin, anneeRef)} />}
 
@@ -200,6 +207,8 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
   const [surfaceM2, setSurfaceM2] = useState(1)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const pepiniere = useControlePepiniere(ctx)
+  const controlePep = pepiniere.controler({ culture_id: cultureId, date_semis: dateSemis, surface_m2: surfaceM2 })
 
   const catalog: CultureCatalog[] = ctx.catalog || []
   const selected = catalog.find(c => c.id === cultureId)
@@ -221,6 +230,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
     setLoading(true)
     await ctx.createPlanting(plancheId, cultureId, dateSemis, surfaceM2)
     setLoading(false)
+    pepiniere.avertir(controlePep, selected?.name ?? '')
     toast.success(`${selected?.name} planté`, {
       description: v.conflits.length ? `${v.plancheName} — en conflit de surface sur la période` : v.plancheName,
     })
@@ -281,6 +291,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
 
       <AvertissementSaisie projetId={PROJET_ID} conflits={v.conflits} plancheM2={v.plancheM2} surface={surfaceM2} libre={v.libre}
         semisSuggere={v.semisSuggere} dateSemis={dateSemis} onUseDate={setDateSemis} today={today} />
+      <AlertePepiniere controle={controlePep} culture={selected?.name ?? ''} />
 
       {v.dates && <DatesPreview title="Dates calculées automatiquement" plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={formatJourMois(v.dates.recolte, anneeRef)} fin={formatJourMois(v.dates.fin, anneeRef)} />}
 

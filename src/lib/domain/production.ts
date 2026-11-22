@@ -14,9 +14,9 @@
 //   L graines       = K × F
 //   N tiges         = J × I                (sur les plants plantés, sans les + 30 %)
 //   O tiges nettes  = N × 0,7              (pertes au champ, réglables)
-//   P tiges/semaine = O / semaines de récolte
+//   P tiges/semaine = O réparti sur les semaines de récolte
 //   R revenu        = O × prix/tige
-//   S CA/semaine    = R / semaines de récolte
+//   S CA/semaine    = R réparti sur les semaines de récolte
 //
 // Arrondis, choisis pour retomber sur le tableur :
 //  * les calculs enchaînent les valeurs EXACTES (K part de J non arrondi,
@@ -24,9 +24,14 @@
 //  * chaque nombre affiché est arrondi à l'entier le plus proche, moitié
 //    vers le haut (format « 0 » du tableur) : 162,5 → 163 ;
 //  * un total additionne les valeurs exactes puis arrondit (comme SOMME) ;
-//  * semaines de récolte = partie entière de jours de récolte / 7 (75 j →
-//    10 semaines : le dahlia donne 350 / 10 = 35 tiges par semaine), au
-//    moins 1 ;
+//  * RÈGLE MARINE (validée le 22/11/2026, s'écarte du tableur) : semaines
+//    de récolte = jours de récolte / 7 arrondi AU SUPÉRIEUR, au moins 1
+//    (dahlia 75 j → 11 semaines ; le tableur prenait 10) ;
+//  * P et S ne sont plus une moyenne arrondie (dont le total recalculé peut
+//    dépasser O) : O tiges nettes (arrondies) et R centimes sont RÉPARTIS en
+//    entiers sur les semaines (repartirEntier, plus forts restes), la somme
+//    des semaines vaut exactement O et R. Dahlia : 350 tiges sur 11
+//    semaines = 32 × 9 + 31 × 2, affiché « 31 à 32 » ;
 //  * revenu en centimes : O exact × prix en centimes, arrondi au centime le
 //    plus proche (Ammi : 105 × 50 c = 52,50 €, affiché 53 € par le tableur).
 //
@@ -38,10 +43,10 @@
 // ============================================================
 
 import {
-  ajouterJours, chevauche, cleSemaine, comparerDates, fenetreGlissante, lundiDeSemaine, semaineIso,
+  ajouterJours, chevauche, cleSemaine, comparerDates, ecartJours, fenetreGlissante, lundiDeSemaine, semaineIso,
   type Intervalle, type SemaineIso,
 } from './dates'
-import { eurosEnCentimes } from './montants'
+import { eurosEnCentimes, repartirEntier } from './montants'
 import type { Centimes, DateISO, EurosNumeric, FarmProduction, PlantingProduction } from './types'
 
 // ------------------------------------------------------------
@@ -105,6 +110,34 @@ export type Montant =
   | { etat: 'ok'; centimes: Centimes }
   | { etat: 'manquant'; champs: ChampProduction[] }
 
+/**
+ * Un total entier (tiges, centimes) réparti sur les semaines de récolte :
+ * `parts` somme EXACTEMENT `total`. `moyenne` (exacte) n'est qu'indicative.
+ */
+export type Repartition =
+  | { etat: 'ok'; total: number; parts: number[]; min: number; max: number; moyenne: number }
+  | { etat: 'manquant'; champs: ChampProduction[] }
+
+/** Semaines de récolte, règle Marine : arrondi au supérieur, au moins 1. */
+export function semainesDeRecolte(joursRecolte: number): number {
+  if (!Number.isFinite(joursRecolte) || joursRecolte <= 0) throw new Error(`Jours de récolte invalides : ${joursRecolte}`)
+  return Math.max(1, Math.ceil(Math.round((joursRecolte / 7) * 1e6) / 1e6))
+}
+
+/** Répartit un total entier sur n semaines égales ; somme exacte, jamais plus. */
+export function repartirSurSemaines(total: number, semaines: number): Repartition {
+  if (!Number.isInteger(total) || total < 0) throw new Error(`Total à répartir invalide : ${total}`)
+  if (!Number.isInteger(semaines) || semaines < 1) throw new Error(`Nombre de semaines invalide : ${semaines}`)
+  const parts = repartirEntier(total, Array.from({ length: semaines }, () => 1))
+  return { etat: 'ok', total, parts, min: Math.min(...parts), max: Math.max(...parts), moyenne: total / semaines }
+}
+
+/** « 175 » ou « 31 à 32 ». */
+export function texteRepartition(r: Repartition, format: (n: number) => string = n => String(n)): string {
+  if (r.etat === 'manquant') return messageManquant(r.champs)
+  return r.min === r.max ? format(r.min) : `${format(r.min)} à ${format(r.max)}`
+}
+
 /** « donnée manquante : espacement (cm), rendement par plant ». */
 export function messageManquant(champs: readonly ChampProduction[]): string {
   return `donnée manquante : ${champs.map(c => LIBELLE_CHAMP[c]).join(', ')}`
@@ -128,7 +161,7 @@ export function arrondiEntier(x: number): number {
 
 const ok = (brut: number): Calcul => ({ etat: 'ok', brut, valeur: arrondiEntier(brut) })
 
-function fusion(...cs: (Calcul | Montant)[]): ChampProduction[] {
+function fusion(...cs: (Calcul | Montant | Repartition)[]): ChampProduction[] {
   const s = new Set<ChampProduction>()
   for (const c of cs) if (c.etat === 'manquant') c.champs.forEach(x => s.add(x))
   return [...s]
@@ -172,12 +205,12 @@ export interface Production {
   /** O : tiges nettes après pertes au champ. */
   tigesNettes: Calcul
   semainesRecolte: Calcul
-  /** P */
-  tigesParSemaine: Calcul
+  /** P : tiges nettes (arrondies) réparties sur les semaines, somme = O. */
+  tigesParSemaine: Repartition
   /** R */
   revenu: Montant
-  /** S */
-  caParSemaine: Montant
+  /** S : revenu en centimes réparti sur les semaines, somme = R. */
+  caParSemaine: Repartition
   /** Toutes les données manquantes de la ligne. */
   manquants: ChampProduction[]
 }
@@ -215,18 +248,18 @@ export function calculerProduction(d: DonneesProduction, taux: TauxPertes = TAUX
   const tigesNettes: Calcul = tiges.etat === 'ok' ? ok((tiges.brut * (100 - tChamp)) / 100) : tiges
   const semainesRecolte: Calcul = W === null
     ? { etat: 'manquant', champs: ['jours_recolte'] }
-    : { etat: 'ok', brut: Math.max(1, Math.floor(W / 7)), valeur: Math.max(1, Math.floor(W / 7)) }
-  // P = O / semaines
-  const tigesParSemaine: Calcul = tigesNettes.etat === 'ok' && semainesRecolte.etat === 'ok'
-    ? ok(tigesNettes.brut / semainesRecolte.brut)
+    : { etat: 'ok', brut: semainesDeRecolte(W), valeur: semainesDeRecolte(W) }
+  // P = O réparti sur les semaines
+  const tigesParSemaine: Repartition = tigesNettes.etat === 'ok' && semainesRecolte.etat === 'ok'
+    ? repartirSurSemaines(tigesNettes.valeur, semainesRecolte.valeur)
     : { etat: 'manquant', champs: fusion(tigesNettes, semainesRecolte) }
   // R = O × prix, au centime
   const revenu: Montant = tigesNettes.etat === 'ok' && prix !== null
     ? { etat: 'ok', centimes: arrondiEntier(tigesNettes.brut * prix) }
     : { etat: 'manquant', champs: [...fusion(tigesNettes), ...manque(['prix', prix])] }
-  // S = R / semaines (depuis le revenu exact, comme la cellule)
-  const caParSemaine: Montant = tigesNettes.etat === 'ok' && prix !== null && semainesRecolte.etat === 'ok'
-    ? { etat: 'ok', centimes: arrondiEntier((tigesNettes.brut * prix) / semainesRecolte.brut) }
+  // S = R réparti sur les semaines, en centimes
+  const caParSemaine: Repartition = revenu.etat === 'ok' && semainesRecolte.etat === 'ok'
+    ? repartirSurSemaines(revenu.centimes, semainesRecolte.valeur)
     : { etat: 'manquant', champs: fusion(revenu, semainesRecolte) }
 
   return {
@@ -289,8 +322,14 @@ export interface LigneSemis {
   calendrier: Calendrier
   /** Plant acheté (pas de graines, pas de passage en cellule). */
   achat: boolean
-  /** Semis direct au champ : pas de cellule. */
+  /**
+   * Semis direct au champ : aucun jour en cellule (et pas un plant acheté).
+   * Le drapeau `semis_direct` du catalogue dit seulement que la culture le
+   * PERMET (Bleuet : 21 j en cellule, semis direct possible).
+   */
   direct: boolean
+  /** Le catalogue permet le semis direct. */
+  semisDirectPossible: boolean
 }
 
 export function ligneSemis(p: PlantingProduction, taux: TauxPertes = TAUX_PERTES_DEFAUT): LigneSemis {
@@ -303,7 +342,8 @@ export function ligneSemis(p: PlantingProduction, taux: TauxPertes = TAUX_PERTES
       jours_recolte: p.jours_recolte, achat_plant: achat,
     }),
     achat,
-    direct: !!p.semis_direct,
+    direct: !achat && !(Number(p.jours_cellule) > 0),
+    semisDirectPossible: !!p.semis_direct,
   }
 }
 
@@ -571,7 +611,10 @@ export interface SemainePepiniere {
   cultures: OccupationCellule[]
   /** null si la capacité n'est pas renseignée. */
   capacitePlaques: number | null
+  /** La charge dépasse la capacité des tables (alerte, jamais un refus). */
   depassement: boolean
+  /** Plaques qui manquent le jour du pic (0 sans dépassement). */
+  plaquesManquantes: number
 }
 
 /**
@@ -607,7 +650,134 @@ export function chargePepiniere(occupations: OccupationCellule[], capacite: Pick
       cle: cleSemaine(lundi), lundi, semaine: semaineIso(lundi), jourPic: p.jour,
       mottes: p.mottes, plaques: avecPlaques ? p.plaques : null, cultures: p.cultures,
       capacitePlaques: cap, depassement: cap !== null && avecPlaques && p.plaques > cap,
+      plaquesManquantes: cap !== null && avecPlaques ? Math.max(0, p.plaques - cap) : 0,
     })
   }
+  return out
+}
+
+// ------------------------------------------------------------
+// Contrôle d'un semis face à la capacité des tables : ALERTE, jamais un
+// refus (choix de Marine). L'enregistrement passe toujours ; l'écran
+// avertit et propose : (a) la date d'entrée en cellule la plus proche où
+// le semis tient, (b) la surface maximale qui tient à la date choisie,
+// (c) plant acheté, ou semis direct si la culture le permet.
+// ------------------------------------------------------------
+
+export interface JourDepasse {
+  jour: DateISO
+  plaques: number
+  capacite: number
+  manquantes: number
+  cultures: string[]
+}
+
+export type ControlePepiniere =
+  | { etat: 'sans_capacite' }
+  | { etat: 'hors_cellule'; raison: 'plant acheté' | 'semis direct' }
+  | { etat: 'non_calculable'; champs: ChampProduction[] }
+  | { etat: 'ok'; plaques: number }
+  | {
+      etat: 'depassement'
+      plaques: number
+      jours: JourDepasse[]
+      maxManquantes: number
+      /** (a) Entrée en cellule la plus proche (avant ou après) où le semis tient ; null si aucune dans le rayon. */
+      dateProposee: DateISO | null
+      decalageJours: number | null
+      /** (b) Surface maximale (m², au dixième) qui tient à la date choisie ; 0 si aucune place. */
+      surfaceMax: number
+      /** (c) Autres solutions possibles. */
+      alternatives: ('plant_achete' | 'semis_direct')[]
+    }
+
+/** Plaques occupées par les AUTRES semis, jour par jour, sur un intervalle. */
+function chargeAutres(autres: OccupationCellule[], debut: DateISO, fin: DateISO, exclure?: string) {
+  const out: { jour: DateISO; plaques: number; cultures: string[] }[] = []
+  for (let j = debut; j <= fin; j = ajouterJours(j, 1)) {
+    const pres = autres.filter(o => o.planting_id !== exclure && o.debut <= j && j <= o.fin)
+    out.push({ jour: j, plaques: pres.reduce((s, o) => s + (o.plaques ?? 0), 0), cultures: pres.map(o => o.culture_name) })
+  }
+  return out
+}
+
+/**
+ * Contrôle d'un semis (nouveau ou modifié) face aux autres semis en cellule.
+ * `ligne` : le semis tel qu'il serait enregistré ; `autres` : occupations de la
+ * ferme (le semis lui-même, s'il existe déjà, est ignoré par son id).
+ */
+export function controlerSemis(args: {
+  ligne: LigneSemis
+  autres: OccupationCellule[]
+  capacite: Pick<CapacitePepiniere, 'plaques'> | null
+  trousParPlaque: number | null
+  taux?: TauxPertes
+  /** Par défaut : `ligne.semisDirectPossible` (catalogue). */
+  semisDirectPossible?: boolean
+  /** Rayon de recherche d'une autre date, en jours (90 par défaut). */
+  rayonJours?: number
+}): ControlePepiniere {
+  const { ligne, autres, capacite, trousParPlaque } = args
+  if (!capacite || !trousParPlaque) return { etat: 'sans_capacite' }
+  if (ligne.achat) return { etat: 'hors_cellule', raison: 'plant acheté' }
+  const duree = ecartJoursCellule(ligne)
+  if (ligne.direct || duree <= 0) return { etat: 'hors_cellule', raison: 'semis direct' }
+  const k = ligne.production.plantsAvecPertes
+  if (k.etat !== 'ok') return { etat: 'non_calculable', champs: k.etat === 'manquant' ? k.champs : [] }
+
+  const plaques = Math.ceil(Math.ceil(Math.round(k.brut * 1e6) / 1e6) / trousParPlaque)
+  const id = ligne.planting.id
+  const tient = (debut: DateISO) => chargeAutres(autres, debut, ajouterJours(debut, duree - 1), id)
+    .every(j => j.plaques + plaques <= capacite.plaques)
+
+  const debut = ligne.calendrier.entree
+  const charge = chargeAutres(autres, debut, ajouterJours(debut, duree - 1), id)
+  const jours: JourDepasse[] = charge
+    .filter(j => j.plaques + plaques > capacite.plaques)
+    .map(j => ({ jour: j.jour, plaques: j.plaques + plaques, capacite: capacite.plaques, manquantes: j.plaques + plaques - capacite.plaques, cultures: [...j.cultures, ligne.planting.culture_name] }))
+  if (jours.length === 0) return { etat: 'ok', plaques }
+
+  // (a) date la plus proche, à égalité l'avance d'abord (semer plus tôt)
+  let dateProposee: DateISO | null = null, decalage: number | null = null
+  const rayon = args.rayonJours ?? 90
+  for (let d = 1; d <= rayon && dateProposee === null; d++) {
+    for (const s of [-d, d]) {
+      const candidat = ajouterJours(debut, s)
+      if (tient(candidat)) { dateProposee = candidat; decalage = s; break }
+    }
+  }
+
+  // (b) surface maximale à la date choisie : plaques libres le jour le plus chargé
+  const libres = Math.max(0, capacite.plaques - Math.max(...charge.map(j => j.plaques)))
+  const m2 = positif(ligne.planting.surface_m2) ?? 0
+  let surfaceMax = 0
+  if (libres > 0 && m2 > 0) {
+    const mottesParM2 = k.brut / m2
+    surfaceMax = Math.floor(((libres * trousParPlaque) / mottesParM2) * 10) / 10
+    const plaquesPour = (s: number) => Math.ceil(Math.ceil(Math.round(s * mottesParM2 * 1e6) / 1e6) / trousParPlaque)
+    while (surfaceMax > 0 && plaquesPour(surfaceMax) > libres) surfaceMax = Math.round((surfaceMax - 0.1) * 10) / 10
+    surfaceMax = Math.min(surfaceMax, m2)
+  }
+
+  return {
+    etat: 'depassement', plaques, jours, maxManquantes: Math.max(...jours.map(j => j.manquantes)),
+    dateProposee, decalageJours: decalage, surfaceMax,
+    alternatives: (args.semisDirectPossible ?? ligne.semisDirectPossible) ? ['plant_achete', 'semis_direct'] : ['plant_achete'],
+  }
+}
+
+function ecartJoursCellule(l: LigneSemis): number {
+  return ecartJours(l.calendrier.entree, l.calendrier.plantation)
+}
+
+/** Phrases des propositions, pour une alerte ou une liste. */
+export function propositionsTexte(c: Extract<ControlePepiniere, { etat: 'depassement' }>, formatDate: (d: DateISO) => string = d => d): string[] {
+  const out: string[] = []
+  if (c.dateProposee) {
+    const n = Math.abs(c.decalageJours ?? 0)
+    out.push(`entrer en cellule le ${formatDate(c.dateProposee)} (${n} jour${n > 1 ? 's' : ''} ${(c.decalageJours ?? 0) < 0 ? 'plus tôt' : 'plus tard'})`)
+  } else out.push('aucune date proche ne libère assez de place')
+  out.push(c.surfaceMax > 0 ? `réduire à ${String(c.surfaceMax).replace('.', ',')} m² à cette date` : 'aucune surface ne tient à cette date')
+  out.push(c.alternatives.includes('semis_direct') ? 'passer en plant acheté ou en semis direct' : 'passer en plant acheté')
   return out
 }

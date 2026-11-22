@@ -4,11 +4,13 @@
 // cellules affichées « 23 » et « 3 » (9 pouces et 1 pouce).
 import { describe, expect, it } from 'vitest'
 import {
-  besoinsGraines, calculerProduction, calendrierCulture, capacitePepiniere, chargePepiniere, lignesQuoiSemer,
+  besoinsGraines, calculerProduction, controlerSemis, ligneSemis, propositionsTexte, semainesDeRecolte, texteRepartition, calendrierCulture, capacitePepiniere, chargePepiniere, lignesQuoiSemer,
   messageManquant, occupationsCellule, parJardin, plaquesParTable, reglagesPepiniere, tauxDeLaFerme, textePlacement,
-  totaliser, type Calcul, type DonneesProduction, type Montant, type Production,
+  totaliser, type Calcul, type DonneesProduction, type Montant, type Production, type Repartition,
 } from './production'
 import type { PlantingProduction } from './types'
+import { repartitionPrevue } from './reel'
+import { plantation } from './fixtures.test-utils'
 
 const v = (c: Calcul) => (c.etat === 'ok' ? c.valeur : c.etat === 'manquant' ? messageManquant(c.champs) : c.raison)
 /** Euros affichés par le tableur (format « 0 € »). */
@@ -18,8 +20,12 @@ type L = [nom: string, E: number | null, F: number | null, G: number | null, H: 
 const d = ([, E, F, G, H, I, prix, W]: L): DonneesProduction => ({
   surface_m2: E, graines_par_plant: F, rangs_par_planche: G, espacement_cm: H, rendement: I, prix_tige: prix, jours_recolte: W,
 })
-/** J, K, L, N, O, P, R €, S € tels qu'affichés. */
-const ligne = (p: Production) => [v(p.plants), v(p.plantsAvecPertes), v(p.graines), v(p.tiges), v(p.tigesNettes), v(p.tigesParSemaine), e(p.revenu), e(p.caParSemaine)]
+/** Moyenne par semaine arrondie, comme la cellule du tableur (P en tiges, S en euros). */
+const moy = (r: Repartition, div = 1) => (r.etat === 'ok' ? Math.round(r.moyenne / div) : messageManquant(r.champs))
+/** J, K, L, N, O, P, R €, S € tels qu'affichés par le tableur. */
+const ligne = (p: Production) => [v(p.plants), v(p.plantsAvecPertes), v(p.graines), v(p.tiges), v(p.tigesNettes), moy(p.tigesParSemaine), e(p.revenu), moy(p.caParSemaine, 100)]
+/** Ce qu'affiche l'appli : « 175 » ou « 31 à 32 ». */
+const plage = (r: Repartition) => texteRepartition(r)
 
 describe('bloc « Gestion de la production et du rendement » : lignes réelles du plan année 2', () => {
   const CAS: [L, (number | string)[]][] = [
@@ -30,7 +36,8 @@ describe('bloc « Gestion de la production et du rendement » : lignes réelles 
     [['Ammi', 5, 2, 3, 30, 3, 0.5, 21], [50, 65, 130, 150, 105, 35, 53, 18]],
     [['Didiscus', 5, 2, 5, 20, 5, 0.85, 21], [125, 163, 325, 625, 438, 146, 372, 124]],
     [['Pavot d’Islande', 5, 2, 5, 20, 6, 0.85, 21], [125, 163, 325, 750, 525, 175, 446, 149]],
-    [['Dahlia', 20, 1, 2, 40, 5, 1.2, 75], [100, 130, 130, 500, 350, 35, 420, 42]],
+    // Règle Marine (arrondi au supérieur) : 75 j = 11 semaines, le tableur en comptait 10 (35 tiges, 42 €)
+    [['Dahlia', 20, 1, 2, 40, 5, 1.2, 75], [100, 130, 130, 500, 350, 32, 420, 38]],
     [['Anémone', 20, 1, 5, 20, 3, 0.8, 56], [500, 650, 650, 1500, 1050, 131, 840, 105]],
     [['Statice', 20, 1, 5, 20, 3, 0.5, 21], [500, 650, 650, 1500, 1050, 350, 525, 175]],
     [['Cresson', 5, 1, 45, 2.54, 1, 0.6, 21], [8858, 11516, 11516, 8858, 6201, 2067, 3720, 1240]],
@@ -48,9 +55,30 @@ describe('bloc « Gestion de la production et du rendement » : lignes réelles 
     expect(calculerProduction(d(['Ammi', 5, 2, 3, 30, 3, 0.5, 21])).revenu).toEqual({ etat: 'ok', centimes: 5250 })
   })
 
-  it('Digitale : 109 / 142 / 284 / 77 tiges, 211 € ; tiges par semaine 26 (le tableur affiche 77, cellule P isolée)', () => {
+  it('Digitale : 109 / 142 / 284 / 77 tiges, 211 € ; 26 tiges par semaine en moyenne (le tableur affiche 77, cellule P isolée)', () => {
     const p = calculerProduction(d(['Digitale', 5, 2, 5, 22.86, 1, 2.75, 21]))
     expect(ligne(p)).toEqual([109, 142, 284, 109, 77, 26, 211, 70])
+    expect(plage(p.tigesParSemaine)).toBe('25 à 26')
+  })
+
+  it('règle Marine : semaines de récolte arrondies au supérieur, au moins 1', () => {
+    expect([semainesDeRecolte(75), semainesDeRecolte(21), semainesDeRecolte(56), semainesDeRecolte(3), semainesDeRecolte(22)]).toEqual([11, 3, 8, 1, 4])
+  })
+
+  it('tiges et CA par semaine : répartition entière dont la somme vaut EXACTEMENT O et R', () => {
+    for (const [l] of CAS) {
+      const p = calculerProduction(d(l))
+      const o = p.tigesNettes, r = p.revenu, ts = p.tigesParSemaine, cs = p.caParSemaine
+      if (o.etat !== 'ok' || r.etat !== 'ok' || ts.etat !== 'ok' || cs.etat !== 'ok') throw new Error(l[0])
+      expect(ts.parts.reduce((a, b) => a + b, 0), l[0]).toBe(o.valeur)
+      expect(cs.parts.reduce((a, b) => a + b, 0), l[0]).toBe(r.centimes)
+      expect(ts.max - ts.min).toBeLessThanOrEqual(1)
+    }
+    const dahlia = calculerProduction(d(['Dahlia', 20, 1, 2, 40, 5, 1.2, 75]))
+    expect(plage(dahlia.tigesParSemaine)).toBe('31 à 32')
+    expect(dahlia.tigesParSemaine.etat === 'ok' && dahlia.tigesParSemaine.parts).toEqual([32, 32, 32, 32, 32, 32, 32, 32, 32, 31, 31])
+    expect(dahlia.caParSemaine).toMatchObject({ total: 42000, min: 3818, max: 3819 })
+    expect(plage(calculerProduction(d(['Statice', 20, 1, 5, 20, 3, 0.5, 21])).tigesParSemaine)).toBe('350')
   })
 
   it('véronique sans prix ni jours de récolte : donnée manquante, jamais #DIV/0! ni 0 €', () => {
@@ -207,10 +235,12 @@ describe('pépinière : charge semaine par semaine', () => {
     P({ id: 'st', culture_name: 'Statice' }),
     // 325 mottes = 4 plaques, du 30 mars au 23 avril
     P({ id: 'zi', culture_name: 'Zinnia', surface_m2: 10, date_semis: '2026-03-30', jours_cellule: 25 }),
-    // n'occupent rien : plant acheté, semis direct, pas de jours en cellule
+    // n'occupent rien : plant acheté, semis direct (0 jour en cellule)
     P({ id: 'da', culture_name: 'Dahlia', achat_plant: true, date_semis: '2026-03-20' }),
-    P({ id: 'to', culture_name: 'Tournesol', semis_direct: true, date_semis: '2026-03-20' }),
+    P({ id: 'to', culture_name: 'Tournesol', semis_direct: true, jours_cellule: 0, date_semis: '2026-03-20' }),
     P({ id: 'ni', culture_name: 'Nigelle', jours_cellule: 0, date_semis: '2026-03-20' }),
+    // semis direct POSSIBLE au catalogue, mais 30 j en cellule au plan : occupe
+    P({ id: 'bl', culture_name: 'Bleuet', semis_direct: true, surface_m2: 1, date_semis: '2027-01-04' }),
   ]
   const lignes = lignesQuoiSemer(plantings, { type: 'tout' })
   const { occupations } = occupationsCellule(lignes, 104)
@@ -219,6 +249,7 @@ describe('pépinière : charge semaine par semaine', () => {
     expect(occupations.map(o => [o.culture_name, o.debut, o.fin, o.mottes, o.plaques])).toEqual([
       ['Statice', '2026-03-15', '2026-04-13', 650, 7],
       ['Zinnia', '2026-03-30', '2026-04-23', 325, 4],
+      ['Bleuet', '2027-01-04', '2027-02-02', 33, 1],
     ])
   })
   it('dépassement signalé avec les cultures responsables, sans bloquer', () => {
@@ -235,5 +266,64 @@ describe('pépinière : charge semaine par semaine', () => {
   it('format de plaque inconnu : charge en mottes', () => {
     const o = occupationsCellule(lignes, null).occupations
     expect(chargePepiniere(o, { plaques: 10 }).find(x => x.lundi === '2026-03-30')).toMatchObject({ plaques: null, mottes: 975, depassement: false })
+  })
+})
+
+describe('cohérence avec reel.ts : le prévu réparti par lundi ne dépasse jamais les tiges nettes', () => {
+  it('dahlia RR, 75 j de récolte : somme des semaines = tiges estimées', () => {
+    const p = plantation({ id: 'd', culture_type: 'RR', date_recolte: '2026-07-14', date_fin: '2026-09-27', tiges_estimees: 350 })
+    const r = repartitionPrevue(p)
+    expect(r.reduce((s, x) => s + x.tiges, 0)).toBe(350)
+    // reel.ts répartit par semaines CIVILES touchées (S29 à S39 : 11), règle compatible : somme exacte
+    expect(r).toHaveLength(11)
+  })
+})
+
+describe('contrôle d’un semis face aux tables : alerte et propositions, jamais un refus', () => {
+  // Capacité 10 plaques de 104 trous. Statice 20 m² = 650 mottes = 7 plaques, du 15/03 au 13/04.
+  const statice = P({ id: 'st', culture_name: 'Statice' })
+  const occ = occupationsCellule([ligneSemis(statice)], 104).occupations
+  const cap = { plaques: 10 }
+  const zinnia = (o: Partial<PlantingProduction> = {}) => ligneSemis(P({ id: 'zi', culture_id: 'z', culture_name: 'Zinnia', surface_m2: 10, date_semis: '2026-03-30', jours_cellule: 25, ...o }))
+
+  it('qui tient : ok, avec le nombre de plaques', () => {
+    expect(controlerSemis({ ligne: zinnia({ surface_m2: 5 }), autres: occ, capacite: cap, trousParPlaque: 104, semisDirectPossible: false }))
+      .toEqual({ etat: 'ok', plaques: 2 })
+  })
+
+  it('qui dépasse : jours en cause, plaques manquantes, date la plus proche, surface max, alternatives', () => {
+    // Zinnia 10 m² = 325 mottes = 4 plaques ; 7 + 4 = 11 > 10 du 30/03 au 13/04
+    const c = controlerSemis({ ligne: zinnia(), autres: occ, capacite: cap, trousParPlaque: 104, semisDirectPossible: true })
+    if (c.etat !== 'depassement') throw new Error(c.etat)
+    expect(c.jours[0]).toEqual({ jour: '2026-03-30', plaques: 11, capacite: 10, manquantes: 1, cultures: ['Statice', 'Zinnia'] })
+    expect(c.jours.at(-1)!.jour).toBe('2026-04-13')
+    expect(c.maxManquantes).toBe(1)
+    // (a) 25 jours en cellule : plus tôt il faudrait finir avant le 15/03 (entrée le 18/02, 40 j plus tôt) ;
+    // plus tard, entrer le 14/04 (15 j plus tard) : le plus proche gagne.
+    expect([c.dateProposee, c.decalageJours]).toEqual(['2026-04-14', 15])
+    // (b) 3 plaques libres = 312 mottes ; 32,5 mottes par m² → 9,6 m²
+    expect(c.surfaceMax).toBe(9.6)
+    expect(c.alternatives).toEqual(['plant_achete', 'semis_direct'])
+    expect(propositionsTexte(c)).toEqual([
+      'entrer en cellule le 2026-04-14 (15 jours plus tard)', 'réduire à 9,6 m² à cette date', 'passer en plant acheté ou en semis direct',
+    ])
+  })
+
+  it('un semis modifié ne se compte pas deux fois', () => {
+    const occ2 = occupationsCellule([ligneSemis(statice), zinnia()], 104).occupations
+    expect(controlerSemis({ ligne: zinnia({ surface_m2: 5 }), autres: occ2, capacite: cap, trousParPlaque: 104, semisDirectPossible: false }).etat).toBe('ok')
+  })
+
+  it('sans capacité, plant acheté ou semis direct : aucune limite', () => {
+    expect(controlerSemis({ ligne: zinnia(), autres: occ, capacite: null, trousParPlaque: 104, semisDirectPossible: false }).etat).toBe('sans_capacite')
+    expect(controlerSemis({ ligne: zinnia({ achat_plant: true }), autres: occ, capacite: cap, trousParPlaque: 104, semisDirectPossible: false }))
+      .toEqual({ etat: 'hors_cellule', raison: 'plant acheté' })
+    expect(controlerSemis({ ligne: zinnia({ semis_direct: true, jours_cellule: 0 }), autres: occ, capacite: cap, trousParPlaque: 104 }))
+      .toEqual({ etat: 'hors_cellule', raison: 'semis direct' })
+  })
+
+  it('plaques manquantes dans la charge par semaine', () => {
+    const o = occupationsCellule([ligneSemis(statice), zinnia()], 104).occupations
+    expect(chargePepiniere(o, cap).find(x => x.lundi === '2026-03-30')).toMatchObject({ depassement: true, plaquesManquantes: 1 })
   })
 })

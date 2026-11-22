@@ -68,10 +68,41 @@ test('pépinière : capacité en plaques entières, chiffre du tableur en info, 
 
   await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: 'Toutes les plantations' })
   await expect(page.getByTestId('alerte-pepiniere')).toBeVisible()
+  await expect(page.getByTestId('alerte-pepiniere')).toContainText('dépasse')
   const rouge = page.locator('[data-testid="semaine-pepiniere"][data-depassement="oui"]').first()
-  await expect(rouge).toContainText('plaques')
-  await expect(rouge).toContainText(/Le \d/)
+  await expect(rouge).toContainText(/Dépasse la capacité des tables : \d+ plaques? manquantes? le/)
+  await expect(rouge).toContainText('En cause')
+  // Propositions du domaine : date, surface, plant acheté
+  await expect(rouge.getByTestId('propositions-pepiniere')).toContainText('passer en plant acheté')
   await expect(toast(page, /Échec/)).toHaveCount(0)
+
+  // Formulaire de semis : alerte non bloquante, l'enregistrement passe
+  await page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('link', { name: 'Jardins & planches', exact: true }).click()
+  await page.getByRole('button', { name: 'Culture', exact: true }).first().click()
+  const dlg = page.getByRole('dialog', { name: 'Ajouter une culture' })
+  await dlg.getByRole('searchbox', { name: 'Filtrer les cultures' }).fill('Statice')
+  await dlg.getByText('Statice', { exact: true }).click()
+  await dlg.getByLabel('Date de semis').fill('2026-07-01')
+  await dlg.getByLabel('Surface allouée (m²)').fill('2')
+  // 2 m² de statice = 65 mottes = 1 plaque : tient sur la table vide en juillet
+  await expect(dlg.getByTestId('alerte-semis-pepiniere')).toHaveCount(0)
+  await dlg.getByLabel('Surface allouée (m²)').fill('10')
+  // 10 m² = 325 mottes = 4 plaques pour 1 : alerte et propositions, sans blocage
+  const alerte = dlg.getByTestId('alerte-semis-pepiniere')
+  await expect(alerte).toContainText('Dépasse la capacité des tables')
+  await expect(alerte).toContainText('enregistré quand même')
+  await expect(alerte).toContainText('passer en plant acheté')
+  await dlg.getByRole('button', { name: /^Planter/ }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(toast(page, /Statice : dépasse la capacité des tables/)).toBeVisible()
+})
+
+test('tableau : tiges par semaine en plage entière, semaines arrondies au supérieur', async ({ page }) => {
+  await connexion(page, 'quoi-semer')
+  await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: 'Saison 2026' })
+  // Dahlia démo 8 m² : 2 rangs, 40 cm → 40 plants, 200 tiges, 140 nettes ; 84 j → 12 semaines → « 11 à 12 »
+  const dahlia = page.getByRole('region', { name: 'Production par plantation' }).getByTestId('ligne-semis-table').filter({ hasText: 'Dahlia' }).first()
+  await expect(dahlia).toContainText("11 à 12")
 })
 
 test('semis : graines exactes par semis, plants achetés distingués', async ({ page }) => {

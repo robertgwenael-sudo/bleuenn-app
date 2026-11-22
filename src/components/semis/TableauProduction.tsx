@@ -5,7 +5,7 @@ import { Fragment } from 'react'
 import { formatDateShort } from '@/lib/types'
 import type { GroupeJardin, LigneSemis, TauxPertes, TotauxProduction } from '@/lib/domain/production'
 import { Badge, TableContainer, cn } from '@/components/ui'
-import { CelluleCalcul, CelluleMontant, eurosRonds, nb } from './format'
+import { CelluleCalcul, CelluleMontant, CelluleRepartition, eurosRonds, nb } from './format'
 
 function Origine({ l }: { l: LigneSemis }) {
   if (l.achat) return <Badge tone="violet">Plant acheté</Badge>
@@ -109,9 +109,9 @@ export function TableauProduction({ jardins, total, taux }: { jardins: GroupeJar
                     <td className="text-right font-semibold text-primary"><CelluleCalcul c={l.production.graines} /></td>
                     <td className="text-right"><CelluleCalcul c={l.production.tiges} /></td>
                     <td className="text-right"><CelluleCalcul c={l.production.tigesNettes} /></td>
-                    <td className="text-right"><CelluleCalcul c={l.production.tigesParSemaine} /></td>
+                    <td className="text-right"><CelluleRepartition r={l.production.tigesParSemaine} /></td>
                     <td className="text-right"><CelluleMontant m={l.production.revenu} rond /></td>
-                    <td className="text-right"><CelluleMontant m={l.production.caParSemaine} rond /></td>
+                    <td className="text-right"><CelluleRepartition r={l.production.caParSemaine} euros /></td>
                   </tr>
                 ))}
                 <LigneTotal t={g.totaux} label={`Total ${g.garden_name}`} className={cn('[&>td]:bg-surface-2/40')} />

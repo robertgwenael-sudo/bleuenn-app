@@ -4,7 +4,8 @@
 import { AlertTriangle } from 'lucide-react'
 import { formatDateShort } from '@/lib/types'
 import {
-  messageManquant, textePlacement, type CapacitePepiniere, type OccupationsCellule, type ReglagesPepiniere, type SemainePepiniere,
+  messageManquant, propositionsTexte, textePlacement, type CapacitePepiniere, type ControlePepiniere, type OccupationsCellule,
+  type ReglagesPepiniere, type SemainePepiniere,
 } from '@/lib/domain/production'
 import { Card, cn } from '@/components/ui'
 import { nb } from './format'
@@ -40,8 +41,21 @@ export function CapaciteCarte({ reglages, capacite }: { reglages: ReglagesPepini
   )
 }
 
-export function ChargePepiniere({ semaines, capacite, occupations }: {
+export type PropositionSemaine = { culture: string; planche: string; controle: ControlePepiniere }
+
+/** Propositions du domaine pour un semis qui fait dépasser : date, surface, plant acheté ou semis direct. */
+export function Propositions({ controle, culture }: { controle: ControlePepiniere; culture: string }) {
+  if (controle.etat !== 'depassement') return null
+  return (
+    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs" data-testid="propositions-pepiniere">
+      {propositionsTexte(controle, formatDateShort).map(t => <li key={t}>{culture} : {t}</li>)}
+    </ul>
+  )
+}
+
+export function ChargePepiniere({ semaines, capacite, occupations, propositions }: {
   semaines: SemainePepiniere[]; capacite: CapacitePepiniere | null; occupations: OccupationsCellule
+  propositions?: Map<string, PropositionSemaine>
 }) {
   const enPlaques = semaines.some(s => s.plaques !== null)
   const valeur = (s: SemainePepiniere) => (enPlaques ? s.plaques ?? 0 : s.mottes)
@@ -53,7 +67,8 @@ export function ChargePepiniere({ semaines, capacite, occupations }: {
       {depassements.length > 0 && (
         <p className="flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger" role="status" data-testid="alerte-pepiniere">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          {depassements.length} semaine{depassements.length > 1 ? 's' : ''} au-delà de la place disponible. Rien n’est bloqué : décalez un semis ou ajoutez une table.
+          {depassements.length} semaine{depassements.length > 1 ? 's' : ''} dépasse{depassements.length > 1 ? 'nt' : ''} la capacité des tables.
+          Les semis restent enregistrés : décalez un semis, réduisez sa surface ou passez-le en plant acheté.
         </p>
       )}
       {occupations.nonComptees.length > 0 && (
@@ -79,9 +94,13 @@ export function ChargePepiniere({ semaines, capacite, occupations }: {
                 </span>
               </div>
               {s.depassement && (
-                <p className="mt-1 pl-[6.5rem] text-xs text-danger">
-                  Le {formatDateShort(s.jourPic)} : {s.cultures.map(c => `${c.culture_name} ${c.plaques ?? ''} pl. (${c.planche_name})`).join(', ')}
-                </p>
+                <div className="mt-1 text-danger sm:pl-[6.5rem]">
+                  <p className="text-xs font-semibold">
+                    Dépasse la capacité des tables : {s.plaquesManquantes} plaque{s.plaquesManquantes > 1 ? 's' : ''} manquante{s.plaquesManquantes > 1 ? 's' : ''} le {formatDateShort(s.jourPic)}
+                  </p>
+                  <p className="text-xs">En cause : {s.cultures.map(c => `${c.culture_name} ${c.plaques ?? ''} pl. (${c.planche_name})`).join(', ')}</p>
+                  {propositions?.get(s.cle) && <Propositions controle={propositions.get(s.cle)!.controle} culture={propositions.get(s.cle)!.culture} />}
+                </div>
               )}
             </li>
           ))}
