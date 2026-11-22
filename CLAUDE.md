@@ -52,13 +52,15 @@ d'abord pour la saisie au champ.
     src/components/   écrans ; ui/ design system ; shell/ navigation (nav.ts)
     src/lib/demo/     faux client Supabase en mémoire (NEXT_PUBLIC_DEMO=1) ;
                       données par domaine dans seeds/
-    supabase/migrations/  001 → 007, appliquées en production
+    supabase/migrations/  001 → 008, appliquées en production
 
 ## Commandes
 
     npm run dev                    développement (base réelle, .env.local)
     NEXT_PUBLIC_DEMO=1 npm run dev mode démo, données fictives, rien n'est écrit
     npm test                       tests de la logique métier
+    npm run lint                   ESLint 9 (eslint-config-next)
+    npm run test:e2e               parcours Playwright en mode démo (E2E_BUILD=1 : build de prod)
     npx tsc --noEmit               types
     npm run build                  build de production
 
@@ -66,6 +68,12 @@ Next.js 16 / React 19 : les API diffèrent des versions précédentes, vérifier
 `node_modules/next/dist/docs/` plutôt que supposer. Le code de démo doit rester
 hors du paquet de production (`NEXT_PUBLIC_DEMO` défini au build dans
 `next.config.js`) ; la CI le vérifie.
+
+## Hors ligne
+
+PWA (`src/app/manifest.ts`, `public/sw.js`, actif en production seulement). Les récoltes et
+pertes passent par une file locale (`src/lib/offline/`) : UUID client, renvoi idempotent,
+rejet définitif visible. Les appels Supabase ne sont jamais mis en cache.
 
 ## Choix métier en attente de validation par l'agricultrice
 
@@ -75,3 +83,5 @@ hors du paquet de production (`NEXT_PUBLIC_DEMO` défini au build dans
 - Une semaine appartient au mois de son lundi (vue Tâches).
 - Commande : livrer = facturer ; unités par défaut botte 10, bouquet 15, seau 25.
 - Disponibilités : seules les commandes confirmées, prêtes ou livrées réservent.
+- Rentabilité : frais généraux répartis au prorata surface × jours (ou CA) ; un seul
+  taux horaire, vide = temps « non calculable » ; €/heure sur la marge hors temps.

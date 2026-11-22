@@ -2,7 +2,8 @@
 
 Application web de gestion d'une ferme florale : plan de culture, jardins et planches
 permanents, calendrier sur 12 mois glissants, tâches du mois, récoltes et pertes,
-prévu face au réel, disponibilités et fiche fleuristes, clients, commandes et ventes.
+prévu face au réel, disponibilités et fiche fleuristes, clients, commandes et ventes,
+coûts et rentabilité par culture, exports CSV, installation sur téléphone et saisie hors ligne.
 
 - **Interface** : Next.js 16 (App Router), React 19, Tailwind, déployée sur Vercel
   (`main` → production).
@@ -22,7 +23,7 @@ fictives en mémoire (n'importe quel email / mot de passe).
 
 ## Base de données
 
-Les migrations `supabase/migrations/001` à `007` sont appliquées en production.
+Les migrations `supabase/migrations/001` à `008` sont appliquées en production.
 Toute nouvelle migration se teste d'abord dans une transaction annulée (voir
 `CLAUDE.md`), puis s'applique.
 
@@ -33,6 +34,7 @@ Toute nouvelle migration se teste d'abord dans une transaction annulée (voir
 | 005 | clients, commandes et ventes en lignes, pertes, tâches, réel par plantation |
 | 006 | la ferme devient permanente (jardins, équipe), duplication de plan |
 | 007 | écritures commerciales atomiques (vente, commande, livraison) |
+| 008 | dépenses, temps passé, taux horaire de la ferme |
 
 ## Réglages Supabase à faire dans le tableau de bord
 
