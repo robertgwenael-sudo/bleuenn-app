@@ -80,9 +80,9 @@ export function DetailBon({ bon, onOpenChange, achats, nomFerme, onModifier, onR
 
   return (
     <Dialog open={!!bon} onOpenChange={onOpenChange} size="lg"
-      title={<span className="flex flex-wrap items-center gap-2">{titre} <StatutBon status={bon.status} /> <BadgeRetard retard={retard} /></span>}
+      title={<span className="flex flex-wrap items-center gap-2">{titre} <span className="flex flex-wrap gap-1.5 font-sans"><StatutBon status={bon.status} /><BadgeRetard retard={retard} /></span></span>}
       description={<>{f?.name ?? 'Fournisseur inconnu'} · {saison?.name ?? 'saison inconnue'}</>}
-      footer={<>
+      footer={<div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
         <Link href={`/bon-de-commande/${bon.id}`}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-btn border border-border bg-surface px-4 text-sm font-medium text-fg shadow-xs hover:bg-surface-2">
           <Printer className="h-4 w-4" /> {bon.status === 'brouillon' ? 'Aperçu' : 'Imprimer'}
@@ -95,10 +95,10 @@ export function DetailBon({ bon, onOpenChange, achats, nomFerme, onModifier, onR
         </>}
         {(bon.status === 'envoye' || bon.status === 'confirme') &&
           <Button variant="danger-ghost" onClick={annuler} loading={busy === 'annuler'}><Ban className="h-4 w-4" /> Annuler le bon</Button>}
-        {bon.status === 'envoye' && <Button variant="secondary" onClick={() => setConfirmation(bon.expected_date ?? '')}><CalendarCheck className="h-4 w-4" /> Confirmé</Button>}
+        {bon.status === 'envoye' && <Button variant="secondary" onClick={() => setConfirmation(bon.expected_date ?? '')}><CalendarCheck className="h-4 w-4" /> Marquer confirmé</Button>}
         {(bon.status === 'envoye' || bon.status === 'confirme' || bon.status === 'recu_partiel') &&
           <Button onClick={() => onReceptionner(bon)}><PackageCheck className="h-4 w-4" /> Réceptionner</Button>}
-      </>}>
+      </div>}>
       <div className="space-y-4">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
           <div><dt className="text-xs text-fg-muted">Commandé le</dt><dd>{dateCourte(bon.order_date, Number(achats.aujourdhui.slice(0, 4)))}</dd></div>

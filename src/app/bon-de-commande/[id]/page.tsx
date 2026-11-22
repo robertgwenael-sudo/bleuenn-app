@@ -120,7 +120,7 @@ export default function BonDeCommandePage() {
 
         <section className="mt-5 grid grid-cols-2 gap-6">
           <div>
-            <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Fournisseur</h2>
+            <h2 className="mb-1 font-sans text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Fournisseur</h2>
             <p className="font-semibold">{f.name}</p>
             {f.contact_name && <p>À l’attention de {f.contact_name}</p>}
             {f.address && <p>{f.address}</p>}
@@ -128,7 +128,7 @@ export default function BonDeCommandePage() {
             {f.phone && <p className="num">{f.phone}</p>}
           </div>
           <div>
-            <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Commande</h2>
+            <h2 className="mb-1 font-sans text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Commande</h2>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3">
               {f.customer_number && <><dt className="text-neutral-500">N° client</dt><dd className="num">{f.customer_number}</dd></>}
               <dt className="text-neutral-500">Livraison souhaitée</dt><dd>{bon.expected_date ? formatDateLongue(bon.expected_date) : '—'}</dd>
@@ -176,7 +176,7 @@ export default function BonDeCommandePage() {
         {t.prixManquants > 0 && <p className="mt-2 text-right text-xs text-neutral-500">Total hors lignes à prix à confirmer.</p>}
 
         <section className="mt-8 break-inside-avoid border-t border-neutral-300 pt-4 text-xs text-neutral-700">
-          <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Conditions</h2>
+          <h2 className="mb-1 font-sans text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Conditions</h2>
           <ul className="space-y-0.5">
             <li>Minimum de commande : {f.min_order_amount !== null ? euros(f.min_order_amount) : 'non renseigné'}</li>
             <li>Franco de port : {f.free_shipping_threshold !== null ? euros(f.free_shipping_threshold) : 'non renseigné'}</li>

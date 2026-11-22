@@ -2,8 +2,8 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AlarmClock, ClipboardList, FileText, PackageOpen, Plus, Sprout, Truck } from 'lucide-react'
-import { formatEuros, type PurchaseOrder, type PurchaseOrderStatus } from '@/lib/domain'
-import { retardBon, totauxBon, type BesoinCulture } from '@/lib/domain/achats'
+import { formatEuros, PURCHASE_ORDER_STATUSES, type PurchaseOrder, type PurchaseOrderStatus } from '@/lib/domain'
+import { LIBELLES_STATUTS_BON, retardBon, totauxBon, type BesoinCulture } from '@/lib/domain/achats'
 import {
   Badge, Button, Card, EmptyState, PageHeader, SearchInput, Segmented, Select, Skeleton, Stat, TableContainer, Tabs,
 } from '@/components/ui'
@@ -245,6 +245,36 @@ function ListeBons({ achats, seasonId, onOuvrir, onNouveau }: {
         || (y.b.order_date ?? y.b.created_at).localeCompare(x.b.order_date ?? x.b.created_at))
   }, [achats.bons, achats.lignesParBon, achats.aujourdhui, filtre, saison])
 
+  const carte = ({ b, retard, t }: (typeof liste)[number]) => {
+    const f = achats.suppliers.find(s => s.id === b.supplier_id)
+    const n = (achats.lignesParBon.get(b.id) ?? []).length
+    return (
+      <li key={b.id}>
+        <button type="button" onClick={() => onOuvrir(b.id)} aria-label={`${b.number ?? 'Brouillon'} — ${f?.name ?? ''}`}
+          className="flex h-full w-full flex-col gap-2 rounded-xl border border-border bg-surface p-3.5 text-left shadow-xs transition hover:border-border-strong active:bg-surface-2">
+          <div className="flex w-full items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="num font-semibold text-fg">{b.number ?? 'Brouillon'}</p>
+              <p className="truncate text-sm text-fg-muted">{f?.name ?? 'Fournisseur inconnu'}</p>
+            </div>
+            <div className="flex flex-col items-end gap-1"><StatutBon status={b.status} /><BadgeRetard retard={retard} /></div>
+          </div>
+          <div className="flex w-full items-end justify-between gap-2 text-xs text-fg-muted">
+            <span>
+              {pluriel(n, 'ligne')}
+              {b.order_date ? ` · commandé le ${dateCourte(b.order_date, annee)}` : ''}
+              {b.expected_date && b.status !== 'recu' && b.status !== 'annule' ? ` · prévu le ${dateCourte(b.expected_date, annee)}` : ''}
+              {b.status === 'recu' && b.received_date ? ` · reçu le ${dateCourte(b.received_date, annee)}` : ''}
+            </span>
+            <span className="num shrink-0 text-sm font-semibold text-fg">{formatEuros(t.total)}{t.prixManquants ? ' *' : ''}</span>
+          </div>
+        </button>
+      </li>
+    )
+  }
+  const groupes = filtre === 'tous'
+    ? PURCHASE_ORDER_STATUSES.map(st => ({ statut: st as PurchaseOrderStatus | null, items: liste.filter(x => x.b.status === st) })).filter(g => g.items.length)
+    : [{ statut: null as PurchaseOrderStatus | null, items: liste }]
   const compte = (f: Filtre) => achats.bons.filter(b => (!saison || b.season_id === saison) && (!FILTRES[f] || FILTRES[f]!.includes(b.status))).length
 
   return (
@@ -265,35 +295,14 @@ function ListeBons({ achats, seasonId, onOuvrir, onNouveau }: {
           description="Préparez les bons depuis les besoins, ou créez-en un à la main."
           action={<Button onClick={onNouveau}><Plus className="h-4 w-4" /> Nouveau bon</Button>} /></Card>
       ) : (
-        <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {liste.map(({ b, retard, t }) => {
-            const f = achats.suppliers.find(s => s.id === b.supplier_id)
-            const n = (achats.lignesParBon.get(b.id) ?? []).length
-            return (
-              <li key={b.id}>
-                <button type="button" onClick={() => onOuvrir(b.id)} aria-label={`${b.number ?? 'Brouillon'} — ${f?.name ?? ''}`}
-                  className="flex h-full w-full flex-col gap-2 rounded-xl border border-border bg-surface p-3.5 text-left shadow-xs transition hover:border-border-strong active:bg-surface-2">
-                  <div className="flex w-full items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="num font-semibold text-fg">{b.number ?? 'Brouillon'}</p>
-                      <p className="truncate text-sm text-fg-muted">{f?.name ?? 'Fournisseur inconnu'}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1"><StatutBon status={b.status} /><BadgeRetard retard={retard} /></div>
-                  </div>
-                  <div className="flex w-full items-end justify-between gap-2 text-xs text-fg-muted">
-                    <span>
-                      {pluriel(n, 'ligne')}
-                      {b.order_date ? ` · commandé le ${dateCourte(b.order_date, annee)}` : ''}
-                      {b.expected_date && b.status !== 'recu' && b.status !== 'annule' ? ` · prévu le ${dateCourte(b.expected_date, annee)}` : ''}
-                      {b.status === 'recu' && b.received_date ? ` · reçu le ${dateCourte(b.received_date, annee)}` : ''}
-                    </span>
-                    <span className="num shrink-0 text-sm font-semibold text-fg">{formatEuros(t.total)}{t.prixManquants ? ' *' : ''}</span>
-                  </div>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="space-y-5">
+          {groupes.map(g => (
+            <section key={g.statut ?? 'tous'} aria-label={g.statut ? LIBELLES_STATUTS_BON[g.statut] : 'Bons'}>
+              {g.statut && <h3 className="mb-2 font-sans text-sm font-semibold text-fg">{LIBELLES_STATUTS_BON[g.statut]} <span className="num font-normal text-fg-subtle">· {g.items.length}</span></h3>}
+              <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{g.items.map(carte)}</ul>
+            </section>
+          ))}
+        </div>
       )}
       {liste.some(x => x.t.prixManquants) && <p className="mt-2 text-xs text-fg-subtle">* total incomplet : prix à saisir sur certaines lignes.</p>}
     </>

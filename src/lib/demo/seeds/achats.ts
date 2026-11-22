@@ -64,7 +64,7 @@ const BONS: B[] = [
 type L = [number, string | null, string | null, string, string | null, PurchaseUnit, number, number, number | null, boolean]
 const LIGNES: L[] = [
   [1, 'Zinnia', 'Mélange géant', 'Zinnia', 'Z-210', 'graines', 1000, 1000, 0.03, true],
-  [1, 'Cosmos', 'Blanc pur', 'Cosmos', 'C-034', 'graines', 800, 800, 0.025, true],
+  [1, 'Cosmos', 'Blanc pur', 'Cosmos', 'C-034', 'graines', 800, 800, 0.03, true],
   [1, 'Bleuet', 'Bleu foncé', 'Bleuet', 'B-008', 'graines', 500, 500, 0.02, true],
   [1, 'Nigelle', null, 'Nigelle', 'N-101', 'sachet', 2, 2, 3.4, true],
   [2, 'Renoncule', 'Pastel mélange', 'Renoncule', 'R-5/6', 'bulbes', 250, 250, 0.42, false],

@@ -32,7 +32,7 @@ function Conditions({ f }: { f: Supplier }) {
 function Contact({ f, compact }: { f: Supplier; compact?: boolean }) {
   const lien = 'inline-flex min-h-[2.25rem] items-center gap-1.5 text-sm text-fg hover:text-primary hover:underline'
   return (
-    <div className={compact ? 'flex flex-wrap gap-x-4' : 'space-y-0.5'}>
+    <div className={compact ? 'flex flex-wrap gap-x-4' : 'flex flex-col items-start'}>
       {f.contact_name && <p className="inline-flex min-h-[2.25rem] items-center gap-1.5 text-sm text-fg-muted"><UserRound className="h-4 w-4" aria-hidden />{f.contact_name}</p>}
       {f.phone && <a className={lien} href={`tel:${f.phone.replace(/\s/g, '')}`}><Phone className="h-4 w-4" aria-hidden /><span className="num">{f.phone}</span></a>}
       {f.email && <a className={lien} href={`mailto:${f.email}`}><Mail className="h-4 w-4" aria-hidden />{f.email}</a>}
@@ -180,7 +180,7 @@ function FicheFournisseur({ f, achats, onClose, onModifier, onArchiver }: {
   const annee = Number(achats.aujourdhui.slice(0, 4))
   return (
     <Dialog open={!!f} onOpenChange={o => { if (!o) onClose() }} size="lg"
-      title={<span className="flex flex-wrap items-center gap-2">{f.name} <Badge tone={kindTone[f.kind]}>{LIBELLES_TYPES_FOURNISSEUR[f.kind]}</Badge>{f.organic_certified && <Badge tone="green">Bio</Badge>}</span>}
+      title={<span className="flex flex-wrap items-center gap-2">{f.name} <span className="flex gap-1.5 font-sans"><Badge tone={kindTone[f.kind]}>{LIBELLES_TYPES_FOURNISSEUR[f.kind]}</Badge>{f.organic_certified && <Badge tone="green">Bio</Badge>}</span></span>}
       description={f.customer_number ? `N° client : ${f.customer_number}` : undefined}
       footer={<>
         <Button variant="secondary" onClick={() => onArchiver(f)}>
@@ -190,9 +190,9 @@ function FicheFournisseur({ f, achats, onClose, onModifier, onArchiver }: {
       </>}>
       <div className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
-          <section aria-label="Contact"><h3 className="mb-1 text-xs font-medium text-fg-muted">Contact</h3><Contact f={f} /></section>
+          <section aria-label="Contact"><h3 className="mb-1 font-sans text-xs font-medium text-fg-muted">Contact</h3><Contact f={f} /></section>
           <section aria-label="Conditions">
-            <h3 className="mb-1 text-xs font-medium text-fg-muted">Conditions</h3>
+            <h3 className="mb-1 font-sans text-xs font-medium text-fg-muted">Conditions</h3>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
               <dt className="text-fg-muted">Minimum</dt><dd className="num">{f.min_order_amount !== null ? euros(f.min_order_amount) : <em className="text-fg-subtle">non renseigné</em>}</dd>
               <dt className="text-fg-muted">Franco</dt><dd className="num">{f.free_shipping_threshold !== null ? euros(f.free_shipping_threshold) : <em className="text-fg-subtle">non renseigné</em>}</dd>
