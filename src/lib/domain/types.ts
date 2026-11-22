@@ -716,3 +716,34 @@ export interface BankMatch {
   created_by: string | null
   created_at: string
 }
+
+// ------------------------------------------------------------
+// Semis et production (migration 015) : bloc « Gestion de la production
+// et du rendement » du tableur de Marine, pépinière (tables et plaques).
+// ------------------------------------------------------------
+
+/** Colonnes ajoutées à `farms` par 015. Toutes facultatives : avant 015, elles n'existent pas. */
+export interface FarmProduction {
+  /** Pertes de levée, en % (30 par défaut) : plants + 30 %. */
+  taux_perte_semis?: EurosNumeric | null
+  /** Pertes au champ, en % (30 par défaut) : tiges − 30 %. */
+  taux_perte_champ?: EurosNumeric | null
+  /** Tables de semis : un seul format par ferme, null tant que non saisi. */
+  table_semis_largeur_cm?: EurosNumeric | null
+  table_semis_longueur_cm?: EurosNumeric | null
+  table_semis_nombre?: number | null
+  /** Débord total admis (cm), ajouté à la largeur et à la longueur ; 0 par défaut. */
+  table_semis_debord_cm?: EurosNumeric | null
+  /** Plaque de semis (format et nombre de trous), null tant que non saisie. */
+  plaque_largeur_cm?: EurosNumeric | null
+  plaque_longueur_cm?: EurosNumeric | null
+  plaque_trous?: number | null
+}
+
+/** Plantation lue pour le calcul de production. `achat_plant` vient de 013 (absent avant). */
+export type PlantingProduction = Pick<PlantingFull,
+  | 'id' | 'culture_id' | 'culture_name' | 'season_id' | 'surface_m2' | 'date_semis'
+  | 'jours_cellule' | 'jours_champ' | 'jours_recolte' | 'rendement' | 'prix_tige'
+  | 'espacement_cm' | 'rangs_par_planche' | 'graines_par_plant' | 'semis_direct'
+  | 'garden_id' | 'garden_name' | 'planche_id' | 'planche_name'
+> & { achat_plant?: boolean | null }

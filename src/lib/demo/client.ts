@@ -19,6 +19,7 @@ import { OBJETS_JOURNAL_DEMO } from './seeds/journal'
 import { emettreAvoirDemo, emettreFactureDemo, enregistrerPaiementDemo, invoicesStatusDemo, refusFacturesDemo } from './seeds/factures'
 import { rpcAchatsDemo, refusSuppressionAchats } from './seeds/achats'
 import { aujourdhuiParisISO } from '../types'
+import { calculerProduction, tauxDeLaFerme, type Calcul } from '../domain/production'
 import {
   DEFAULTS_GESTION, OBJETS_JUSTIFICATIFS_DEMO, TABLES_GESTION, filtreFermeGestion, gestionApresSuppression, gestionAvantEcriture,
   gestionAvantSuppression, rpcGestionDemo,
@@ -67,24 +68,29 @@ const nullif0 = (v: any) => (v === 0 ? null : v)
 function calcPlanting(p: Row) {
   const d = getDb()
   const cat = d.culture_catalog.find(c => c.id === p.culture_id) || {}
-  const jCellule = coalesce(nullif0(p.jours_cellule_override), cat.jours_cellule, 0)
+  // 013/015 : plant acheté, pas de passage en cellule
+  const jCellule = p.achat_plant ? 0 : coalesce(nullif0(p.jours_cellule_override), cat.jours_cellule, 0)
   const jChamp = coalesce(p.jours_champ_override, cat.jours_champ)
   const jRecolte = coalesce(p.jours_recolte_override, cat.jours_recolte, 21)
-  const rend = coalesce(p.rendement_override, cat.rendement_plant, 1)
-  const prix = coalesce(p.prix_override, cat.prix_tige, 0.5)
-  const surface = Number(p.surface_m2)
-  const espacement = coalesce(cat.espacement_cm, 20)
 
   p.date_plantation = addDays(p.date_semis, jCellule)
   p.date_recolte = addDays(p.date_plantation, jChamp)
   p.date_fin = addDays(p.date_recolte, jRecolte)
 
-  let plants = Math.max(1, Math.floor((surface * 10000) / (espacement * espacement)))
-  if (plants > surface * 50) plants = Math.round(surface * 25)
-  p.plants_count = plants
-  p.tiges_estimees = Math.round(plants * rend * 0.7)
-  p.revenu_estime = Math.round(p.tiges_estimees * prix * 100) / 100
-  p.graines_necessaires = Math.ceil(plants * 1.3 * coalesce(cat.graines_par_plant, 1))
+  // Migration 015 : estimations du tableur de Marine (src/lib/domain/production.ts),
+  // taux de pertes de la ferme ; donnée manquante = null, jamais une valeur par défaut.
+  const garden = d.gardens.find(g => g.id === d.planches.find(x => x.id === p.planche_id)?.garden_id)
+  const farm = (d as any).farms?.find((f: Row) => f.id === garden?.farm_id)
+  const pr = calculerProduction({
+    surface_m2: p.surface_m2, rangs_par_planche: cat.rangs_par_planche, espacement_cm: cat.espacement_cm,
+    graines_par_plant: cat.graines_par_plant, rendement: coalesce(p.rendement_override, cat.rendement_plant),
+    prix_tige: coalesce(p.prix_override, cat.prix_tige), jours_recolte: jRecolte, achat_plant: !!p.achat_plant,
+  }, tauxDeLaFerme(farm))
+  const val = (c: Calcul) => (c.etat === 'ok' ? c.valeur : null)
+  p.plants_count = val(pr.plants)
+  p.graines_necessaires = p.achat_plant ? val(pr.plantsAvecPertes) : val(pr.graines)
+  p.tiges_estimees = val(pr.tigesNettes)
+  p.revenu_estime = pr.revenu.etat === 'ok' ? pr.revenu.centimes / 100 : null
 }
 
 // ─── Vue plantings_full (dates recalculées depuis le catalogue) ──
@@ -97,7 +103,7 @@ function plantingsFull(): Row[] {
     const g = pl && d.gardens.find(x => x.id === pl.garden_id)
     const s = d.seasons.find(x => x.id === p.season_id)
     if (!c || !pl || !g || !s) continue // jointures internes
-    const jc = coalesce(nullif0(p.jours_cellule_override), c.jours_cellule, 0)
+    const jc = p.achat_plant ? 0 : coalesce(nullif0(p.jours_cellule_override), c.jours_cellule, 0)
     const jch = coalesce(p.jours_champ_override, c.jours_champ)
     const jr = coalesce(p.jours_recolte_override, c.jours_recolte, 21)
     const datePlantation = addDays(p.date_semis, jc)
@@ -119,6 +125,7 @@ function plantingsFull(): Row[] {
       temp_germination: c.temp_germination, pincer: c.pincer, filet: c.filet, couvre_sol: c.couvre_sol,
       semis_direct: c.semis_direct, espacement_cm: c.espacement_cm, rangs_par_planche: c.rangs_par_planche,
       graines_par_plant: c.graines_par_plant,
+      achat_plant: !!p.achat_plant,  // migration 013
       planche_name: pl.name, planche_m2: pl.surface_m2,
       garden_name: g.name, garden_id: g.id, garden_m2: g.surface_m2,
       user_id: s.user_id,
@@ -532,6 +539,8 @@ class DemoQuery implements PromiseLike<Result> {
           if (t === 'sale_lines' || t === 'order_lines') r.line_total = totalLigneDemo(r)
           if (t === 'sale_lines') recalculerVenteDemo(d, r.sale_id)
           if (t === 'culture_catalog') d.plantings.filter((p: Row) => p.culture_id === r.id).forEach(calcPlanting)
+          // Migration 015 : taux de pertes de la ferme modifiés → recalcul de ses plantations
+          if (t === 'farms' && ('taux_perte_semis' in this.payload || 'taux_perte_champ' in this.payload)) d.plantings.forEach(calcPlanting)
         }
         return this.returning ? this.finish(rows) : { data: null, error: null }
       }

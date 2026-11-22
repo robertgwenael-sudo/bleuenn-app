@@ -1,18 +1,31 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { Check, Minus } from 'lucide-react'
 import { getPlantingStatus, formatDateShort } from '@/lib/types'
 import type { PlantingFull } from '@/lib/types'
+import { ligneSemis, type LigneSemis } from '@/lib/domain/production'
+import { useProduction } from '@/hooks/useProduction'
 import {
-  Card, EmptyState, PageHeader, SearchInput, Select, SortHeader, StatusBadge, TableContainer, TypeBadge, cn, useSort, useSorted,
+  Badge, Card, EmptyState, PageHeader, SearchInput, Select, SortHeader, StatusBadge, TableContainer, TypeBadge, cn, useSort, useSorted,
 } from '@/components/ui'
 import { photos } from '@/lib/images'
+import { CelluleCalcul } from './semis/format'
 
 const STATUSES = ['À semer', 'En germination', 'Planté', 'En récolte', 'Terminé'] as const
-type SortKey = 'culture_name' | 'garden_name' | 'planche_name' | 'planche_m2' | 'culture_type' | 'jours_cellule' | 'temp_germination' | 'date_semis' | 'date_plantation' | 'date_recolte' | 'status'
+type SortKey = 'culture_name' | 'garden_name' | 'planche_name' | 'surface_m2' | 'culture_type' | 'jours_cellule' | 'temp_germination' | 'date_semis' | 'date_plantation' | 'date_recolte' | 'status' | 'graines' | 'mottes'
 
-const Bool = ({ v, label }: { v: boolean; label: string }) =>
-  v ? <Check className="h-4 w-4 text-primary" aria-label={label} /> : <Minus className="h-4 w-4 text-fg-subtle/60" aria-label={`Sans ${label.toLowerCase()}`} />
+type Row = PlantingFull & { l: LigneSemis | null; erreur: string | null }
+
+/** Semis en cellule, semis direct ou plant acheté (pas de graines). */
+function Origine({ r }: { r: Row }) {
+  if (r.l?.achat) return <Badge tone="violet">Plant acheté</Badge>
+  if (r.l?.direct || !r.jours_cellule) return <Badge tone="blue">Semis direct</Badge>
+  return <Badge tone="green">En cellule</Badge>
+}
+
+const brut = (r: Row, k: 'graines' | 'plantsAvecPertes') => {
+  const c = r.l?.production[k]
+  return c && c.etat === 'ok' ? c.valeur : -1
+}
 
 export default function Semis({ ctx }: { ctx: any }) {
   const [filterGarden, setFilterGarden] = useState('')
@@ -21,9 +34,17 @@ export default function Semis({ ctx }: { ctx: any }) {
   const [search, setSearch] = useState('')
   const sort = useSort<SortKey>('date_semis')
 
+  const prod = useProduction(ctx)
   const plantings: PlantingFull[] = ctx.plantings || []
+  // Même calcul que « Quoi semer » et que le tableur : graines exactes par semis.
+  const lignes: Row[] = useMemo(() => plantings.map(p => {
+    try { return { ...p, l: ligneSemis(p, prod.taux), erreur: null } } catch (e) {
+      console.error('[semis] calcul', p.id, e)
+      return { ...p, l: null, erreur: e instanceof Error ? e.message : String(e) }
+    }
+  }), [plantings, prod.taux])
 
-  let filtered = plantings
+  let filtered = lignes
   if (filterGarden) filtered = filtered.filter(p => p.garden_id === filterGarden)
   if (filterStatus) filtered = filtered.filter(p => getPlantingStatus(p) === filterStatus)
   if (filterType) filtered = filtered.filter(p => p.culture_type === filterType)
@@ -31,7 +52,10 @@ export default function Semis({ ctx }: { ctx: any }) {
   if (q) filtered = filtered.filter(p => [p.culture_name, p.garden_name, p.planche_name].some(x => x.toLowerCase().includes(q)))
 
   const counts = useMemo(() => Object.fromEntries(STATUSES.map(s => [s, plantings.filter(p => getPlantingStatus(p) === s).length])), [plantings])
-  const getter = useMemo(() => (p: PlantingFull) => sort.key === 'status' ? STATUSES.indexOf(getPlantingStatus(p)) : (p as any)[sort.key], [sort.key])
+  const getter = useMemo(() => (p: Row) => sort.key === 'status' ? STATUSES.indexOf(getPlantingStatus(p))
+    : sort.key === 'graines' ? brut(p, 'graines') : sort.key === 'mottes' ? brut(p, 'plantsAvecPertes')
+    : sort.key === 'date_plantation' ? p.l?.calendrier.plantation ?? p.date_plantation
+    : (p as any)[sort.key], [sort.key])
   const rows = useSorted(filtered, getter, sort.dir)
 
   const H = ({ k, label, right }: { k: SortKey; label: string; right?: boolean }) =>
@@ -39,7 +63,8 @@ export default function Semis({ ctx }: { ctx: any }) {
 
   return (
     <div>
-      <PageHeader title="Semis & germination" description="Suivi de l’ensemble des cultures, de la cellule à la récolte" image={photos.semisGodets} />
+      <PageHeader title="Semis & germination" image={photos.semisGodets}
+        description={`Graines à semer par semis (plants + ${prod.taux.semis} % de pertes × graines par motte), entrée en cellule et plantation`} />
 
       {/* Répartition par statut (cliquable) */}
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filtrer par statut">
@@ -65,9 +90,9 @@ export default function Semis({ ctx }: { ctx: any }) {
         </Select>
         <Select aria-label="Type" value={filterType} onChange={e => setFilterType(e.target.value)} wrapperClassName="col-span-2 sm:w-44">
           <option value="">Tous les types</option>
-          <option value="RR">RR — Répétitive</option>
-          <option value="MP">MP — Moyen</option>
-          <option value="RU">RU — Unique</option>
+          <option value="RR">RR : répétitive</option>
+          <option value="MP">MP : moyen</option>
+          <option value="RU">RU : unique</option>
         </Select>
         <span className="num col-span-2 self-center text-xs text-fg-subtle sm:ml-auto">{rows.length} plantation{rows.length > 1 ? 's' : ''}</span>
       </div>
@@ -81,22 +106,31 @@ export default function Semis({ ctx }: { ctx: any }) {
         <>
           <ul className="space-y-2 md:hidden">
             {rows.map(p => (
-              <li key={p.id} className="rounded-xl border border-border bg-surface p-3 shadow-xs">
+              <li key={p.id} className="rounded-xl border border-border bg-surface p-3 shadow-xs" data-testid="semis-carte">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-fg">{p.culture_name}</p>
-                    <p className="truncate text-xs text-fg-muted">{p.garden_name} · {p.planche_name} · {p.planche_m2} m²</p>
+                    <p className="truncate text-xs text-fg-muted">{p.garden_name} · {p.planche_name} · {p.surface_m2} m²</p>
                   </div>
-                  <StatusBadge status={getPlantingStatus(p)} />
+                  <div className="flex shrink-0 flex-col items-end gap-1"><StatusBadge status={getPlantingStatus(p)} /><Origine r={p} /></div>
                 </div>
-                <div className="num mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                  {[['Semis', p.date_semis], ['Plantation', p.date_plantation], ['Récolte', p.date_recolte]].map(([l, d]) => (
-                    <div key={l} className="rounded-lg bg-surface-2 px-2 py-1.5">
-                      <div className="text-fg-subtle">{l}</div>
-                      <div className="font-semibold text-fg">{formatDateShort(d)}</div>
+                {p.erreur && <p className="mt-2 text-xs font-medium text-danger">{p.erreur}</p>}
+                {p.l && (
+                  <div className="num mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="rounded-lg bg-primary-soft px-2 py-1.5">
+                      <div className="text-fg-subtle">Graines</div>
+                      <div className="font-semibold text-primary"><CelluleCalcul c={p.l.production.graines} /></div>
                     </div>
-                  ))}
-                </div>
+                    <div className="rounded-lg bg-surface-2 px-2 py-1.5">
+                      <div className="text-fg-subtle">{p.l.achat ? 'Plants à acheter' : 'Mottes'}</div>
+                      <div className="font-semibold text-fg"><CelluleCalcul c={p.l.production.plantsAvecPertes} /></div>
+                    </div>
+                    <div className="rounded-lg bg-surface-2 px-2 py-1.5">
+                      <div className="text-fg-subtle">{p.l.achat ? 'Plantation' : 'Entrée cellule'}</div>
+                      <div className="font-semibold text-fg">{formatDateShort(p.l.calendrier.entree)} <span className="text-fg-subtle">S{p.l.calendrier.semaineEntree.semaine}</span></div>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -105,36 +139,36 @@ export default function Semis({ ctx }: { ctx: any }) {
               <thead>
                 <tr>
                   {H({ k: 'culture_name', label: 'Culture' })}
+                  <th>Origine</th>
+                  {H({ k: 'date_semis', label: 'Entrée cellule' })}
+                  {H({ k: 'graines', label: 'Graines à semer', right: true })}
+                  {H({ k: 'mottes', label: `Mottes (+ ${prod.taux.semis} %)`, right: true })}
+                  <th className="!text-right">Graines / motte</th>
+                  {H({ k: 'jours_cellule', label: 'J. cellule', right: true })}
+                  {H({ k: 'date_plantation', label: 'Plantation' })}
+                  {H({ k: 'status', label: 'Statut' })}
                   {H({ k: 'garden_name', label: 'Jardin' })}
                   {H({ k: 'planche_name', label: 'Planche' })}
-                  {H({ k: 'planche_m2', label: 'm²', right: true })}
-                  {H({ k: 'culture_type', label: 'Type' })}
-                  {H({ k: 'jours_cellule', label: 'J. cellule', right: true })}
+                  {H({ k: 'surface_m2', label: 'm²', right: true })}
                   {H({ k: 'temp_germination', label: 'Temp.', right: true })}
-                  {H({ k: 'date_semis', label: 'Semis' })}
-                  {H({ k: 'date_plantation', label: 'Plantation' })}
-                  {H({ k: 'date_recolte', label: 'Récolte' })}
-                  {H({ k: 'status', label: 'Statut' })}
-                  <th className="!text-center">Pinç.</th>
-                  <th className="!text-center">Filet</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(p => (
-                  <tr key={p.id}>
-                    <td className="font-medium">{p.culture_name}</td>
+                  <tr key={p.id} data-testid="semis-ligne">
+                    <td className="font-medium">{p.culture_name} <TypeBadge type={p.culture_type} /></td>
+                    <td><Origine r={p} /></td>
+                    <td className="num">{p.l ? <>{formatDateShort(p.l.calendrier.entree)} <span className="text-2xs text-fg-subtle">S{p.l.calendrier.semaineEntree.semaine}</span></> : formatDateShort(p.date_semis)}</td>
+                    <td className="text-right font-semibold text-primary">{p.l ? <CelluleCalcul c={p.l.production.graines} /> : <span className="text-xs text-danger">{p.erreur}</span>}</td>
+                    <td className="text-right">{p.l && <CelluleCalcul c={p.l.production.plantsAvecPertes} />}</td>
+                    <td className="num text-right">{p.l?.achat ? '' : p.graines_par_plant ?? ''}</td>
+                    <td className="num text-right">{p.l?.achat ? '' : p.jours_cellule}</td>
+                    <td className="num">{p.l ? <>{formatDateShort(p.l.calendrier.plantation)} <span className="text-2xs text-fg-subtle">S{p.l.calendrier.semaineSortie.semaine}</span></> : formatDateShort(p.date_plantation)}</td>
+                    <td><StatusBadge status={getPlantingStatus(p)} /></td>
                     <td className="text-fg-muted">{p.garden_name}</td>
                     <td className="text-fg-muted">{p.planche_name}</td>
-                    <td className="num text-right">{p.planche_m2}</td>
-                    <td><TypeBadge type={p.culture_type} /></td>
-                    <td className="num text-right">{p.jours_cellule}</td>
-                    <td className="num text-right">{p.temp_germination || '—'}°C</td>
-                    <td className="num">{formatDateShort(p.date_semis)}</td>
-                    <td className="num">{formatDateShort(p.date_plantation)}</td>
-                    <td className="num">{formatDateShort(p.date_recolte)}</td>
-                    <td><StatusBadge status={getPlantingStatus(p)} /></td>
-                    <td><span className="flex justify-center"><Bool v={p.pincer} label="Pinçage" /></span></td>
-                    <td><span className="flex justify-center"><Bool v={p.filet} label="Filet" /></span></td>
+                    <td className="num text-right">{p.surface_m2}</td>
+                    <td className="num text-right">{p.temp_germination ? `${p.temp_germination}°C` : ''}</td>
                   </tr>
                 ))}
               </tbody>
