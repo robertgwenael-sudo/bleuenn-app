@@ -4,8 +4,10 @@ test('facturer deux ventes, encaisser en partie, émettre un avoir, imprimer', a
   await connexion(page, 'factures')
   await expect(titre(page)).toHaveText('Factures & paiements')
 
-  // ── Réglages : la mention d'absence de TVA est obligatoire ──
+  // ── Réglages : ferme non assujettie, la mention d'absence de TVA est obligatoire ──
+  // (la ferme de démo applique la TVA : ce parcours vérifie le régime sans TVA)
   await page.getByRole('tab', { name: 'Réglages de facturation' }).click()
+  await page.getByRole('checkbox', { name: /La ferme facture la TVA/ }).uncheck()
   const mention = page.getByRole('textbox', { name: 'Mention imprimée sur les factures' })
   await mention.fill('')
   const controle = page.getByRole('list', { name: 'Liste de contrôle des mentions' })

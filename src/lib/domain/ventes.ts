@@ -117,6 +117,7 @@ export interface VenteAInserer {
 }
 
 export type LigneVenteAInserer = Pick<LigneBase, 'culture_id' | 'label' | 'unit' | 'quantity' | 'stems_per_unit' | 'unit_price'>
+  & Partial<Pick<LigneBase, 'vat_rate_id'>>
 
 /**
  * Prépare la vente qui solde une commande : mêmes lignes, même client,
@@ -125,7 +126,7 @@ export type LigneVenteAInserer = Pick<LigneBase, 'culture_id' | 'label' | 'unit'
  */
 export function commandeVersVente(args: {
   order: Order
-  lignes: Pick<OrderLine, 'culture_id' | 'label' | 'unit' | 'quantity' | 'stems_per_unit' | 'unit_price'>[]
+  lignes: (Pick<OrderLine, 'culture_id' | 'label' | 'unit' | 'quantity' | 'stems_per_unit' | 'unit_price'> & Partial<Pick<OrderLine, 'vat_rate_id'>>)[]
   userId: string
   client?: Pick<Client, 'kind' | 'name'> | null
   date?: DateISO
@@ -152,7 +153,7 @@ export function commandeVersVente(args: {
     },
     lignes: lignes.map(l => ({
       culture_id: l.culture_id, label: l.label, unit: l.unit,
-      quantity: l.quantity, stems_per_unit: l.stems_per_unit, unit_price: l.unit_price,
+      quantity: l.quantity, stems_per_unit: l.stems_per_unit, unit_price: l.unit_price, vat_rate_id: l.vat_rate_id ?? null,
     })),
     total_centimes: t.total_centimes,
   }

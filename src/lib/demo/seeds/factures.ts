@@ -2,8 +2,9 @@ import { type DemoDb, DEMO_USER_ID } from '../data'
 import { ajouterJours, centimesEnEuros, eurosEnCentimes, type FarmBilling, type Invoice, type PaymentMode, type VendeurFige } from '../../domain'
 import {
   controlerPaiement, dateEcheance, estClientProfessionnel, formatNumero, lignesAFacturer, reglagesManquants,
-  situationFacture, ventesFacturees,
+  situationFacture, totauxFacture, ventesFacturees,
 } from '../../domain/factures'
+import { TAUX_DEMO } from './tva'
 
 // ============================================================
 // Factures en mode démo (migration 010) : réglages, factures, avoir et
@@ -45,6 +46,7 @@ const vendeur = (b: Row): VendeurFige => Object.fromEntries(Object.entries({
   raison_sociale: b.raison_sociale?.trim(), adresse: b.adresse?.trim(), siret: b.siret,
   email: b.email?.trim() || undefined, telephone: b.telephone?.trim() || undefined,
   iban: b.iban?.trim() || undefined, bic: b.bic?.trim() || undefined, mentions_libres: b.mentions_libres?.trim() || undefined,
+  numero_tva: b.assujettie_tva ? b.numero_tva?.trim() || undefined : undefined,
 }).filter(([, v]) => v !== undefined && v !== null && v !== '')) as unknown as VendeurFige
 
 /** Équivalent de emettre_facture. `date` : date d'émission (aujourd'hui à Paris hors amorçage). */
@@ -76,14 +78,26 @@ export function emettreFactureDemo(db: Db, args: Row, userId: string, date = auj
   if (pro && (!nom || !adresse)) manque.push('nom et adresse du client (client professionnel)')
   if (manque.length) return refus(`Mentions obligatoires manquantes : ${manque.join(', ')}`)
 
+  const assujettie = !!b!.assujettie_tva
+  const taux = (db.farm_vat_rates ?? []).filter(t => t.farm_id === farmId)
+  const defaut: string | null = opt.vat_rate_id || null
+  if (defaut && !taux.some(t => t.id === defaut && t.actif)) return refus(`Catégorie de TVA ${defaut} introuvable ou inactive pour cette ferme`)
   const delai = opt.delai_jours ?? b!.delai_paiement_jours ?? 0
   let echeance: string
   try { echeance = dateEcheance(date, delai) } catch (e) { return refus(e instanceof Error ? e.message : String(e)) }
   const annee = Number(date.slice(0, 4))
-  const lignes = lignesAFacturer(ventes.map(v => ({ ...v!, lignes: db.sale_lines.filter(l => l.sale_id === v!.id) })))
-  const total = lignes.reduce((s, l) => s + l.line_total, 0)
+  let lignes: ReturnType<typeof lignesAFacturer>
+  let totaux: ReturnType<typeof totauxFacture>
+  try {
+    lignes = lignesAFacturer(ventes.map(v => ({ ...v!, lignes: db.sale_lines.filter(l => l.sale_id === v!.id) })), { assujettie, taux, defaut })
+    totaux = totauxFacture(lignes, assujettie)
+  } catch (e) { return refus(e instanceof Error ? e.message : String(e)) }
   const somme = ventes.reduce((s, v) => s + eurosEnCentimes(v!.total), 0)
-  if (total !== somme) return refus(`Incohérence : lignes ${total} c pour des ventes à ${somme} c`)
+  if (totaux.total_ht !== somme) return refus(`Incohérence : lignes ${totaux.total_ht} c pour des ventes à ${somme} c`)
+  const commandes = (db.orders ?? [])
+    .filter(o => ids.includes(o.sale_id) || ventes.some(v => v!.order_id === o.id))
+    .sort((a, b2) => a.delivery_date.localeCompare(b2.delivery_date) || String(a.numero).localeCompare(String(b2.numero)))
+    .map(o => ({ order_id: o.id, numero: o.numero ?? null, date_livraison: o.delivery_date }))
 
   const seq = prochainNumero(db, farmId, 'facture', annee)
   const dates = ventes.map(v => v!.date as string).sort()
@@ -91,13 +105,18 @@ export function emettreFactureDemo(db: Db, args: Row, userId: string, date = auj
   const id = uuid()
   const acheteur = Object.fromEntries(Object.entries({
     client_id: clientId ?? undefined, nom: nom ?? undefined, adresse: adresse ?? undefined, email: c?.email?.trim() || undefined,
-    siren: opt.client_siren?.trim() || undefined, adresse_livraison: opt.adresse_livraison?.trim() || undefined, professionnel: pro,
+    siren: opt.client_siren?.trim() || undefined, numero_tva: opt.client_numero_tva?.trim() || undefined, adresse_livraison: opt.adresse_livraison?.trim() || undefined, professionnel: pro,
   }).filter(([, v]) => v !== undefined))
   db.invoices.push({
     id, farm_id: farmId, season_id: derniere.season_id, client_id: clientId, kind: 'facture',
     numero: formatNumero(b!.prefixe_facture, annee, seq), annee, sequence: seq, date_emission: date,
     date_vente_debut: dates[0], date_vente_fin: dates[dates.length - 1], date_echeance: echeance,
-    vendeur: vendeur(b!), acheteur, total: centimesEnEuros(total), mention_tva: b!.mention_tva!.trim(),
+    vendeur: vendeur(b!), acheteur, total: centimesEnEuros(totaux.total_ttc), mention_tva: assujettie ? null : b!.mention_tva!.trim(),
+    assujettie_tva: assujettie, total_ht: centimesEnEuros(totaux.total_ht), total_tva: centimesEnEuros(totaux.total_tva),
+    ventilation_tva: totaux.ventilation.map(v => ({
+      taux_pb: v.taux_pb, libelle: v.libelle, base_ht: centimesEnEuros(v.base_ht), tva: centimesEnEuros(v.tva), ttc: centimesEnEuros(v.ttc),
+    })),
+    commandes,
     conditions_paiement: b!.conditions_paiement?.trim() || null,
     penalites_retard: pro ? b!.penalites_retard!.trim() : null, indemnite_recouvrement: pro ? b!.indemnite_recouvrement!.trim() : null,
     notes: opt.notes?.trim() || null, avoir_de: null, motif: null, annulee_par: null,
@@ -108,6 +127,7 @@ export function emettreFactureDemo(db: Db, args: Row, userId: string, date = auj
       id: uuid(), invoice_id: id, farm_id: farmId, position: l.position, sale_id: l.sale_id, sale_date: l.sale_date,
       culture_id: l.culture_id, label: l.label, unit: l.unit, quantity: l.quantity, stems_per_unit: l.stems_per_unit,
       unit_price: centimesEnEuros(l.unit_price), line_total: centimesEnEuros(l.line_total),
+      vat_rate_id: l.vat_rate_id, taux_tva_pb: l.taux_tva_pb, libelle_tva: l.libelle_tva,
     })
   }
   for (const sid of ids) db.invoice_sales.push({ id: uuid(), invoice_id: id, farm_id: farmId, sale_id: sid, liberee_par_avoir: null, created_at: `${date}T10:00:00Z` })
@@ -123,8 +143,10 @@ export function emettreAvoirDemo(db: Db, args: Row, userId: string, date = aujou
   if (f.kind !== 'facture') return refus('Un avoir ne se corrige pas par un avoir')
   if (f.annulee_par) return refus(`Facture ${f.numero} déjà annulée par l’avoir n° ${db.invoices.find(i => i.id === f.annulee_par)?.numero}`)
   const b = db.farm_billing.find(x => x.farm_id === f.farm_id) as FarmBilling | undefined
-  const manque = reglagesManquants(b)
+  // Contrôle dans le régime de la facture corrigée ; mention reprise de la facture au besoin
+  const manque = reglagesManquants(b ? { ...b, assujettie_tva: !!f.assujettie_tva, mention_tva: b.mention_tva?.trim() || f.mention_tva } : b)
   if (manque.length) return refus(`Mentions obligatoires manquantes : ${manque.map(m => m.libelle.toLowerCase()).join(', ')}`)
+  const neg = (e: number | string) => centimesEnEuros(-eurosEnCentimes(e))
   const annee = Number(date.slice(0, 4))
   const seq = prochainNumero(db, f.farm_id, 'avoir', annee)
   const id = uuid()
@@ -132,7 +154,11 @@ export function emettreAvoirDemo(db: Db, args: Row, userId: string, date = aujou
     id, farm_id: f.farm_id, season_id: f.season_id, client_id: f.client_id, kind: 'avoir',
     numero: formatNumero(b!.prefixe_avoir, annee, seq), annee, sequence: seq, date_emission: date,
     date_vente_debut: f.date_vente_debut, date_vente_fin: f.date_vente_fin, date_echeance: null,
-    vendeur: vendeur(b!), acheteur: f.acheteur, total: centimesEnEuros(-eurosEnCentimes(f.total)), mention_tva: b!.mention_tva!.trim(),
+    vendeur: vendeur({ ...b!, assujettie_tva: f.assujettie_tva }), acheteur: f.acheteur, total: neg(f.total),
+    mention_tva: f.assujettie_tva ? null : (b!.mention_tva?.trim() || f.mention_tva),
+    assujettie_tva: !!f.assujettie_tva, total_ht: neg(f.total_ht), total_tva: neg(f.total_tva),
+    ventilation_tva: (f.ventilation_tva ?? []).map((v: Row) => ({ ...v, base_ht: neg(v.base_ht), tva: neg(v.tva), ttc: neg(v.ttc) })),
+    commandes: f.commandes ?? [],
     conditions_paiement: null, penalites_retard: null, indemnite_recouvrement: null, notes: null,
     avoir_de: f.id, motif, annulee_par: null, created_by: userId, created_at: `${date}T11:00:00Z`,
   } satisfies Invoice)
@@ -175,14 +201,14 @@ export function invoicesStatusDemo(db: Db): Row[] {
     const liee = db.invoices.find(x => x.id === (i.annulee_par ?? i.avoir_de))
     return {
       id: i.id, farm_id: i.farm_id, season_id: i.season_id, client_id: i.client_id, kind: i.kind, numero: i.numero,
-      date_emission: i.date_emission, date_echeance: i.date_echeance, total: i.total, client_nom: i.acheteur?.nom ?? null,
+      date_emission: i.date_emission, date_echeance: i.date_echeance, total: i.total, total_ht: i.total_ht, total_tva: i.total_tva, client_nom: i.acheteur?.nom ?? null,
       avoir_de: i.avoir_de, annulee_par: i.annulee_par, numero_lie: liee?.numero ?? null,
       paye: centimesEnEuros(s.paye), reste_du: centimesEnEuros(s.reste), statut: s.statut, jours_de_retard: s.joursRetard,
     }
   })
 }
 
-const FIGEES = new Set(['invoices', 'invoice_lines', 'invoice_sales', 'invoice_counters'])
+const FIGEES = new Set(['invoices', 'invoice_lines', 'invoice_sales', 'invoice_counters', 'order_counters'])
 
 /**
  * Droits et triggers de 010 pour les requêtes directes : écriture refusée
@@ -234,7 +260,10 @@ export function seed_factures(db: DemoDb & Record<string, any[]>): void {
     iban: 'FR76 0000 0000 0000 0000 0000 000',
     bic: 'DEMOFRPPXXX',
     mentions_libres: 'Fleurs cultivées sans pesticides de synthèse à Plougastel-Daoulas.',
-    prefixe_facture: 'F', prefixe_avoir: 'AV', updated_by: DEMO_USER_ID, updated_at: '2026-09-01T08:00:00Z',
+    prefixe_facture: 'F', prefixe_avoir: 'AV',
+    // La ferme de démo applique la TVA, comme la ferme réelle (numéro fictif)
+    assujettie_tva: true, numero_tva: 'FR00123456789',
+    updated_by: DEMO_USER_ID, updated_at: '2026-09-01T08:00:00Z',
   } satisfies FarmBilling)
 
   const jour = aujourdhuiParis()
@@ -245,7 +274,7 @@ export function seed_factures(db: DemoDb & Record<string, any[]>): void {
     return v.id as string
   }
   const emettre = (ids: string[], options: Row, date: string) => {
-    const r = emettreFactureDemo(x, { p_sale_ids: ids, p_options: options }, DEMO_USER_ID, date)
+    const r = emettreFactureDemo(x, { p_sale_ids: ids, p_options: { vat_rate_id: TAUX_DEMO.nonTravaillee, ...options } }, DEMO_USER_ID, date)
     if (r.error) throw new Error(`Facture démo : ${r.error.message}`)
     return r.data as string
   }

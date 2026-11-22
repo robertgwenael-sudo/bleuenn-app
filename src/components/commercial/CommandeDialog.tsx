@@ -1,11 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { formatEuros, type Order, type OrderStatus } from '@/lib/domain'
+import { type Order, type OrderStatus } from '@/lib/domain'
 import type { CultureCatalog } from '@/lib/types'
 import { Button, Dialog, Field, Input, Segmented, Select, Textarea } from '@/components/ui'
 import { dejaAffichee, type Commercial } from '@/hooks/useCommercial'
-import { LignesEditor, useTotauxSaisie } from './LignesEditor'
+import { LignesEditor, montantAffiche, useTotauxSaisie, type ContexteTva } from './LignesEditor'
 import {
   aujourdhuiParis, CANAUX, KIND_LABEL, nouvelleLigne, STATUT_LABEL, versSaisie, type LigneSaisie,
 } from './commun'
@@ -28,7 +28,11 @@ export function CommandeDialog({ open, onOpenChange, order, com, catalog }: {
   const [lignes, setLignes] = useState<LigneSaisie[]>([nouvelleLigne()])
   const [tried, setTried] = useState(false)
   const [saving, setSaving] = useState(false)
-  const { ok, totaux, toutesValides } = useTotauxSaisie(lignes)
+  const tva: ContexteTva = useMemo(() => ({
+    taux: com.taux, assujettie: com.assujettie, channel: channel || null,
+    clientKind: clientId ? com.clientsParId.get(clientId)?.kind ?? null : null,
+  }), [com.taux, com.assujettie, channel, clientId, com.clientsParId])
+  const { ok, totaux, toutesValides } = useTotauxSaisie(lignes, tva)
 
   useEffect(() => {
     if (!open) return
@@ -61,7 +65,7 @@ export function CommandeDialog({ open, onOpenChange, order, com, catalog }: {
       if (order) await com.updateOrder(order.id, v, ok)
       else await com.createOrder(v, ok)
       const nom = com.clientsParId.get(clientId)?.name
-      toast.success(order ? 'Commande modifiée' : 'Commande enregistrée', { description: `${nom} · ${formatEuros(totaux.total_centimes)}` })
+      toast.success(order ? 'Commande modifiée' : 'Commande enregistrée', { description: `${nom} · ${montantAffiche(totaux, com.assujettie)}` })
       onOpenChange(false)
     } catch (err) {
       if (!dejaAffichee(err)) toast.error('Enregistrement impossible', { description: String(err) })
@@ -72,12 +76,12 @@ export function CommandeDialog({ open, onOpenChange, order, com, catalog }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} size="lg"
-      title={order ? 'Modifier la commande' : 'Nouvelle commande'}
+      title={order ? `Modifier la commande${order.numero ? ` ${order.numero}` : ''}` : 'Nouvelle commande'}
       description={verrouillee ? 'Commande livrée et facturée : modifiez plutôt la vente.' : undefined}
       footer={<>
         <Button variant="secondary" onClick={() => onOpenChange(false)}>Annuler</Button>
         <Button type="submit" form="commande-form" loading={saving} disabled={verrouillee}>
-          {order ? 'Enregistrer' : 'Enregistrer la commande'} · {formatEuros(totaux.total_centimes)}
+          {order ? 'Enregistrer' : 'Enregistrer la commande'} · {montantAffiche(totaux, com.assujettie)}
         </Button>
       </>}>
       <form id="commande-form" onSubmit={save} className="space-y-4">
@@ -108,7 +112,7 @@ export function CommandeDialog({ open, onOpenChange, order, com, catalog }: {
         </div>
         <div>
           <p className="mb-1.5 text-xs font-medium text-fg-muted">Lignes</p>
-          <LignesEditor lignes={lignes} onChange={setLignes} catalog={catalog} tried={tried} />
+          <LignesEditor lignes={lignes} onChange={setLignes} catalog={catalog} tried={tried} tva={tva} />
         </div>
         <Field label="Notes">
           <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Consignes de livraison, teintes…" />

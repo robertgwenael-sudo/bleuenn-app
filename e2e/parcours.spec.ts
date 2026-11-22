@@ -68,12 +68,14 @@ test('créer une commande, puis la livrer et la facturer', async ({ page }) => {
 
   const livrer = page.getByRole('dialog', { name: 'Livrer et facturer' })
   await expect(livrer).toContainText('Zinnia')
-  // Client « Commerce » : le canal ne se déduit pas, la facturation l'exige.
-  const facturer = livrer.getByRole('button', { name: /^Facturer 20,00\s€$/ })
+  // Ferme de démo assujettie : 20,00 € HT de tiges à 10 % → 22,00 € TTC.
+  // Client « Commerce » : le canal ne se déduit pas, la livraison l'exige.
+  const facturer = livrer.getByRole('button', { name: /^Livrer et facturer · 22,00\s€ TTC$/ })
   await expect(facturer).toBeDisabled()
   await livrer.getByRole('combobox', { name: 'Canal' }).selectOption('Fleuriste')
   await facturer.click()
   await expect(toast(page, 'Commande livrée et facturée')).toBeVisible()
+  await expect(toast(page, /facture F2026-\d{4} émise \(bon BC2026-\d{4}\)/)).toBeVisible()
   await expect(livrer).toBeHidden()
 
   // La commande quitte « À livrer » pour l'historique.

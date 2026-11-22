@@ -13,6 +13,8 @@ import {
 import { dejaAffichee, useCommercial, type Commercial } from '@/hooks/useCommercial'
 import { CommandeDialog } from '@/components/commercial/CommandeDialog'
 import { LivrerDialog } from '@/components/commercial/LivrerDialog'
+import { FacturerDialog } from '@/components/commercial/FacturerDialog'
+import { useNumerosFactureParVente } from '@/hooks/useFactures'
 import {
   aujourdhuiParis, jourLivraison, KIND_LABEL, kindTone, pluriel, STATUT_LABEL, STATUT_SUIVANT, statutTone, libelleQuantite,
 } from '@/components/commercial/commun'
@@ -32,6 +34,10 @@ export default function Livraisons({ ctx }: { ctx: any }) {
   const [periode, setPeriode] = useState<Periode>('a-venir')
   const [edit, setEdit] = useState<{ open: boolean; order: Order | null }>({ open: false, order: null })
   const [aLivrer, setALivrer] = useState<Order | null>(null)
+  const [aFacturer, setAFacturer] = useState<string | null>(null)
+  const facturees = useNumerosFactureParVente(ctx.activeSeason?.farm_id, com.sales)
+  const venteAFacturer = aFacturer ? com.ventes.find(v => v.id === aFacturer) ?? null : null
+  const carteProps = { com, today, facturees, onFacturer: (saleId: string) => setAFacturer(saleId) }
 
   // Bornes : semaine civile en cours (lundi → dimanche), puis la suivante
   const finSemaine = ajouterJours(lundiDeSemaine(today), 6)
@@ -163,7 +169,7 @@ export default function Livraisons({ ctx }: { ctx: any }) {
           {periode === 'historique' ? (
             historique.length === 0
               ? <Card><EmptyState compact title="Pas encore d’historique" description="Les commandes livrées ou annulées s’affichent ici." /></Card>
-              : <ul className="space-y-2">{historique.map(o => <CarteCommande key={o.id} o={o} com={com} today={today} onEdit={() => setEdit({ open: true, order: o })} onLivrer={() => setALivrer(o)} onStatut={s => changerStatut(o, s)} onDelete={() => supprimer(o)} />)}</ul>
+              : <ul className="space-y-2">{historique.map(o => <CarteCommande key={o.id} o={o} {...carteProps} onEdit={() => setEdit({ open: true, order: o })} onLivrer={() => setALivrer(o)} onStatut={s => changerStatut(o, s)} onDelete={() => supprimer(o)} />)}</ul>
           ) : groupes.length === 0 ? (
             <Card><EmptyState image={photos.bouquetChampetre} title="Aucune commande à livrer"
               description="Fleuristes, abonnements, mariages : saisissez les commandes pour préparer la coupe et facturer en un geste."
@@ -177,7 +183,7 @@ export default function Livraisons({ ctx }: { ctx: any }) {
                     <span className="num text-sm font-normal text-fg-subtle">· {g.items.length}{g.sous ? ` · ${g.sous}` : ''}</span>
                   </h2>
                   <ul className="space-y-2">
-                    {g.items.map(o => <CarteCommande key={o.id} o={o} com={com} today={today} onEdit={() => setEdit({ open: true, order: o })} onLivrer={() => setALivrer(o)} onStatut={s => changerStatut(o, s)} onDelete={() => supprimer(o)} />)}
+                    {g.items.map(o => <CarteCommande key={o.id} o={o} {...carteProps} onEdit={() => setEdit({ open: true, order: o })} onLivrer={() => setALivrer(o)} onStatut={s => changerStatut(o, s)} onDelete={() => supprimer(o)} />)}
                   </ul>
                 </section>
               ))}
@@ -188,17 +194,22 @@ export default function Livraisons({ ctx }: { ctx: any }) {
 
       <CommandeDialog open={edit.open} onOpenChange={o => setEdit(x => ({ ...x, open: o }))} order={edit.order} com={com} catalog={catalog} />
       <LivrerDialog order={aLivrer} com={com} onClose={() => setALivrer(null)} />
+      <FacturerDialog vente={venteAFacturer} com={com} onClose={() => setAFacturer(null)} />
     </div>
   )
 }
 
-function CarteCommande({ o, com, today, onEdit, onLivrer, onStatut, onDelete }: {
+function CarteCommande({ o, com, today, facturees, onFacturer, onEdit, onLivrer, onStatut, onDelete }: {
   o: Order; com: Commercial; today: string
+  /** sale_id → numéro de la facture qui la couvre. */
+  facturees: Map<string, string>
+  onFacturer: (saleId: string) => void
   onEdit: () => void; onLivrer: () => void; onStatut: (s: OrderStatus) => void; onDelete: () => void
 }) {
   const client = o.client_id ? com.clientsParId.get(o.client_id) : undefined
   const lignes = com.lignesParCommande.get(o.id) ?? []
   const t = totauxLignes(lignes)
+  const numeroFacture = o.sale_id ? facturees.get(o.sale_id) : undefined
   const suivant = STATUT_SUIVANT[o.status]
   const ouverte = OUVERTES.includes(o.status)
   const enRetard = ouverte && o.delivery_date < today
@@ -213,6 +224,7 @@ function CarteCommande({ o, com, today, onEdit, onLivrer, onStatut, onDelete }: 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="truncate font-semibold text-fg">{client?.name ?? 'Client inconnu'}</span>
+              {o.numero && <span className="num text-xs text-fg-subtle">{o.numero}</span>}
               {client && <Badge tone={kindTone[client.kind]}>{KIND_LABEL[client.kind]}</Badge>}
               {!ouverte && <Badge tone={statutTone[o.status]} dot>{STATUT_LABEL[o.status]}</Badge>}
             </div>
@@ -226,7 +238,7 @@ function CarteCommande({ o, com, today, onEdit, onLivrer, onStatut, onDelete }: 
             {o.notes && <p className="mt-0.5 truncate text-xs italic text-fg-subtle">{o.notes}</p>}
           </div>
           <div className="shrink-0 text-right">
-            <p className="num font-semibold text-fg">{formatEuros(t.total_centimes)}</p>
+            <p className="num font-semibold text-fg">{formatEuros(t.total_centimes)}{com.assujettie ? ' HT' : ''}</p>
             <p className="num text-xs text-fg-subtle">{pluriel(t.tiges, 'tige')}</p>
           </div>
         </div>
@@ -251,7 +263,9 @@ function CarteCommande({ o, com, today, onEdit, onLivrer, onStatut, onDelete }: 
                 {(['devis', 'confirmee', 'prete', 'annulee'] as OrderStatus[]).map(s => <option key={s} value={s}>{STATUT_LABEL[s]}</option>)}
               </select>
             )}
-            {o.status === 'livree' && <Badge tone="green">Facturée</Badge>}
+            {o.status === 'livree' && (numeroFacture
+              ? <Badge tone="green">Facturée n° {numeroFacture}</Badge>
+              : o.sale_id && <Button variant="secondary" className="h-11 md:h-9" onClick={() => onFacturer(o.sale_id!)}><FileText className="h-4 w-4" /> Facturer</Button>)}
             {o.status !== 'livree' && (
               <Button variant="ghost" size="icon" aria-label="Modifier la commande" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
             )}

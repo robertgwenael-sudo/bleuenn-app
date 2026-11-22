@@ -10,13 +10,13 @@ import { createClient } from '@/lib/supabase'
 import {
   commandeVersVente, totauxLignes, centimesEnEuros,
   type Client, type ClientKind, type LigneVenteAInserer, type Order, type OrderLine, type OrderStatus,
-  type Sale, type SaleChannel, type SaleLine,
+  type Sale, type SaleChannel, type SaleLine, type VatRate,
 } from '@/lib/domain'
 import type { CultureCatalog } from '@/lib/types'
 
 /** Ce dont le hook a besoin du contexte général (useBleuenn). */
 export interface CtxCommercial {
-  activeSeason: { id: string; revenue_goal?: number } | null
+  activeSeason: { id: string; revenue_goal?: number; farm_id?: string | null } | null
   user: { id: string } | null
   catalog: CultureCatalog[]
   sales: unknown[]
@@ -27,6 +27,13 @@ export interface CtxCommercial {
 export type ClientSaisie = Pick<Client, 'name' | 'kind' | 'contact_name' | 'email' | 'phone' | 'address' | 'notes'>
 export type CommandeSaisie = Pick<Order, 'client_id' | 'delivery_date' | 'status' | 'channel' | 'notes'>
 export type VenteSaisie = { date: string; channel: SaleChannel; client_id: string | null; notes: string | null }
+
+/** Options de facture transmises à emettre_facture (014). */
+export interface OptionsFactureCommerciale {
+  professionnel?: boolean
+  /** Catégorie de TVA des lignes saisies sans catégorie (choix explicite). */
+  vat_rate_id?: string | null
+}
 
 type Res<T> = { data: T | null; error: { message: string; code?: string } | null }
 
@@ -48,6 +55,7 @@ export function dejaAffichee(e: unknown) { return e instanceof ErreurAffichee }
 export function useCommercial(ctx: CtxCommercial) {
   const supabase = useMemo(() => createClient(), [])
   const seasonId = ctx.activeSeason?.id ?? null
+  const farmId = ctx.activeSeason?.farm_id ?? null
   const userId = ctx.user?.id ?? null
 
   const [clients, setClients] = useState<Client[]>([])
@@ -55,6 +63,8 @@ export function useCommercial(ctx: CtxCommercial) {
   const [orderLines, setOrderLines] = useState<OrderLine[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [saleLines, setSaleLines] = useState<SaleLine[]>([])
+  const [taux, setTaux] = useState<VatRate[]>([])
+  const [assujettie, setAssujettie] = useState(false)
   const [loading, setLoading] = useState(true)
   const [erreur, setErreur] = useState<string | null>(null)
 
@@ -87,13 +97,22 @@ export function useCommercial(ctx: CtxCommercial) {
       setOrderLines(ok<OrderLine[]>(ol as Res<OrderLine[]>, 'lecture des lignes de commande') ?? [])
       setSales(ok<Sale[]>(s as Res<Sale[]>, 'lecture des ventes') ?? [])
       setSaleLines(ok<SaleLine[]>(sl as Res<SaleLine[]>, 'lecture des lignes de vente') ?? [])
+      // Migration 014 : taux de la ferme et régime de TVA
+      if (farmId) {
+        const [t, b] = await Promise.all([
+          supabase.from('farm_vat_rates').select('*').eq('farm_id', farmId).order('ordre'),
+          supabase.from('farm_billing').select('assujettie_tva').eq('farm_id', farmId).maybeSingle(),
+        ])
+        setTaux(ok<VatRate[]>(t as Res<VatRate[]>, 'lecture des taux de TVA') ?? [])
+        setAssujettie(!!ok<{ assujettie_tva: boolean } | null>(b as Res<{ assujettie_tva: boolean }>, 'lecture du régime de TVA')?.assujettie_tva)
+      }
       setErreur(null)
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [supabase, seasonId])
+  }, [supabase, seasonId, farmId])
 
   useEffect(() => { setLoading(true); load() }, [load])
 
@@ -157,7 +176,7 @@ export function useCommercial(ctx: CtxCommercial) {
   // ensemble ou pas du tout, plus de suppression de secours depuis le navigateur.
   const lignesJson = (lignes: LigneVenteAInserer[]) => lignes.map(l => ({
     culture_id: l.culture_id ?? null, label: l.label, unit: l.unit, quantity: l.quantity,
-    stems_per_unit: l.stems_per_unit, unit_price: l.unit_price,
+    stems_per_unit: l.stems_per_unit, unit_price: l.unit_price, vat_rate_id: l.vat_rate_id ?? null,
   }))
 
   const createOrder = async (v: CommandeSaisie, lignes: LigneVenteAInserer[]) => {
@@ -197,25 +216,54 @@ export function useCommercial(ctx: CtxCommercial) {
     await load()
   }
 
+  /** Numéro attribué par la base, relu après émission (pour l'annoncer). */
+  const numeroFacture = async (id: string) => {
+    const r = await supabase.from('invoices').select('numero').eq('id', id).maybeSingle()
+    return ok<{ numero: string } | null>(r as Res<{ numero: string }>, 'lecture du numéro de facture')?.numero ?? null
+  }
+
   /**
-   * « Livrer et facturer » : vente, lignes et commande soldée en une seule
-   * transaction (livrer_commande). La base verrouille la commande : un double
-   * clic ou deux téléphones ne peuvent pas facturer deux fois.
+   * « Livrer » : vente, lignes recopiées de la commande et commande soldée en
+   * une seule transaction. Avec `facturer`, la facture est émise dans la MÊME
+   * transaction (livrer_et_facturer, 014) : si elle est refusée, rien n'est
+   * livré. La base verrouille la commande : un double clic ou deux téléphones
+   * ne peuvent pas livrer deux fois. Aucune ressaisie : la base recopie les
+   * lignes de la commande, catégorie de TVA comprise.
    */
-  const livrerEtFacturer = async (order: Order, opts: { date: string; canal?: SaleChannel }) => {
+  const livrerEtFacturer = async (order: Order, opts: { date: string; canal?: SaleChannel; facturer: boolean; facture?: OptionsFactureCommerciale }) => {
     const { userId: uid } = exigerSaison()
     const client = order.client_id ? clientsParId.get(order.client_id) ?? null : null
     const lignes = lignesParCommande.get(order.id) ?? []
     const prep = commandeVersVente({ order, lignes, userId: uid, client, date: opts.date, canal: opts.canal })
+    const p_sale = { date: prep.vente.date, channel: prep.vente.channel, client: prep.vente.client, notes: prep.vente.notes }
     try {
-      const id = ok<string>(await supabase.rpc('livrer_commande', {
-        p_order_id: order.id,
-        p_sale: { date: prep.vente.date, channel: prep.vente.channel, client: prep.vente.client, notes: prep.vente.notes },
-        p_lines: lignesJson(prep.lignes),
-      }) as Res<string>, 'livraison et facturation')
-      return { vente: { ...prep.vente, id } as unknown as Sale, total_centimes: prep.total_centimes }
+      if (!opts.facturer) {
+        const id = ok<string>(await supabase.rpc('livrer_commande', { p_order_id: order.id, p_sale, p_lines: null }) as Res<string>, 'livraison')
+        return { vente: { ...prep.vente, id } as unknown as Sale, total_centimes: prep.total_centimes, facture: null }
+      }
+      const r = ok<{ sale_id: string; invoice_id: string }>(await supabase.rpc('livrer_et_facturer', {
+        p_order_id: order.id, p_sale, p_lines: null, p_options: optionsFacture(opts.facture),
+      }) as Res<{ sale_id: string; invoice_id: string }>, 'livraison et facturation')
+      const numero = await numeroFacture(r.invoice_id)
+      return { vente: { ...prep.vente, id: r.sale_id } as unknown as Sale, total_centimes: prep.total_centimes, facture: { id: r.invoice_id, numero } }
     } finally {
       marquerPerime()
+      await load()
+    }
+  }
+
+  const optionsFacture = (o?: OptionsFactureCommerciale) => ({
+    ...(o?.professionnel === undefined ? {} : { professionnel: o.professionnel }),
+    ...(o?.vat_rate_id ? { vat_rate_id: o.vat_rate_id } : {}),
+  })
+
+  /** Facturer une vente déjà enregistrée (commande livrée) : lignes reprises telles quelles. */
+  const facturerVente = async (saleId: string, o?: OptionsFactureCommerciale) => {
+    try {
+      const id = ok<string>(await supabase.rpc('emettre_facture', { p_sale_ids: [saleId], p_options: optionsFacture(o) }) as Res<string>,
+        'émission de la facture')
+      return { id, numero: await numeroFacture(id) }
+    } finally {
       await load()
     }
   }
@@ -252,9 +300,9 @@ export function useCommercial(ctx: CtxCommercial) {
 
   return {
     loading, erreur, reload: load,
-    clients, clientsParId, orders, orderLines, lignesParCommande, sales, saleLines, lignesParVente, ventes,
+    clients, clientsParId, orders, orderLines, lignesParCommande, sales, saleLines, lignesParVente, ventes, taux, assujettie, farmId,
     createClient: createClientFiche, updateClient, archiveClient, deleteClient,
-    createOrder, updateOrder, setOrderStatus, deleteOrder, livrerEtFacturer,
+    createOrder, updateOrder, setOrderStatus, deleteOrder, livrerEtFacturer, facturerVente,
     createSale, deleteSale,
   }
 }

@@ -16,7 +16,8 @@ import { useIntent } from '@/components/shell/ui-context'
 import { photos } from '@/lib/images'
 import { dejaAffichee, useCommercial } from '@/hooks/useCommercial'
 import { useNumerosFactureParVente } from '@/hooks/useFactures'
-import { LignesEditor, useTotauxSaisie } from '@/components/commercial/LignesEditor'
+import { LignesEditor, montantAffiche, useTotauxSaisie, type ContexteTva } from '@/components/commercial/LignesEditor'
+import { FacturerDialog } from '@/components/commercial/FacturerDialog'
 import {
   aujourdhuiParis, CANAUX, canalTone, jourLivraison, KIND_LABEL, nouvelleLigne, pluriel, libelleQuantite, type LigneSaisie,
 } from '@/components/commercial/commun'
@@ -46,7 +47,12 @@ export default function Ventes({ ctx }: { ctx: any }) {
   const sort = useSort<SortKey>('date', 'desc')
   const formRef = useRef<HTMLDivElement>(null)
   const firstRef = useRef<HTMLSelectElement>(null)
-  const { ok, totaux, toutesValides } = useTotauxSaisie(lignes)
+  const tva: ContexteTva = useMemo(() => ({
+    taux: com.taux, assujettie: com.assujettie, channel,
+    clientKind: clientId ? com.clientsParId.get(clientId)?.kind ?? null : null,
+  }), [com.taux, com.assujettie, channel, clientId, com.clientsParId])
+  const { ok, totaux, toutesValides } = useTotauxSaisie(lignes, tva)
+  const [aFacturer, setAFacturer] = useState<V | null>(null)
   const facturees = useNumerosFactureParVente(ctx.activeSeason?.farm_id, com.sales)
 
   // Tant que le hook charge, on affiche les ventes du contexte (sans lignes)
@@ -85,7 +91,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
     try {
       const r = await com.createSale({ date, channel, client_id: clientId || null, notes: null }, ok)
       const nom = clientId ? com.clientsParId.get(clientId)?.name : null
-      toast.success('Vente enregistrée', { description: `${channel}${nom ? ` · ${nom}` : ''} · ${pluriel(totaux.tiges, 'tige')} · ${formatEuros(r.total_centimes)}` })
+      toast.success('Vente enregistrée', { description: `${channel}${nom ? ` · ${nom}` : ''} · ${pluriel(totaux.tiges, 'tige')} · ${formatEuros(r.total_centimes)}${com.assujettie ? ' HT' : ''}` })
       setLignes([nouvelleLigne()])
       setClientId('')
       setTried(false)
@@ -124,6 +130,12 @@ export default function Ventes({ ctx }: { ctx: any }) {
 
   const clientsChoix = com.clients.filter(c => !c.archived_at)
 
+  const actionFacturer = (v: V) => (!facturees.get(v.id) && v.order_id ? (
+    <Button variant="secondary" size="sm" onClick={() => setAFacturer(v)} aria-label={`Facturer la vente du ${jourLivraison(v.date, today, false)}`}>
+      <Receipt className="h-4 w-4" /> Facturer
+    </Button>
+  ) : null)
+
   const detail = (v: V) => (
     v.lignes.length > 0 ? (
       <ul className="space-y-1">
@@ -145,7 +157,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
       <PageHeader title="Ventes" description="Suivi des ventes par canal et par client" image={photos.boutiqueFleuriste} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-        <Stat label="CA total réel" value={eurosRonds(ca)} icon={<Coins />} />
+        <Stat label={com.assujettie ? 'CA HT réel' : 'CA total réel'} value={eurosRonds(ca)} icon={<Coins />} />
         <Stat label="Tiges vendues" value={totalTiges.toLocaleString('fr-FR')} icon={<Tag />} />
         <Stat label="Prix moyen / tige" value={prixMoyen === null ? '—' : formatEuros(prixMoyen)} />
         <Stat label="Nombre de ventes" value={ventes.length} icon={<Receipt />} />
@@ -182,10 +194,10 @@ export default function Ventes({ ctx }: { ctx: any }) {
               </div>
               <div>
                 <p className="mb-1.5 text-xs font-medium text-fg-muted">Lignes</p>
-                <LignesEditor lignes={lignes} onChange={setLignes} catalog={catalog} tried={tried} compact />
+                <LignesEditor lignes={lignes} onChange={setLignes} catalog={catalog} tried={tried} compact tva={tva} />
               </div>
               <Button type="submit" size="lg" className="w-full" loading={loading}>
-                Enregistrer la vente · {formatEuros(totaux.total_centimes)}
+                Enregistrer la vente · {montantAffiche(totaux, com.assujettie)}
               </Button>
             </form>
           </CardContent>
@@ -255,7 +267,8 @@ export default function Ventes({ ctx }: { ctx: any }) {
                     {open && (
                       <div className="border-t border-border px-3 pb-2 pt-2">
                         {detail(v)}
-                        <div className="mt-2 flex justify-end">
+                        <div className="mt-2 flex justify-end gap-2">
+                          {actionFacturer(v)}
                           <Button variant="danger-ghost" size="sm" onClick={() => remove(v)}><Trash2 className="h-4 w-4" /> Supprimer</Button>
                         </div>
                       </div>
@@ -313,7 +326,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
                         </tr>
                         {open && (
                           <tr className="bg-surface-2/50">
-                            <td /><td colSpan={7} className="py-2">{detail(v)}</td>
+                            <td /><td colSpan={7} className="py-2">{detail(v)}{actionFacturer(v) && <div className="mt-2">{actionFacturer(v)}</div>}</td>
                           </tr>
                         )}
                       </Fragment>
@@ -325,6 +338,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
           </>
         )}
       </section>
+      <FacturerDialog vente={aFacturer} com={com} onClose={() => setAFacturer(null)} />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { type DemoDb, DEMO_USER_ID } from '../data'
-import { ajouterJours, centimesEnEuros, eurosEnCentimes } from '../../domain'
+import { ajouterJours, centimesEnEuros, encaisseVente, eurosEnCentimes } from '../../domain'
 import { cheminJustificatif, empreinte, normaliserLibelle } from '../../domain/gestion'
 import { ventesFacturees } from '../../domain/factures'
 
@@ -87,7 +87,7 @@ export function seed_gestion(db: DemoDb & Record<string, any[]>): void {
   const pLeon = paiement('VIR PF LEON')
   const facturees = ventesFacturees(x.invoice_sales as any)
   const marches = x.sales
-    .filter(s => s.channel === 'Marché' && s.date >= '2026-08-15' && s.date <= jour && !facturees.has(s.id) && eurosEnCentimes(s.total) > 0)
+    .filter(s => s.channel === 'Marché' && s.date >= '2026-08-15' && s.date <= jour && !facturees.has(s.id) && (encaisseVente(s as { total: number; total_ttc?: number | null }) ?? 0) > 0)
     .sort((a, b) => a.date.localeCompare(b.date)).slice(-3)
 
   // ─── Relevé du compte courant (import CSV) ───
@@ -120,7 +120,7 @@ export function seed_gestion(db: DemoDb & Record<string, any[]>): void {
     ['2026-11-20', 'CB EMBALLAGES DE L OUEST', -42.80, null],
   ]
   // Remises d'espèces des marchés (ventes de marché récentes)
-  marches.forEach((s, i) => releve.push([ajouterJours(s.date, 2), `VERSEMENT ESPECES AGENCE LANDERNEAU ${i + 1}`, Number(s.total), i < 2 ? ['c', { ...s, __vente: true }] : null]))
+  marches.forEach((s, i) => releve.push([ajouterJours(s.date, 2), `VERSEMENT ESPECES AGENCE LANDERNEAU ${i + 1}`, centimesEnEuros(encaisseVente(s as { total: number; total_ttc?: number | null })!), i < 2 ? ['c', { ...s, __vente: true }] : null]))
   releve.sort((a, b) => a[0].localeCompare(b[0]))
 
   const ID_IMPORT = uid('53000000', 1)
@@ -253,7 +253,9 @@ export function gestionAvantEcriture(d: Record<string, Row[]>, t: string, row: R
       const s = d.sales.find(x => x.id === row.sale_id && d.seasons.some(se => se.id === x.season_id && se.farm_id === tx.farm_id))
       if (!s) return err(`Vente ${row.sale_id} hors de la ferme`)
       if (mt < 0) return err('Une vente se rapproche d’un crédit')
-      montant = eurosEnCentimes(s.total)
+      // 014 : comparé à l'encaissé TTC de la vente
+      montant = encaisseVente(s as { total: number; total_ttc?: number | null })
+      if (montant === null) return err(`Vente ${row.sale_id} : TVA non calculable (catégorie manquante), montant encaissé inconnu`)
     } else if (!row.categorie) {
       return err('new row for relation "bank_matches" violates check constraint "bank_matches_check"', '23514')
     }

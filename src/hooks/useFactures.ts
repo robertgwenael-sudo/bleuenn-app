@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase'
 import { centimesEnEuros, type Client, type FarmBilling, type Invoice, type InvoiceLine, type InvoiceSale,
-  type Payment, type PaymentMode, type Sale, type SaleLine } from '@/lib/domain'
+  type Payment, type PaymentMode, type Sale, type SaleLine, type VatRate } from '@/lib/domain'
 import { ventesFacturees, type VenteFacturable } from '@/lib/domain/factures'
 
 type Erreur = { message: string; code?: string; details?: string; hint?: string } | null
@@ -51,9 +51,16 @@ export interface OptionsEmission {
   professionnel: boolean
   delai_jours: number | null
   client_siren?: string
+  /** Migration 014 : numéro de TVA du client professionnel. */
+  client_numero_tva?: string
+  /** Migration 014 : catégorie de TVA des lignes saisies sans catégorie (choix explicite). */
+  vat_rate_id?: string | null
   adresse_livraison?: string
   notes?: string
 }
+
+/** Un taux tel que saisi dans les réglages (id absent = nouveau). */
+export type TauxSaisi = Pick<VatRate, 'categorie' | 'libelle' | 'taux_pb' | 'actif' | 'ordre'> & { id?: string }
 
 export interface PaiementNouveau {
   date: string
@@ -85,6 +92,7 @@ export function useFactures(ctx: FacturesCtx) {
   const [sales, setSales] = useState<Sale[]>([])
   const [saleLines, setSaleLines] = useState<SaleLine[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  const [taux, setTaux] = useState<VatRate[]>([])
   const [loading, setLoading] = useState(true)
   const [erreur, setErreur] = useState<string | null>(null)
 
@@ -92,7 +100,7 @@ export function useFactures(ctx: FacturesCtx) {
     if (!farmId) { setLoading(false); return }
     const ids = cleSaisons ? cleSaisons.split(',') : []
     try {
-      const [b, i, l, li, p, s, sl, c] = await Promise.all([
+      const [b, i, l, li, p, s, sl, c, t] = await Promise.all([
         supabase.from('farm_billing').select('*').eq('farm_id', farmId).maybeSingle(),
         supabase.from('invoices').select('*').eq('farm_id', farmId).order('date_emission', { ascending: false }).order('numero', { ascending: false }),
         supabase.from('invoice_lines').select('*').eq('farm_id', farmId).order('position'),
@@ -101,6 +109,7 @@ export function useFactures(ctx: FacturesCtx) {
         supabase.from('sales').select('*').in('season_id', ids).order('date', { ascending: false }),
         supabase.from('sale_lines').select('*').in('season_id', ids).order('created_at'),
         supabase.from('clients').select('*').order('name'),
+        supabase.from('farm_vat_rates').select('*').eq('farm_id', farmId).order('ordre'),
       ])
       setBilling(ok<FarmBilling | null>(b as Res<FarmBilling>, 'lecture des réglages de facturation'))
       setInvoices(ok<Invoice[]>(i as Res<Invoice[]>, 'lecture des factures') ?? [])
@@ -110,6 +119,7 @@ export function useFactures(ctx: FacturesCtx) {
       setSales(ok<Sale[]>(s as Res<Sale[]>, 'lecture des ventes') ?? [])
       setSaleLines(ok<SaleLine[]>(sl as Res<SaleLine[]>, 'lecture des lignes de vente') ?? [])
       setClients(ok<Client[]>(c as Res<Client[]>, 'lecture des clients') ?? [])
+      setTaux(ok<VatRate[]>(t as Res<VatRate[]>, 'lecture des taux de TVA') ?? [])
       setErreur(null)
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e))
@@ -168,6 +178,34 @@ export function useFactures(ctx: FacturesCtx) {
     }
   }
 
+  /**
+   * Enregistre les taux de TVA (owner seulement). Mise à jour des taux
+   * existants, ajout des nouveaux ; jamais de suppression (on désactive).
+   * Les désactivations passent d'abord : un seul taux actif par catégorie.
+   */
+  const saveTaux = async (liste: TauxSaisi[]) => {
+    const fid = exigerFerme()
+    try {
+      const ordre = [...liste].sort((a, b) => Number(a.actif) - Number(b.actif))
+      for (const x of ordre) {
+        const v = { categorie: x.categorie, libelle: x.libelle.trim(), taux_pb: x.taux_pb, actif: x.actif, ordre: x.ordre }
+        if (x.id) {
+          const r = await supabase.from('farm_vat_rates').update(v).eq('id', x.id).select()
+          const rows = ok<VatRate[]>(r as Res<VatRate[]>, `modification du taux « ${v.libelle} »`)
+          if (!rows || rows.length === 0) {
+            console.error('[factures] taux : aucune ligne écrite (droits insuffisants ?)')
+            toast.error('Échec : seul un propriétaire de la ferme peut modifier les taux de TVA')
+            throw new ErreurAffichee('Aucune ligne écrite')
+          }
+        } else {
+          ok(await supabase.from('farm_vat_rates').insert({ ...v, farm_id: fid }).select() as Res<VatRate[]>, `ajout du taux « ${v.libelle} »`)
+        }
+      }
+    } finally {
+      await load()
+    }
+  }
+
   /** Numéro attribué par la base, relu après émission (pour l'annoncer). */
   const numeroDe = async (id: string) => {
     const r = await supabase.from('invoices').select('numero').eq('id', id).maybeSingle()
@@ -183,6 +221,8 @@ export function useFactures(ctx: FacturesCtx) {
           professionnel: o.professionnel,
           ...(o.delai_jours === null ? {} : { delai_jours: o.delai_jours }),
           client_siren: o.client_siren?.trim() || null,
+          client_numero_tva: o.client_numero_tva?.replace(/\s/g, '').toUpperCase() || null,
+          ...(o.vat_rate_id ? { vat_rate_id: o.vat_rate_id } : {}),
           adresse_livraison: o.adresse_livraison?.trim() || null,
           notes: o.notes?.trim() || null,
         },
@@ -223,9 +263,9 @@ export function useFactures(ctx: FacturesCtx) {
 
   return {
     loading, erreur, reload: load, farmId,
-    billing, invoices, lines, liens, payments, ventes, clients,
+    billing, invoices, lines, liens, payments, ventes, clients, taux,
     lignesParFacture, paiementsParFacture, facturesParId, clientsParId, factureDeVente,
-    saveBilling, emettreFacture, emettreAvoir, enregistrerPaiement,
+    saveBilling, saveTaux, emettreFacture, emettreAvoir, enregistrerPaiement,
   }
 }
 

@@ -49,6 +49,44 @@ export function TableauDeBord({ d, versBanque, versJustificatifs, versComptes }:
       </div>
 
       <Card>
+        <CardHeader title="Chiffre d’affaires et TVA collectée" description="12 derniers mois, par date de vente : CA hors taxe, TVA à part pour la comptable" />
+        <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+          <dl className="grid grid-cols-2 gap-3 sm:max-w-md" aria-label="Chiffre d’affaires et TVA collectée">
+            <div><dt className="text-xs text-fg-muted">CA HT</dt><dd className="num text-lg font-semibold">{formatEuros(d.caTva.total.ht)}</dd></div>
+            <div><dt className="text-xs text-fg-muted">TVA collectée</dt><dd className="num text-lg font-semibold">{formatEuros(d.caTva.total.tva)}</dd></div>
+          </dl>
+          {d.caTva.tvaNonCalculables > 0 && (
+            <p className="mt-2 flex items-center gap-1 text-xs font-medium text-warning">
+              <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
+              TVA non calculable sur {d.caTva.tvaNonCalculables} vente{d.caTva.tvaNonCalculables > 1 ? 's' : ''} (catégorie manquante) : TVA collectée incomplète.
+            </p>
+          )}
+          <details className="mt-3">
+            <summary className="cursor-pointer text-sm text-fg-muted">Détail par mois</summary>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[22rem] text-sm">
+                <caption className="sr-only">Chiffre d’affaires HT et TVA collectée par mois</caption>
+                <thead><tr className="border-b border-border text-left text-xs text-fg-muted">
+                  <th scope="col" className="py-2 font-medium">Mois</th>
+                  <th scope="col" className="py-2 text-right font-medium">CA HT</th>
+                  <th scope="col" className="py-2 text-right font-medium">TVA collectée</th>
+                </tr></thead>
+                <tbody>
+                  {d.caTva.lignes.map(l => (
+                    <tr key={l.mois} className="border-b border-border/60">
+                      <th scope="row" className="py-1.5 text-left font-normal capitalize">{formatMois(l.mois)}</th>
+                      <td className="num py-1.5 text-right">{formatEuros(l.ht)}</td>
+                      <td className="num py-1.5 text-right">{formatEuros(l.tva)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </Card>
+
+      <Card>
         <CardHeader title="Encaissé et dépensé par mois" description="12 derniers mois, mois en cours compris" />
         <div className="px-4 pb-4 sm:px-5 sm:pb-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -102,8 +140,14 @@ export function TableauDeBord({ d, versBanque, versJustificatifs, versComptes }:
               </table>
             </div>
           )}
+          {d.encaisseInconnu.length > 0 && (
+            <p className="mt-3 flex items-center gap-1 text-xs font-medium text-warning">
+              <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
+              {d.encaisseInconnu.length} vente{d.encaisseInconnu.length > 1 ? 's' : ''} sans facture non comptée{d.encaisseInconnu.length > 1 ? 's' : ''} : encaissé non calculable (TVA inconnue).
+            </p>
+          )}
           <p className="mt-3 text-xs text-fg-subtle">
-            Trésorerie simple, sans TVA : paiements de factures à leur date, ventes sans facture le jour de la vente (supposées payées comptant),
+            Trésorerie, montants réellement encaissés (TVA comprise) : paiements de factures à leur date, ventes sans facture le jour de la vente pour leur montant TTC (supposées payées comptant),
             aides et remboursements rapprochés à la date du mouvement. Apports, prélèvements et virements internes ne comptent pas.
           </p>
         </div>

@@ -2,16 +2,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertTriangle, CheckCircle2, CircleAlert, Info, Lock, Save } from 'lucide-react'
-import { Button, Card, CardContent, CardHeader, Field, Input, Textarea, cn } from '@/components/ui'
-import type { FarmBilling } from '@/lib/domain'
-import { MENTIONS_CONTROLEES, nettoyerSiret, reglagesManquants, siretBienForme } from '@/lib/domain/factures'
-import { dejaAffichee, type ReglagesSaisie } from '@/hooks/useFactures'
+import { Plus } from 'lucide-react'
+import { Button, Card, CardContent, CardHeader, Field, Input, Select, Textarea, cn } from '@/components/ui'
+import { CATEGORIE_TVA_LIBELLE, controlerTaux, formatTaux, lireTauxPb, VAT_CATEGORIES, type FarmBilling, type VatCategorie, type VatRate } from '@/lib/domain'
+import { mentionsDuRegime, nettoyerSiret, reglagesManquants, siretBienForme } from '@/lib/domain/factures'
+import { dejaAffichee, type ReglagesSaisie, type TauxSaisi } from '@/hooks/useFactures'
 import { EXEMPLES_MENTION_TVA } from './commun'
 
-type Saisie = Record<keyof ReglagesSaisie, string>
+type Saisie = Record<Exclude<keyof ReglagesSaisie, 'assujettie_tva'>, string>
+
+/** Ligne de taux en cours de saisie : taux en texte (« 5,5 »). */
+type TauxEdition = { key: string; id?: string; categorie: VatCategorie; libelle: string; taux: string; actif: boolean; ordre: number }
+
+const tauxEnEdition = (t: VatRate[]): TauxEdition[] => t.map(x => ({
+  key: x.id, id: x.id, categorie: x.categorie, libelle: x.libelle, taux: formatTaux(x.taux_pb).replace(' %', ''), actif: x.actif, ordre: x.ordre,
+}))
 
 const VIDE: Saisie = {
-  raison_sociale: '', adresse: '', siret: '', email: '', telephone: '', mention_tva: '', delai_paiement_jours: '',
+  raison_sociale: '', adresse: '', siret: '', email: '', telephone: '', mention_tva: '', numero_tva: '', delai_paiement_jours: '',
   conditions_paiement: '', penalites_retard: '', indemnite_recouvrement: '', iban: '', bic: '', mentions_libres: '',
   prefixe_facture: 'F', prefixe_avoir: 'AV',
 }
@@ -27,14 +35,28 @@ function depuis(b: FarmBilling | null): Saisie {
 }
 
 /** Réglages de facturation : identité du vendeur et mentions, avec la liste de contrôle des mentions obligatoires. */
-export function Reglages({ billing, estOwner, onSave }: {
+export function Reglages({ billing, estOwner, onSave, taux, onSaveTaux }: {
   billing: FarmBilling | null
   estOwner: boolean
   onSave: (v: ReglagesSaisie) => Promise<void>
+  /** Taux de TVA de la ferme (014) : paramétrage, jamais des constantes. */
+  taux: VatRate[]
+  onSaveTaux: (t: TauxSaisi[]) => Promise<void>
 }) {
   const [s, setS] = useState<Saisie>(() => depuis(billing))
+  const [assujettie, setAssujettie] = useState(!!billing?.assujettie_tva)
+  const [lesTaux, setLesTaux] = useState<TauxEdition[]>(() => tauxEnEdition(taux))
   const [busy, setBusy] = useState(false)
-  useEffect(() => { setS(depuis(billing)) }, [billing])
+  useEffect(() => { setS(depuis(billing)); setAssujettie(!!billing?.assujettie_tva) }, [billing])
+  useEffect(() => { setLesTaux(tauxEnEdition(taux)) }, [taux])
+  const majTaux = (key: string, patch: Partial<TauxEdition>) => setLesTaux(l => l.map(x => (x.key === key ? { ...x, ...patch } : x)))
+  const tauxLus = lesTaux.map(x => ({ ...x, taux_pb: lireTauxPb(x.taux) }))
+  const erreursTaux = [
+    ...tauxLus.filter(x => x.taux_pb === null).map(x => `Taux illisible pour « ${x.libelle || 'sans libellé'} »`),
+    ...controlerTaux(tauxLus.filter(x => x.taux_pb !== null).map(x => ({ ...x, taux_pb: x.taux_pb as number }))),
+  ]
+  const numeroTva = s.numero_tva.replace(/\s/g, '').toUpperCase()
+  const numeroTvaOk = numeroTva === '' || /^[A-Z]{2}[0-9A-Z]{2,13}$/.test(numeroTva)
   const set = (k: keyof Saisie) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setS(x => ({ ...x, [k]: e.target.value }))
 
   const siret = nettoyerSiret(s.siret)
@@ -44,10 +66,10 @@ export function Reglages({ billing, estOwner, onSave }: {
   const prefixesOk = prefixeOk(s.prefixe_facture) && prefixeOk(s.prefixe_avoir) && s.prefixe_facture.toUpperCase() !== s.prefixe_avoir.toUpperCase()
 
   // Liste de contrôle sur la saisie en cours (ce qui sera enregistré)
-  const enCours: Partial<FarmBilling> = { ...s, siret, delai_paiement_jours: delai } as unknown as Partial<FarmBilling>
+  const enCours: Partial<FarmBilling> = { ...s, siret, numero_tva: numeroTva, assujettie_tva: assujettie, delai_paiement_jours: delai } as unknown as Partial<FarmBilling>
   const manquantes = useMemo(() => new Set(reglagesManquants(enCours, { professionnel: true }).map(m => m.champ)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s])
+    [s, assujettie])
   const manqueEnregistre = reglagesManquants(billing)
 
   const enregistrer = async (e: React.FormEvent) => {
@@ -55,16 +77,23 @@ export function Reglages({ billing, estOwner, onSave }: {
     if (s.siret.trim() && !siretBienForme(siret)) { toast.error('SIREN ou SIRET mal formé', { description: '9 chiffres (SIREN) ou 14 chiffres (SIRET).' }); return }
     if (!delaiOk) { toast.error('Délai de paiement invalide', { description: 'Un nombre de jours entre 0 et 365, ou vide.' }); return }
     if (!prefixesOk) { toast.error('Préfixes invalides', { description: 'Lettres, chiffres ou tirets, et différents pour factures et avoirs.' }); return }
+    if (!numeroTvaOk) { toast.error('Numéro de TVA mal formé', { description: 'Deux lettres de pays puis 2 à 13 chiffres ou lettres, ex. FR12345678901.' }); return }
+    if (erreursTaux.length) { toast.error('Taux de TVA à corriger', { description: erreursTaux.join(' · ') }); return }
     const n = (v: string) => (v.trim() === '' ? null : v.trim())
     setBusy(true)
     try {
       await onSave({
         raison_sociale: n(s.raison_sociale), adresse: n(s.adresse), siret: n(siret), email: n(s.email), telephone: n(s.telephone),
-        mention_tva: n(s.mention_tva), delai_paiement_jours: delai, conditions_paiement: n(s.conditions_paiement),
+        mention_tva: n(s.mention_tva), assujettie_tva: assujettie, numero_tva: numeroTva || null, delai_paiement_jours: delai, conditions_paiement: n(s.conditions_paiement),
         penalites_retard: n(s.penalites_retard), indemnite_recouvrement: n(s.indemnite_recouvrement),
         iban: n(s.iban), bic: n(s.bic), mentions_libres: n(s.mentions_libres),
         prefixe_facture: s.prefixe_facture.trim(), prefixe_avoir: s.prefixe_avoir.trim(),
       })
+      const modifies = tauxLus.filter(x => {
+        const avant = taux.find(t => t.id === x.id)
+        return !avant || avant.libelle !== x.libelle.trim() || avant.taux_pb !== x.taux_pb || avant.actif !== x.actif || avant.categorie !== x.categorie
+      })
+      if (modifies.length) await onSaveTaux(modifies.map(x => ({ id: x.id, categorie: x.categorie, libelle: x.libelle, taux_pb: x.taux_pb as number, actif: x.actif, ordre: x.ordre })))
       toast.success('Réglages de facturation enregistrés')
     } catch (err) {
       if (!dejaAffichee(err)) toast.error('Enregistrement impossible', { description: err instanceof Error ? err.message : String(err) })
@@ -107,27 +136,75 @@ export function Reglages({ billing, estOwner, onSave }: {
           </Card>
 
           <Card>
-            <CardHeader title="Mention d’absence de TVA *" description="Vous ne facturez pas de TVA : la facture porte un seul « Total » et cette mention." />
-            <CardContent className="space-y-3">
-              <p className="flex gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                <span>La formulation dépend de votre régime : <strong>à faire confirmer par votre comptable</strong>, puis à recopier mot pour mot.</span>
-              </p>
-              <div>
-                <p className="mb-1.5 text-xs font-medium text-fg-muted">Exemples (cliquer pour reprendre, puis vérifier)</p>
-                <div className="flex flex-wrap gap-2">
-                  {EXEMPLES_MENTION_TVA.map(x => (
-                    <button key={x} type="button" onClick={() => setS(v => ({ ...v, mention_tva: x }))}
-                      className={cn('rounded-full border px-3 py-1 text-xs transition-colors',
-                        s.mention_tva === x ? 'border-primary bg-primary-soft text-primary' : 'border-border text-fg-muted hover:border-border-strong hover:text-fg')}>
-                      {x}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Field label="Mention imprimée sur les factures">
-                <Textarea rows={2} value={s.mention_tva} onChange={set('mention_tva')} />
-              </Field>
+            <CardHeader title="TVA" description="Régime de la ferme : à faire confirmer par votre comptable." />
+            <CardContent className="space-y-4">
+              <label className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+                <input type="checkbox" className="mt-0.5 h-5 w-5 accent-primary" checked={assujettie} onChange={e => setAssujettie(e.target.checked)} />
+                <span className="text-sm">
+                  <span className="font-medium text-fg">La ferme facture la TVA</span>
+                  <span className="block text-xs text-fg-muted">Prix saisis hors taxe ; factures avec total HT, TVA par taux et total TTC. Sinon : un seul total et la mention d’absence de TVA.</span>
+                </span>
+              </label>
+              {assujettie ? (
+                <>
+                  <Field label="Numéro de TVA intracommunautaire *" hint="Ex. FR12345678901, espaces acceptés"
+                    error={!numeroTvaOk ? 'Deux lettres de pays puis 2 à 13 chiffres ou lettres' : undefined}>
+                    <Input value={s.numero_tva} onChange={set('numero_tva')} autoComplete="off" />
+                  </Field>
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-fg-muted">Taux de TVA</p>
+                    <p className="mb-2 flex gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <span>Taux pré-remplis à la création de la ferme, <strong>à vérifier avec votre comptable</strong>. Un taux modifié ne change ni les ventes ni les factures passées.</span>
+                    </p>
+                    <ul className="space-y-2" aria-label="Taux de TVA">
+                      {lesTaux.map(x => (
+                        <li key={x.key} className="grid grid-cols-[minmax(0,1fr)_6rem] gap-2 rounded-lg border border-border p-2 sm:grid-cols-[10rem_minmax(0,1fr)_6rem_auto] sm:items-center">
+                          <Select aria-label={`Catégorie du taux ${x.libelle}`} value={x.categorie} onChange={e => majTaux(x.key, { categorie: e.target.value as VatCategorie })}>
+                            {VAT_CATEGORIES.map(c => <option key={c} value={c}>{CATEGORIE_TVA_LIBELLE[c]}</option>)}
+                          </Select>
+                          <Input aria-label={`Libellé du taux ${x.libelle}`} value={x.libelle} onChange={e => majTaux(x.key, { libelle: e.target.value })} />
+                          <span className="flex items-center gap-1">
+                            <Input aria-label={`Taux en % de ${x.libelle}`} inputMode="decimal" className="num text-right" value={x.taux}
+                              onChange={e => majTaux(x.key, { taux: e.target.value })} />
+                            <span className="text-sm text-fg-muted">%</span>
+                          </span>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" className="h-4 w-4 accent-primary" checked={x.actif} onChange={e => majTaux(x.key, { actif: e.target.checked })} /> Actif
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                    {erreursTaux.length > 0 && <p className="mt-2 text-xs font-medium text-danger">{erreursTaux.join(' · ')}</p>}
+                    <Button variant="secondary" size="sm" className="mt-2"
+                      onClick={() => setLesTaux(l => [...l, { key: `n${l.length}-${Date.now()}`, categorie: 'autre', libelle: '', taux: '', actif: true, ordre: l.length + 1 }])}>
+                      <Plus className="h-4 w-4" aria-hidden /> Ajouter un taux
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="flex gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span>Mention d’absence de TVA : la formulation dépend de votre régime, <strong>à faire confirmer par votre comptable</strong>, puis à recopier mot pour mot.</span>
+                  </p>
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-fg-muted">Exemples (cliquer pour reprendre, puis vérifier)</p>
+                    <div className="flex flex-wrap gap-2">
+                      {EXEMPLES_MENTION_TVA.map(x => (
+                        <button key={x} type="button" onClick={() => setS(v => ({ ...v, mention_tva: x }))}
+                          className={cn('rounded-full border px-3 py-1 text-xs transition-colors',
+                            s.mention_tva === x ? 'border-primary bg-primary-soft text-primary' : 'border-border text-fg-muted hover:border-border-strong hover:text-fg')}>
+                          {x}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Field label="Mention imprimée sur les factures">
+                    <Textarea rows={2} value={s.mention_tva} onChange={set('mention_tva')} />
+                  </Field>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -181,7 +258,7 @@ export function Reglages({ billing, estOwner, onSave }: {
           <CardHeader title="Mentions obligatoires" description={manqueEnregistre.length === 0 ? 'Réglages enregistrés : complets pour émettre.' : 'Tant qu’une mention manque, aucune facture ne peut être émise.'} />
           <CardContent>
             <ul className="space-y-2 text-sm" aria-label="Liste de contrôle des mentions">
-              {MENTIONS_CONTROLEES.map(m => {
+              {mentionsDuRegime(assujettie).map(m => {
                 const manque = manquantes.has(m.champ)
                 return (
                   <li key={m.champ} className={cn('flex items-start gap-2', manque && !m.pourProfessionnel && 'font-medium text-danger', manque && m.pourProfessionnel && 'text-warning')}>

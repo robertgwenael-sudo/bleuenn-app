@@ -94,6 +94,11 @@ test('scanner un ticket, créer la dépense, importer le relevé, rapprocher, ta
   // ── 5. Tableau de bord ──
   await page.getByRole('tab', { name: 'Tableau de bord' }).click()
   await expect(stat('Dépensé sur 12 mois')).toContainText('2 418,80') // idem + ticket scanné
+  // CA présenté HT, TVA collectée à part (ferme de démo assujettie, 014)
+  const ca = page.getByLabel('Chiffre d’affaires et TVA collectée', { exact: true })
+  await expect(ca).toContainText('CA HT')
+  await expect(ca).toContainText(/TVA collectée\s*[1-9][\d\s\u202f]*,\d\d\s€/)
+  await expect(page.getByText(/montants réellement encaissés \(TVA comprise\)/)).toBeVisible()
   await expect(page.getByRole('button', { name: /^Mouvements à rapprocher/ })).toContainText('20')
   await expect(page.getByRole('button', { name: /^Justificatifs manquants/ })).toContainText('33') // + 8 dépenses de démo issues des bons de commande, sans pièce
   await expect(page.getByRole('list', { name: 'Soldes par compte' })).toContainText('Compte courant pro')
