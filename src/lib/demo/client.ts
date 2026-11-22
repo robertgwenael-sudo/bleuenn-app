@@ -105,6 +105,7 @@ function plantingsFull(): Row[] {
       planche_name: pl.name, planche_m2: pl.surface_m2,
       garden_name: g.name, garden_id: g.id, garden_m2: g.surface_m2,
       user_id: s.user_id,
+      farm_id: g.farm_id ?? s.farm_id, season_name: s.name, season_year: s.year,  // migration 006
     })
   }
   return out
