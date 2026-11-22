@@ -151,6 +151,21 @@ const DEFAULTS: Record<string, Row> = {
   orders: { status: 'confirmee', channel: null, notes: null, sale_id: null, client_id: null },
   sale_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
   order_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
+  // Migration 008 (coûts)
+  costs: { culture_id: null, planche_id: null, supplier: null, notes: null },
+  time_entries: { kind: 'autre', culture_id: null, planche_id: null, notes: null },
+}
+
+// Migration 008, trigger couts_set_farm : farm_id recopié de la saison, jamais du client
+function coutsSetFarm(t: string, row: Row): { message: string; code?: string } | null {
+  if (t !== 'costs' && t !== 'time_entries') return null
+  const s = getDb().seasons.find(x => x.id === row.season_id)
+  if (!s?.farm_id) return { code: 'P0001', message: `Saison ${row.season_id} introuvable` }
+  row.farm_id = s.farm_id
+  const me = currentUser()?.id ?? null
+  row.created_by ??= me
+  if (t === 'time_entries') row.user_id ??= me
+  return null
 }
 
 function tableRows(table: string): Row[] {
@@ -183,7 +198,10 @@ function cascadeDelete(table: string, removed: Row[]) {
   if (table === 'seasons') {
     drop('gardens', r => ids.has(r.season_id)); drop('team_members', r => ids.has(r.season_id))
     drop('sales', r => ids.has(r.season_id)); drop('seed_orders', r => ids.has(r.season_id))
+    drop('costs' as keyof DemoDb, r => ids.has(r.season_id)); drop('time_entries' as keyof DemoDb, r => ids.has(r.season_id))
   }
+  // Migration 008 : planche supprimée → planche_id à null
+  if (table === 'planches') for (const t of ['costs', 'time_entries']) for (const r of (d as any)[t]) if (ids.has(r.planche_id)) r.planche_id = null
   // Migration 005 (commercial) : cascades et « on delete set null »
   const dx = d as any
   if (table === 'sales') {
@@ -338,6 +356,8 @@ class DemoQuery implements PromiseLike<Result> {
             row.season_id = parent.season_id
             row.line_total = totalLigneDemo(row)
           }
+          const errCout = coutsSetFarm(t, row)
+          if (errCout) return { data: null, error: errCout }
           if (t === 'seasons') row.invite_token ??= uuid()
           if (t === 'team_members') row.joined_at ??= new Date().toISOString()
           d[t].push(row)
@@ -364,6 +384,7 @@ class DemoQuery implements PromiseLike<Result> {
         const rows = this.match(d[t])
         for (const r of rows) {
           Object.assign(r, this.payload)
+          coutsSetFarm(t, r)
           if (t === 'plantings') calcPlanting(r)
           if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === r.id)) r.total = Math.round(r.tiges * r.prix_unitaire * 100) / 100
           if (t === 'sale_lines' || t === 'order_lines') r.line_total = totalLigneDemo(r)
@@ -375,6 +396,9 @@ class DemoQuery implements PromiseLike<Result> {
 
       if (this.op === 'delete') {
         const rows = this.match(d[t])
+        if (t === 'culture_catalog' && rows.some(r => [...d.costs, ...d.time_entries].some((x: Row) => x.culture_id === r.id))) {
+          return { data: null, error: { code: '23503', message: 'Cette culture porte des dépenses ou du temps saisi (on delete restrict).' } }
+        }
         if (t === 'culture_catalog' && rows.some(r => d.plantings.some((p: Row) => p.culture_id === r.id))) {
           return { data: null, error: { code: '23503', message: 'Cette culture est utilisée par des plantations (on delete restrict).' } }
         }

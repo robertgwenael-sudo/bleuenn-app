@@ -41,6 +41,8 @@ export interface Farm {
   name: string
   created_by: string
   created_at: string
+  /** 008 : taux horaire en euros (numeric(10,2)), null tant qu'il n'est pas renseigné. */
+  taux_horaire?: EurosNumeric | null
 }
 
 export type FarmRole = 'owner' | 'member'
@@ -204,3 +206,58 @@ export interface PlantingActual {
 
 /** Récolte réduite aux colonnes utiles aux calculs. */
 export type HarvestLite = Pick<Harvest, 'planting_id' | 'date' | 'tiges'>
+
+// ------------------------------------------------------------
+// Coûts et temps passé (008)
+// ------------------------------------------------------------
+/** Contrainte `costs.category` (008), dans l'ordre d'affichage. */
+export const COST_CATEGORIES = [
+  'semences', 'plants_bulbes', 'terreau_substrat', 'engrais_traitements', 'materiel',
+  'emballage', 'transport', 'main_oeuvre_externe', 'autre',
+] as const
+export type CostCategory = (typeof COST_CATEGORIES)[number]
+
+export interface Cost {
+  id: string
+  farm_id: string
+  season_id: string
+  date: DateISO
+  category: CostCategory
+  /** numeric(12,2) > 0, en euros. */
+  amount: EurosNumeric
+  culture_id: string | null
+  planche_id: string | null
+  supplier: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** Contrainte `time_entries.kind` (008) : les kinds de `tasks` (005), plus vente et administratif. */
+export const TIME_KINDS = [
+  'semis', 'repiquage', 'plantation', 'pincage', 'tuteurage', 'desherbage', 'recolte',
+  'irrigation', 'traitement', 'livraison', 'vente', 'administratif', 'autre',
+] as const
+export type TimeKind = (typeof TIME_KINDS)[number]
+
+export interface TimeEntry {
+  id: string
+  farm_id: string
+  season_id: string
+  date: DateISO
+  /** Entier > 0. */
+  minutes: number
+  kind: TimeKind
+  culture_id: string | null
+  planche_id: string | null
+  /** Qui a travaillé (membre de la ferme). */
+  user_id: string
+  notes: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** Colonne ajoutée à `farms` en 008 : euros par heure, null = non renseigné. */
+export interface FarmTauxHoraire {
+  taux_horaire: EurosNumeric | null
+}
