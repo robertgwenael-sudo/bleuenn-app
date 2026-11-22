@@ -168,10 +168,16 @@ export function useFactures(ctx: FacturesCtx) {
     }
   }
 
-  const emettreFacture = async (saleIds: string[], o: OptionsEmission): Promise<string> => {
+  /** Numéro attribué par la base, relu après émission (pour l'annoncer). */
+  const numeroDe = async (id: string) => {
+    const r = await supabase.from('invoices').select('numero').eq('id', id).maybeSingle()
+    return ok<{ numero: string } | null>(r as Res<{ numero: string }>, 'lecture du numéro attribué')?.numero ?? null
+  }
+
+  const emettreFacture = async (saleIds: string[], o: OptionsEmission): Promise<{ id: string; numero: string | null }> => {
     exigerFerme()
     try {
-      return ok<string>(await supabase.rpc('emettre_facture', {
+      const id = ok<string>(await supabase.rpc('emettre_facture', {
         p_sale_ids: saleIds,
         p_options: {
           professionnel: o.professionnel,
@@ -181,15 +187,17 @@ export function useFactures(ctx: FacturesCtx) {
           notes: o.notes?.trim() || null,
         },
       }) as Res<string>, 'émission de la facture')
+      return { id, numero: await numeroDe(id) }
     } finally {
       await load()
     }
   }
 
-  const emettreAvoir = async (invoiceId: string, motif: string): Promise<string> => {
+  const emettreAvoir = async (invoiceId: string, motif: string): Promise<{ id: string; numero: string | null }> => {
     try {
-      return ok<string>(await supabase.rpc('emettre_avoir', { p_invoice_id: invoiceId, p_motif: motif }) as Res<string>,
+      const id = ok<string>(await supabase.rpc('emettre_avoir', { p_invoice_id: invoiceId, p_motif: motif }) as Res<string>,
         'émission de l’avoir')
+      return { id, numero: await numeroDe(id) }
     } finally {
       await load()
     }
@@ -261,4 +269,33 @@ export function useFactureImprimable(id: string | null) {
   }, [supabase, id])
 
   return etat
+}
+
+/**
+ * Ventes couvertes par une facture non annulée : sale_id → numéro de facture.
+ * Pour le badge « Facturée n° … » de l'écran Ventes. Erreur affichée, jamais
+ * avalée ; en cas d'échec la carte reste vide (pas de badge) et l'erreur est visible.
+ */
+export function useNumerosFactureParVente(farmId: string | null | undefined, cle?: unknown) {
+  const supabase = useMemo(() => createClient(), [])
+  const [m, setM] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (!farmId) return
+    let actif = true
+    ;(async () => {
+      try {
+        const [l, i] = await Promise.all([
+          supabase.from('invoice_sales').select('sale_id, invoice_id, liberee_par_avoir').eq('farm_id', farmId).is('liberee_par_avoir', null),
+          supabase.from('invoices').select('id, numero').eq('farm_id', farmId).eq('kind', 'facture'),
+        ])
+        const liens = ok<Pick<InvoiceSale, 'sale_id' | 'invoice_id' | 'liberee_par_avoir'>[]>(l as Res<InvoiceSale[]>, 'lecture des ventes facturées') ?? []
+        const nums = new Map((ok<{ id: string; numero: string }[]>(i as Res<{ id: string; numero: string }[]>, 'lecture des numéros de facture') ?? []).map(x => [x.id, x.numero]))
+        const out = new Map<string, string>()
+        for (const [sid, iid] of ventesFacturees(liens)) { const n = nums.get(iid); if (n) out.set(sid, n) }
+        if (actif) setM(out)
+      } catch { /* déjà affichée par ok() */ }
+    })()
+    return () => { actif = false }
+  }, [supabase, farmId, cle])
+  return m
 }
