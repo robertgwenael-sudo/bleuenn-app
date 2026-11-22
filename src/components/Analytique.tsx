@@ -38,7 +38,10 @@ export default function Analytique({ ctx }: { ctx: any }) {
   const annees = anneesDesSaisons(ctx.seasons || [], [anneeCourante, anneeCourante + 1])
 
   // Toutes les plantations de la ferme : une récolte se lit à sa date, quelle que soit sa saison.
-  const plantings: PlantingFull[] = ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
+  // Celles sans date de récolte (vivace sans floraison, 013) restent dans la liste pour être
+  // signalées « hors prévisionnel » ; les vivaces comptent chaque floraison de la période.
+  const plantings: PlantingFull[] = ctx.farmPlantingsTout?.length ? ctx.farmPlantingsTout
+    : ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
   let data = plantings
   if (filterGarden) data = data.filter(p => p.garden_id === filterGarden)
   if (filterType) data = data.filter(p => p.culture_type === filterType)

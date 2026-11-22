@@ -4,8 +4,9 @@ import { CalendarRange, Scissors } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { PlantingFull, Season } from '@/lib/types'
 import {
-  ajouterJours, bornesSaison, chevauche, dureeJours, fenetreMensuelle, formatJourMois, formatMois,
-  intersection, lundiDeSemaine, lundisEntre, maxDate, minDate, semaineIso, tigesPrevuesParSemaine, type Intervalle,
+  ajouterJours, avecDatesDeRecolte, bornesSaison, chevauche, cycleDe, dureeJours, fenetreMensuelle, fenetresRecolte, finOccupation,
+  formatJourMois, formatMois, intersection, lundiDeSemaine, lundisEntre, maxDate, minDate, periodeOccupation, recoltesDansPeriode,
+  sansDatesDeRecolte, semaineIso, tigesPrevuesParSemaine, type Intervalle,
 } from '@/lib/domain'
 import { Badge, Card, CardContent, CardHeader, Dialog, EmptyState, PageHeader, Select, cn } from '@/components/ui'
 import { EditPlantingForm } from '@/components/plantings/PlantingForms'
@@ -36,25 +37,41 @@ function semainesDe(fenetre: Intervalle): Semaine[] {
   })
 }
 
-/** Phases d'une plantation, intervalles fermés ; null si dates manquantes. */
-function phases(p: PlantingFull): { cellule: Intervalle | null; champ: Intervalle | null; recolte: Intervalle | null } | null {
-  if (!p.date_semis || !p.date_plantation || !p.date_recolte || !p.date_fin) return null
+type Phases = { cellule: Intervalle | null; champ: Intervalle | null; recoltes: Intervalle[] }
+
+/**
+ * Phases d'une plantation, intervalles fermés, sur la fenêtre affichée ;
+ * null si dates manquantes. Vivace (013) : au champ de la plantation à
+ * l'arrachage (ou sans fin), en récolte à CHAQUE floraison de la fenêtre ;
+ * sans début de floraison, au champ seulement (elle occupe sa planche).
+ */
+function phases(p: PlantingFull, fenetre: Intervalle): Phases | null {
+  if (!p.date_semis || !p.date_plantation) return null
   const cellule = p.jours_cellule > 0 && p.date_plantation > p.date_semis
     ? { debut: p.date_semis, fin: ajouterJours(p.date_plantation, -1) } : null
+  if (cycleDe(p) !== 'annuelle') {
+    let fin: string
+    try { fin = finOccupation(p) } catch { return null }
+    const champ = fin >= p.date_plantation ? { debut: p.date_plantation, fin } : null
+    return { cellule, champ, recoltes: p.date_recolte && p.date_fin ? fenetresRecolte(p, fenetre) : [] }
+  }
+  if (!p.date_recolte || !p.date_fin) return null
   const champ = p.date_recolte > p.date_plantation
     ? { debut: p.date_plantation, fin: ajouterJours(p.date_recolte, -1) } : null
   const recolte = p.date_fin >= p.date_recolte ? { debut: p.date_recolte, fin: p.date_fin } : null
-  return { cellule, champ, recolte }
+  return { cellule, champ, recoltes: recolte ? [recolte] : [] }
 }
 
-/** Phase dominante de la semaine (celle qui y passe le plus de jours). */
-function phaseSemaine(ph: ReturnType<typeof phases>, lundi: string): Phase {
+/** Phase dominante de la semaine (celle qui y passe le plus de jours ; la récolte d'une vivace l'emporte sur « au champ »). */
+function phaseSemaine(ph: Phases | null, lundi: string): Phase {
   if (!ph) return null
   const sem = { debut: lundi, fin: ajouterJours(lundi, 6) }
+  const jours = (x: Intervalle | null) => { const i = x && intersection(x, sem); return i ? dureeJours(i) : 0 }
+  const recolte = ph.recoltes.reduce((t, r) => t + jours(r), 0)
+  const cellule = jours(ph.cellule)
+  const champ = Math.max(0, jours(ph.champ) - recolte)
   let best: Phase = null, bestJours = 0
-  for (const k of ['cellule', 'champ', 'recolte'] as const) {
-    const i = ph[k] && intersection(ph[k]!, sem)
-    const j = i ? dureeJours(i) : 0
+  for (const [k, j] of [['cellule', cellule], ['champ', champ], ['recolte', recolte]] as const) {
     if (j > bestJours) { best = k; bestJours = j }
   }
   return best
@@ -64,8 +81,9 @@ const touche = (i: Intervalle | null, lundi: string) => !!i && chevauche(i, { de
 
 function calcWeeklyTotals(plantings: PlantingFull[], semaines: Semaine[]) {
   const plantsEnCellule = new Array(semaines.length).fill(0)
+  const fenetre = semaines.length ? { debut: semaines[0].lundi, fin: ajouterJours(semaines[semaines.length - 1].lundi, 6) } : { debut: '2000-01-01', fin: '2000-01-01' }
   for (const p of plantings) {
-    const ph = phases(p)
+    const ph = phases(p, fenetre)
     if (!ph) continue
     const plants = p.plants_count || 0
     semaines.forEach((s, i) => { if (touche(ph.cellule, s.lundi)) plantsEnCellule[i] += plants })
@@ -74,7 +92,8 @@ function calcWeeklyTotals(plantings: PlantingFull[], semaines: Semaine[]) {
   // jours de récolte / 7, règle RR/MP/RU, entiers sans perte). La somme sur
   // toutes les semaines vaut exactement les tiges nettes ; une semaine hors
   // de la fenêtre affichée n'est simplement pas montrée.
-  const tigesARecolter = tigesPrevuesParSemaine(plantings, semaines.map(s => s.lundi))
+  // Plantations sans date de récolte (vivace sans floraison) : hors prévision, signalées par l'écran
+  const tigesARecolter = tigesPrevuesParSemaine(avecDatesDeRecolte(plantings), semaines.map(s => s.lundi))
   return { plantsEnCellule, tigesARecolter }
 }
 
@@ -88,7 +107,7 @@ function SubtotalRows({ label, plantings, semaines, isGlobal }: {
   const maxCellule = Math.max(0, ...plantsEnCellule)
   const maxTiges = Math.max(0, ...tigesARecolter)
   const totalPlants = plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
-  const totalTiges = plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+  const totalTiges = tigesARecolter.reduce((s, t) => s + t, 0)
 
   const bg = isGlobal ? 'bg-surface-3' : 'bg-surface-2'
   const border = isGlobal ? 'border-t-2 border-border-strong' : 'border-t border-border'
@@ -197,7 +216,10 @@ export default function Calendar({ ctx }: { ctx: any }) {
   const today: string = ctx.today
   const seasons: Season[] = ctx.seasons || []
   const activeSeasonId: string | undefined = ctx.activeSeason?.id
-  const farmPlantings: PlantingFull[] = ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
+  // Toutes les plantations de la ferme, y compris sans date de floraison : une vivace occupe sa planche (013)
+  const farmPlantings: PlantingFull[] = ctx.farmPlantingsTout?.length ? ctx.farmPlantingsTout
+    : ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
+  const occupe = (p: PlantingFull, f: Intervalle) => { try { return chevauche(periodeOccupation(p), f) } catch { return false } }
 
   // ─── Période et plantations concernées ───
   const saisonFiltre = periode === '12m' ? null : seasons.find(s => s.id === periode) || null
@@ -206,9 +228,11 @@ export default function Calendar({ ctx }: { ctx: any }) {
   if (saisonFiltre) {
     data = farmPlantings.filter(p => p.season_id === saisonFiltre.id)
     fenetre = fenetreSaison(saisonFiltre, data)
+    // Vivaces d'une autre saison toujours en place : elles fleurissent aussi cette année
+    data = [...data, ...farmPlantings.filter(p => p.season_id !== saisonFiltre.id && cycleDe(p) === 'vivace' && occupe(p, fenetre))]
   } else {
     fenetre = fenetreMensuelle(today, 12)
-    data = farmPlantings.filter(p => p.date_semis && p.date_fin && chevauche({ debut: p.date_semis, fin: p.date_fin }, fenetre))
+    data = farmPlantings.filter(p => p.date_semis && occupe(p, fenetre))
   }
   if (filterGarden) data = data.filter(p => p.garden_id === filterGarden)
   const semaines = semainesDe(fenetre)
@@ -245,6 +269,9 @@ export default function Calendar({ ctx }: { ctx: any }) {
     else groupesMois.push({ cle: `${annee}-${s.mois}`, mois: s.mois, annee, n: 1 })
   }
   const debutAnnee = (i: number) => i > 0 && semaines[i].num === 1
+  const sansFloraison = sansDatesDeRecolte(unique)
+  // Récapitulatif : chaque floraison de la période compte (vivaces), sans les plantations sans date de récolte
+  const prevues = (ps: PlantingFull[]) => recoltesDansPeriode(avecDatesDeRecolte(ps), fenetre)
 
   const titrePeriode = saisonFiltre
     ? `${saisonFiltre.name} : du ${formatJourMois(fenetre.debut)} ${fenetre.debut.slice(0, 4)} au ${formatJourMois(fenetre.fin)} ${fenetre.fin.slice(0, 4)}`
@@ -279,6 +306,13 @@ export default function Calendar({ ctx }: { ctx: any }) {
         )}
         <li className="text-fg-subtle sm:ml-auto">Cliquez une ligne pour modifier la plantation.</li>
       </ul>
+
+      {sansFloraison.length > 0 && (
+        <p role="status" data-testid="calendrier-sans-floraison" className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-xs text-fg">
+          {sansFloraison.length} plantation{sansFloraison.length > 1 ? 's' : ''} sans date de floraison ({Array.from(new Set(sansFloraison.map(p => p.culture_name))).join(', ')}) :
+          {' '}affichée{sansFloraison.length > 1 ? 's' : ''} au champ, hors tiges et revenu prévus. Renseignez le début de floraison dans le Catalogue.
+        </p>
+      )}
 
       {unique.length === 0 ? (
         <Card>
@@ -325,7 +359,7 @@ export default function Calendar({ ctx }: { ctx: any }) {
                     <td colSpan={2 + semaines.length} className="border-b border-t border-border bg-primary-soft" />
                   </tr>
                   {group.plantings.map(p => {
-                    const ph = phases(p)
+                    const ph = phases(p, fenetre)
                     const autre = p.season_id !== activeSeasonId
                     return (
                       <tr key={p.id} className="group cursor-pointer" onClick={() => setSelectedPlanting(p)}>
@@ -373,8 +407,8 @@ export default function Calendar({ ctx }: { ctx: any }) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {gardenGroups.map(group => {
               const totalPlants = group.plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
-              const totalTiges = group.plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
-              const totalRevenu = group.plantings.reduce((s, p) => s + (Number(p.revenu_estime) || 0), 0)
+              const totalTiges = prevues(group.plantings).reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+              const totalRevenu = prevues(group.plantings).reduce((s, p) => s + (Number(p.revenu_estime) || 0), 0)
               return (
                 <Card key={group.gardenId} className="p-4">
                   <h3 className="font-sans text-sm font-semibold">{group.gardenName}</h3>
@@ -389,8 +423,8 @@ export default function Calendar({ ctx }: { ctx: any }) {
             })}
             {gardenGroups.length > 1 && (() => {
               const gTotalPlants = unique.reduce((s, p) => s + (p.plants_count || 0), 0)
-              const gTotalTiges = unique.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
-              const gTotalRevenu = unique.reduce((s, p) => s + (Number(p.revenu_estime) || 0), 0)
+              const gTotalTiges = prevues(unique).reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+              const gTotalRevenu = prevues(unique).reduce((s, p) => s + (Number(p.revenu_estime) || 0), 0)
               return (
                 <Card className="border-primary/40 bg-primary-soft/40 p-4">
                   <h3 className="font-sans text-sm font-semibold">Total général</h3>

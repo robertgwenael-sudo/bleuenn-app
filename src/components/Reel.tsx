@@ -7,7 +7,7 @@ import {
 import {
   CULTURE_NON_ATTRIBUEE, ajouterJours, caPrevuPlantation, estDateValide, formatEuros, lundiDeSemaine, pertesParRaison,
   reelParCulture, reelParJardin, reelParSemaine, repartitionPrevueValorisee, semaineIso, totalVente,
-  type Centimes, type PlantingReel,
+  cycleDe, recoltesDeLAnnee, type Centimes, type PlantingReel,
 } from '@/lib/domain'
 import { aujourdhuiParis, useReel, type ReelCtx } from '@/hooks/useReel'
 import { PrevuReelChart, type PointSemaine } from '@/components/reel/PrevuReelChart'
@@ -35,9 +35,17 @@ export default function Reel({ ctx }: { ctx: any }) {
 
   const calc = useMemo(() => {
     try {
-      const tous: any[] = c.plantings || []
-      const plantings = tous.filter(plantationCalculable)
-      const ecartees = tous.length - plantings.length
+      // Saison affichée, plantations sans date de récolte comprises (pour les signaler, 013),
+      // plus les vivaces d'autres saisons toujours en place : elles refleurissent cette année.
+      const ferme: any[] = c.farmPlantingsTout ?? []
+      const saisonId = c.activeSeason?.id
+      const deLaSaison: any[] = ferme.length ? ferme.filter(p => p.season_id === saisonId) : (c.plantings || [])
+      const vivacesAilleurs = ferme.filter(p => p.season_id !== saisonId && cycleDe(p) === 'vivace')
+      const ecartees = deLaSaison.filter(p => !plantationCalculable(p)).length
+      const calculables = [...deLaSaison, ...vivacesAilleurs].filter(plantationCalculable)
+      // Vivaces : la floraison de l'année de la saison, pas seulement la première (013)
+      const annee = Number(c.activeSeason?.year)
+      const plantings: PlantingReel[] = Number.isInteger(annee) ? recoltesDeLAnnee(calculables, annee) : calculables
 
       // Prévu « à date » : semaines dont le lundi est passé, semaine en cours incluse.
       const aDate = new Map<string, { tiges: number; ca: Centimes }>()
@@ -120,7 +128,7 @@ export default function Reel({ ctx }: { ctx: any }) {
       console.error('[réel] calcul impossible', e)
       return { erreur: e instanceof Error ? e.message : String(e) } as const
     }
-  }, [c.plantings, c.harvests, r.actuals, r.losses, r.ventes, r.saleLines, lundiCourant])
+  }, [c.plantings, c.farmPlantingsTout, c.activeSeason, c.harvests, r.actuals, r.losses, r.ventes, r.saleLines, lundiCourant])
 
   const header = (
     <>

@@ -46,7 +46,8 @@ export function DuplicatePlanDialog({ ctx, open, onOpenChange }: { ctx: any; ope
     if (source && Number.isInteger(n)) { setYear(source.year + n); setName(String(source.year + n)) }
   }
 
-  const farmPlantings: PlantingFull[] = ctx.farmPlantings || []
+  // Occupation des planches : toutes les plantations, vivaces sans floraison comprises (013)
+  const farmPlantings: PlantingFull[] = ctx.farmPlantingsTout || ctx.farmPlantings || []
   const planches = useMemo(() => (ctx.gardens || []).flatMap((g: any) => (g.planches || []).map((p: any) => ({ id: p.id, surface_m2: Number(p.surface_m2), name: p.name, gardenName: g.name }))), [ctx.gardens])
   const shiftOk = Number.isInteger(shift) && shift >= 1 && shift <= 10
 

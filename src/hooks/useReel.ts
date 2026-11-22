@@ -16,16 +16,18 @@ import type {
   DateISO, HarvestLite, Loss, LossReason, Order, OrderLine, PlantingActual, SaleLine,
 } from '@/lib/domain'
 import type { CommandeAvecLignes, LossLite, PlantingReel, VenteCalcul } from '@/lib/domain'
-import { avecDatesDeRecolte } from '@/lib/domain/cultures'
+import { avecDatesDeRecolte, sansDatesDeRecolte } from '@/lib/domain/cultures'
 
 const supabase = createClient()
 
 /** Contexte minimal attendu de useBleuenn (types volontairement souples). */
 export interface ReelCtx {
-  activeSeason: { id: string; farm_id?: string | null; name?: string } | null
+  activeSeason: { id: string; farm_id?: string | null; name?: string; year?: number } | null
   user: { id: string } | null
   profile?: { farm_name?: string | null } | null
   plantings: any[]
+  /** Toute la ferme, vivaces sans floraison comprises (013). */
+  farmPlantingsTout?: any[]
   harvests: any[]
   sales: any[]
   catalog?: any[]
@@ -143,6 +145,8 @@ export function useReel(ctx: ReelCtx) {
 export interface DonneesFerme {
   fermeNom: string
   plantings: PlantingReel[]
+  /** Plantations sans date de récolte (floraison à renseigner, jours au champ manquants) : hors calcul, à signaler. */
+  sansDates: PlantingReel[]
   recoltes: HarvestLite[]
   pertes: LossLite[]
   commandes: CommandeAvecLignes[]
@@ -180,8 +184,10 @@ export function useDisponibiliteFerme(ctx: ReelCtx) {
         supabase.from('orders').select('id, status, delivery_date').in('season_id', seasonIds),
         supabase.from('order_lines').select('order_id, culture_id, label, quantity, stems_per_unit').in('season_id', seasonIds),
       ])
-      // 013 : sans début de floraison, pas de prévu ni de disponibilités (listées dans Jardins)
-      const plantings = avecDatesDeRecolte(verifier<PlantingReel[]>(p, 'plantations de la ferme'))
+      // 013 : sans début de floraison, pas de prévu ni de disponibilités, mais signalées à l'écran
+      const toutes = verifier<PlantingReel[]>(p, 'plantations de la ferme')
+      const plantings = avecDatesDeRecolte(toutes)
+      const sansDates = sansDatesDeRecolte(toutes)
       const recoltes = verifier<HarvestLite[]>(h, 'récoltes de la ferme')
       const pertes = verifier<LossLite[]>(l, 'pertes de la ferme')
       const orders = verifier<Pick<Order, 'id' | 'status' | 'delivery_date'>[]>(o, 'commandes')
@@ -193,7 +199,7 @@ export function useDisponibiliteFerme(ctx: ReelCtx) {
         parCommande.set(x.order_id, t)
       }
       setData({
-        fermeNom, plantings, recoltes, pertes,
+        fermeNom, plantings, sansDates, recoltes, pertes,
         commandes: orders.map(order => ({ order, lignes: parCommande.get(order.id) ?? [] })),
       })
       setError(null)

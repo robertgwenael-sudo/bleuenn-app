@@ -148,7 +148,8 @@ export function PreparerSaisonDialog({ ctx, open, onOpenChange }: { ctx: any; op
   const active: Season | null = ctx.activeSeason
   const annee = (active?.year ?? 0) + 1
   const cible = active ? (ctx.seasons || []).find((s: Season) => s.year === annee && s.farm_id === active.farm_id) as Season | undefined : undefined
-  const farmPlantings: PlantingFull[] = ctx.farmPlantings || []
+  // Aperçus 016 : toutes les plantations, vivaces sans floraison comprises (013)
+  const farmPlantings: PlantingFull[] = ctx.farmPlantingsTout || ctx.farmPlantings || []
   const [decoches, setDecoches] = useState<Set<string>>(new Set())
   const [enCours, setEnCours] = useState<'' | 'creer' | 'rattacher' | 'reprendre'>('')
   const [faits, setFaits] = useState<{ rattachees?: number; reprise?: ResultatReprise }>({})

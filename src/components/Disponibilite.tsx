@@ -63,8 +63,8 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
             description={ferme.error ?? calc?.erreur ?? ''} /></Card>
         ) : dispo ? (
           <>
-            {ferme.data && plantationsSansRecolte(ferme.data.plantings).length > 0 && (
-              <AvertissementSansDates plantings={plantationsSansRecolte(ferme.data.plantings) as PlantingFull[]} />
+            {ferme.data && ferme.data.sansDates.length > 0 && (
+              <AvertissementSansDates plantings={ferme.data.sansDates as PlantingFull[]} />
             )}
             <VueAVendre dispo={dispo} ventesEnTrop={ventesEnTrop} />
           </>
@@ -210,8 +210,10 @@ function VueAnnuelle({ ctx }: { ctx: any }) {
   const anneeCourante = Number(aujourdhui.slice(0, 4))
   const [annee, setAnnee] = useState<number>(() => Number(ctx.activeSeason?.year) || anneeCourante)
 
-  // Toutes les plantations de la ferme, toutes saisons : une récolte se lit à sa date.
-  const plantings: PlantingFull[] = ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
+  // Toutes les plantations de la ferme, toutes saisons : une récolte se lit à sa date. Celles
+  // sans date de récolte (vivace sans floraison) sont gardées pour être signalées (013).
+  const plantings: PlantingFull[] = ctx.farmPlantingsTout?.length ? ctx.farmPlantingsTout
+    : ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
   const annees = anneesDesSaisons(ctx.seasons || [], [anneeCourante, anneeCourante + 1, annee])
   const periode = bornesSaison(annee)
 
@@ -319,7 +321,7 @@ function AvertissementSansDates({ plantings }: { plantings: Pick<PlantingFull, '
     <p className="mb-3 flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning" role="status">
       <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
       <span>
-        {plantings.length} plantation{plantings.length > 1 ? 's' : ''} sans date de récolte calculable (jours au champ manquants au catalogue), donc hors disponibilités : {plantings.map(p => `${p.culture_name}${p.planche_name ? ` (${p.garden_name ?? ''} ${p.planche_name})` : ''}`).join(', ')}.
+        {plantings.length} plantation{plantings.length > 1 ? 's' : ''} sans date de récolte calculable (début de floraison d’une vivace à renseigner, ou jours au champ manquants au catalogue), donc hors disponibilités : {plantings.map(p => `${p.culture_name}${p.planche_name ? ` (${p.garden_name ?? ''} ${p.planche_name})` : ''}`).join(', ')}.
       </span>
     </p>
   )

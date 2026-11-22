@@ -38,6 +38,8 @@ export default function QuoiSemer({ ctx }: { ctx: any }) {
   const aujourdhui = aujourdhuiParisISO()
 
   const plantings: PlantingProduction[] = ctx.farmPlantings || ctx.plantings || []
+  // 013 : vivaces sans début de floraison, hors calcul mais signalées
+  const sansFloraison: { culture_name: string }[] = ctx.plantingsFloraisonManquante || []
   const seasons: { id: string; name: string }[] = ctx.seasons || []
 
   const p: PeriodeSemis = periode === 'glissant' ? { type: 'glissant', aujourdhui }
@@ -102,6 +104,12 @@ export default function QuoiSemer({ ctx }: { ctx: any }) {
       <PageHeader title="Quoi semer" image={photos.semisGodets}
         description="Du m² aux graines : plants, plants avec pertes, graines, tiges et revenu, comme dans votre tableur"
         actions={<Button variant="secondary" onClick={() => setReglagesOuverts(true)}><Settings2 className="h-4 w-4" aria-hidden />Réglages</Button>} />
+
+      {sansFloraison.length > 0 && (
+        <p className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" role="status" data-testid="quoi-semer-sans-floraison">
+          {sansFloraison.length} plantation{sansFloraison.length > 1 ? 's' : ''} sans date de floraison ({Array.from(new Set(sansFloraison.map(p => p.culture_name))).join(', ')}) : hors calcul (graines, pépinière, tiges, revenu). Renseignez le début de floraison dans le Catalogue.
+        </p>
+      )}
 
       {!prod.migration015 && (
         <p className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" role="status">
