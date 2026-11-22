@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { CalendarClock, ChevronRight, Coins, Fence, Flower, Ruler, Scissors, Store, Target } from 'lucide-react'
+import { CalendarClock, ChevronRight, Coins, Fence, Flower, Ruler, Store, Target } from 'lucide-react'
 import { getPlantingStatus } from '@/lib/types'
 import type { PlantingFull } from '@/lib/types'
 import { grouperParEcheance, type Tache } from '@/lib/domain'
@@ -40,6 +40,13 @@ function GroupeTaches({ titre, taches, ton, max, tk }: {
   )
 }
 
+/** « 2 vivaces sans date de floraison » (ou « plantations » si des bisannuelles s'y mêlent). */
+function libelleSansFloraison(ps: PlantingFull[]): string {
+  const n = ps.length
+  const vivaces = ps.every(p => p.cycle === 'vivace')
+  return `${n} ${vivaces ? (n > 1 ? 'vivaces' : 'vivace') : (n > 1 ? 'plantations' : 'plantation')} sans date de floraison`
+}
+
 export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: string) => void }) {
   const ui = useUI()
   const tk = useTaches(ctx)
@@ -49,6 +56,8 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
   const sales = ctx.sales || []
   const season = ctx.activeSeason
 
+  // 013 : plantations sans début de floraison (toute la ferme), hors prévisionnel
+  const sansFloraison: PlantingFull[] = ctx.plantingsFloraisonManquante || []
   const totalTiges = plantings.reduce((s: number, p: PlantingFull) => s + (p.tiges_estimees || 0), 0)
   const totalCA = plantings.reduce((s: number, p: PlantingFull) => s + (p.revenu_estime || 0), 0)
   const totalM2 = (ctx.gardens || []).reduce((s: number, g: any) => s + (g.surface_m2 || 0), 0)
@@ -76,7 +85,7 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
   const hello = hour < 5 || hour >= 18 ? 'Bonsoir' : 'Bonjour'
   const today = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
 
-  const go = (id: string, intent?: 'new-harvest' | 'new-sale' | 'new-garden') => {
+  const go = (id: string, intent?: 'new-sale' | 'new-garden') => {
     onNav?.(id)
     if (intent) ui.sendIntent(intent)
   }
@@ -101,10 +110,7 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="md" className="!bg-white !text-[rgb(31_36_30)] hover:!bg-white/90" onClick={() => go('recoltes', 'new-harvest')}>
-              <Scissors className="h-4 w-4" />Saisir une récolte
-            </Button>
-            <Button size="md" variant="ghost" className="!text-white ring-1 ring-white/40 hover:!bg-white/15" onClick={() => go('ventes', 'new-sale')}>
+            <Button size="md" className="!bg-white !text-[rgb(31_36_30)] hover:!bg-white/90" onClick={() => go('ventes', 'new-sale')}>
               <Store className="h-4 w-4" />Nouvelle vente
             </Button>
           </div>
@@ -126,7 +132,10 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
           sub={<>Objectif {goal.toLocaleString('fr-FR')} € · <strong className="font-semibold text-fg">{pct.toFixed(1)} %</strong></>}>
           <Progress value={pct} className="mt-3" label="Progression vers l’objectif de chiffre d’affaires" />
         </Stat>
-        <Stat label="CA potentiel" icon={<Coins />} value={eur(totalCA)} sub="sur toutes les cultures" />
+        <Stat label="CA potentiel" icon={<Coins />} value={eur(totalCA)}
+          sub={sansFloraison.length > 0
+            ? <span className="text-warning" data-testid="ca-sans-floraison">{libelleSansFloraison(sansFloraison)} : hors prévisionnel</span>
+            : 'sur toutes les cultures'} />
         <Stat label="Tiges potentielles" icon={<Flower />} value={Math.round(totalTiges).toLocaleString('fr-FR')} sub="saison complète" />
         <Stat className="col-span-2 sm:col-span-1" label="Surface totale" icon={<Ruler />} value={`${totalM2.toLocaleString('fr-FR')} m²`}
           sub={`${(ctx.gardens || []).length} jardins · ${actives} cultures actives`} />
