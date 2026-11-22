@@ -182,7 +182,10 @@ export function useBleuenn() {
   const switchSeason = async (seasonId: string) => {
     // Déactiver toutes, activer celle-ci
     if (!user) return
-    ecrire(await supabase.from('seasons').update({ is_active: false }).eq('user_id', user.id), 'changement de saison')
+    // Une seule saison active par ferme (repli sur le créateur si la base n'a pas de farm_id)
+    const farmId = seasons.find(x => x.id === seasonId)?.farm_id
+    const off = supabase.from('seasons').update({ is_active: false })
+    ecrire(await (farmId ? off.eq('farm_id', farmId) : off.eq('user_id', user.id)), 'changement de saison')
     ecrire(await supabase.from('seasons').update({ is_active: true }).eq('id', seasonId), 'changement de saison')
     await loadAll()
   }
@@ -497,5 +500,7 @@ export function useBleuenn() {
     enableInviteLink, disableInviteLink, regenerateInviteToken,
     joinByToken, inviteByEmail, getPendingInvites, cancelInvite, removeMember,
     reload: loadAll,
+    /** Recharge les données de la saison active sans écran de chargement global. */
+    refreshSeason: async () => { if (activeSeason) await loadSeasonData(activeSeason.id) },
   }
 }

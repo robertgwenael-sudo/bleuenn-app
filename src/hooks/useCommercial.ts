@@ -21,6 +21,7 @@ export interface CtxCommercial {
   catalog: CultureCatalog[]
   sales: unknown[]
   reload: () => unknown
+  refreshSeason?: () => Promise<unknown>
 }
 
 export type ClientSaisie = Pick<Client, 'name' | 'kind' | 'contact_name' | 'email' | 'phone' | 'address' | 'notes'>
@@ -63,6 +64,13 @@ export function useCommercial(ctx: CtxCommercial) {
   const reloadCtx = useRef(ctx.reload)
   reloadCtx.current = ctx.reload
   useEffect(() => () => { if (ctxPerime.current) reloadCtx.current() }, [])
+  // Si le contexte sait recharger la saison sans tout démonter, on le fait tout de suite.
+  const refreshRef = useRef(ctx.refreshSeason)
+  refreshRef.current = ctx.refreshSeason
+  const marquerPerime = () => {
+    if (refreshRef.current) { void refreshRef.current(); return }
+    ctxPerime.current = true
+  }
 
   const load = useCallback(async () => {
     if (!seasonId) { setLoading(false); return }
@@ -216,7 +224,7 @@ export function useCommercial(ctx: CtxCommercial) {
       }
       throw e
     } finally {
-      ctxPerime.current = true
+      marquerPerime()
       await load()
     }
     return { vente, total_centimes: prep.total_centimes }
@@ -242,7 +250,7 @@ export function useCommercial(ctx: CtxCommercial) {
       await supabase.from('sales').delete().eq('id', vente.id)
       throw e
     } finally {
-      ctxPerime.current = true
+      marquerPerime()
       await load()
     }
     return { vente, total_centimes: t.total_centimes }
@@ -255,7 +263,7 @@ export function useCommercial(ctx: CtxCommercial) {
       // La commande soldée par cette vente redevient « prête » (sale_id remis à null par la base)
       if (commande) ok(await supabase.from('orders').update({ status: 'prete', sale_id: null }).eq('id', commande.id) as Res<null>, 'retour de la commande en « prête »')
     } finally {
-      ctxPerime.current = true
+      marquerPerime()
       await load()
     }
     return { commande }

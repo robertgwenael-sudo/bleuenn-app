@@ -27,6 +27,7 @@ export interface CtxTaches {
   user: { id: string } | null
   activeSeason: { id: string; farm_id?: string | null } | null
   teamMembers?: { user_id: string; email?: string | null; owner_name?: string | null }[]
+  farmTeam?: { user_id: string; email?: string | null; owner_name?: string | null }[]
   gardens?: { id: string; name: string; planches?: { id: string; name: string }[] }[]
 }
 
@@ -106,11 +107,11 @@ export function useTaches(ctx: CtxTaches) {
   useEffect(() => { charger() }, [charger])
 
   // ─── Équipe ─────────────────────────────
-  // TODO : passer à la RPC farm_team(p_farm_id) quand elle sera exposée par useBleuenn.
+  // Équipe de la ferme (RPC farm_team), repli sur l'équipe de la saison.
   const equipe: MembreEquipe[] = useMemo(() => {
     const vus = new Set<string>()
     const out: MembreEquipe[] = []
-    for (const m of ctx.teamMembers ?? []) {
+    for (const m of (ctx.farmTeam?.length ? ctx.farmTeam : ctx.teamMembers) ?? []) {
       if (vus.has(m.user_id)) continue
       vus.add(m.user_id)
       const nom = (m.owner_name || '').trim() || m.email || 'Membre de l’équipe'
@@ -118,7 +119,7 @@ export function useTaches(ctx: CtxTaches) {
     }
     if (userId && !vus.has(userId)) out.unshift({ user_id: userId, nom: 'Moi', initiales: 'MOI', moi: true })
     return out.sort((a, b) => Number(b.moi) - Number(a.moi))
-  }, [ctx.teamMembers, userId])
+  }, [ctx.farmTeam, ctx.teamMembers, userId])
 
   // ─── Lieux : planches connues par les plantations et les jardins ─────
   const lieux = useMemo(() => {
