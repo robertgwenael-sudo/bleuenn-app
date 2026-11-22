@@ -1,10 +1,14 @@
 'use client'
-import { useState } from 'react'
+import { useMemo } from 'react'
 import Image from 'next/image'
-import { CalendarClock, Coins, Fence, Flower, Ruler, Scissors, Shovel, Sprout, Store, Target } from 'lucide-react'
-import { getPlantingStatus, formatDateFR } from '@/lib/types'
+import { toast } from 'sonner'
+import { CalendarClock, ChevronRight, Coins, Fence, Flower, Ruler, Scissors, Store, Target } from 'lucide-react'
+import { getPlantingStatus } from '@/lib/types'
 import type { PlantingFull } from '@/lib/types'
-import { Button, Card, CardHeader, CardContent, EmptyState, Progress, Stat, StatusBadge, Tabs } from '@/components/ui'
+import { grouperParEcheance, type Tache } from '@/lib/domain'
+import { useTaches, type UseTaches } from '@/hooks/useTaches'
+import { TacheLigne } from '@/components/taches/TacheLigne'
+import { Button, Card, CardHeader, CardContent, EmptyState, Progress, Skeleton, Stat } from '@/components/ui'
 import { HBarChart } from '@/components/charts/HBarChart'
 import { SegmentedBar } from '@/components/charts/SegmentedBar'
 import { useUI } from '@/components/shell/ui-context'
@@ -12,28 +16,33 @@ import { photos } from '@/lib/images'
 
 const eur = (v: number) => `${v.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`
 
-type Task = { p: PlantingFull; verb: string; when: string }
-
-function TaskList({ tasks, empty }: { tasks: Task[]; empty: string }) {
-  if (tasks.length === 0) return <EmptyState compact icon={<CalendarClock className="h-5 w-5" />} title="Rien à prévoir" description={empty} />
+/** Une section de la carte « Prochaines tâches ». */
+function GroupeTaches({ titre, taches, ton, max, tk }: {
+  titre: string; taches: Tache[]; ton?: 'danger'; max: number; tk: UseTaches
+}) {
+  if (taches.length === 0) return null
+  const visibles = taches.slice(0, max)
   return (
-    <ul className="divide-y divide-border">
-      {tasks.map(({ p, verb, when }) => (
-        <li key={p.id + verb} className="flex items-center gap-3 py-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-fg"><span className="text-fg-muted">{verb} </span><strong className="font-semibold">{p.culture_name}</strong></p>
-            <p className="truncate text-xs text-fg-subtle">{p.garden_name} · {p.planche_name} · {when}</p>
-          </div>
-          <StatusBadge status={getPlantingStatus(p)} />
-        </li>
-      ))}
-    </ul>
+    <section>
+      <h4 className={`flex items-center gap-2 pt-3 font-sans text-2xs font-semibold uppercase tracking-wide ${ton === 'danger' ? 'text-danger' : 'text-fg-subtle'}`}>
+        {titre}<span className="num font-normal normal-case tracking-normal">{taches.length}</span>
+      </h4>
+      <ul className="divide-y divide-border">
+        {visibles.map(t => (
+          <TacheLigne key={t.cle} t={t} equipe={tk.equipe} aujourdhui={tk.aujourdhui} compact
+            onCocher={async (x, fait) => { if (await tk.cocher(x, fait) && fait) toast.success('Tâche faite', { description: x.title }) }} />
+        ))}
+      </ul>
+      {taches.length > max && <p className="pb-1 text-xs text-fg-subtle">et {taches.length - max} autre{taches.length - max > 1 ? 's' : ''}…</p>}
+    </section>
   )
 }
 
 export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: string) => void }) {
   const ui = useUI()
-  const [tab, setTab] = useState<'semis' | 'plantation' | 'recolte'>('semis')
+  const tk = useTaches(ctx)
+  const groupes = useMemo(() => grouperParEcheance(tk.taches, tk.aujourdhui), [tk.taches, tk.aujourdhui])
+  const aFaireSemaine = groupes.cette_semaine.filter(t => !t.fait).length
   const plantings: PlantingFull[] = ctx.plantings
   const sales = ctx.sales || []
   const season = ctx.activeSeason
@@ -48,16 +57,7 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
   const goal = season?.revenue_goal || 15000
   const pct = Math.min(100, (ventesTotal / goal) * 100)
 
-  // Alertes
   const now = new Date()
-  const plantSoon = plantings.filter((p: PlantingFull) => {
-    const dp = new Date(p.date_plantation + 'T00:00:00')
-    const diff = (dp.getTime() - now.getTime()) / 86400000
-    return diff > 0 && diff <= 7
-  })
-  const inRecolte = plantings.filter((p: PlantingFull) => getPlantingStatus(p) === 'En récolte')
-  const toSow = plantings.filter((p: PlantingFull) => getPlantingStatus(p) === 'À semer').slice(0, 5)
-  const toPlant = plantings.filter((p: PlantingFull) => getPlantingStatus(p) === 'En germination').slice(0, 5)
 
   const channels = ['Marché', 'Fleuriste', 'Abo.', 'Mariage', 'Deuil']
   const channelFull = ['Marché', 'Fleuriste', 'Abonnements', 'Mariage', 'Deuil']
@@ -68,14 +68,6 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
     { label: 'MP — Moyen producteur', value: plantings.filter((p: PlantingFull) => p.culture_type === 'MP').length, colorClass: 'bg-chart-2' },
     { label: 'RU — Récolte unique', value: plantings.filter((p: PlantingFull) => p.culture_type === 'RU').length, colorClass: 'bg-chart-3' },
   ]
-
-  // Tâches : plantations dans les 7 jours puis plants en germination (sans doublon)
-  const plantTasks: Task[] = [
-    ...plantSoon.map(p => ({ p, verb: 'Planter', when: `prévu le ${formatDateFR(p.date_plantation)}` })),
-    ...toPlant.filter(p => !plantSoon.some(s => s.id === p.id)).map(p => ({ p, verb: 'Planter', when: `prévu le ${formatDateFR(p.date_plantation)}` })),
-  ]
-  const sowTasks: Task[] = toSow.map(p => ({ p, verb: 'Semer', when: `entrée en cellule le ${formatDateFR(p.date_semis)}` }))
-  const harvestTasks: Task[] = inRecolte.slice(0, 5).map(p => ({ p, verb: 'Récolter', when: `jusqu’au ${formatDateFR(p.date_fin)}` }))
 
   const firstName = (ctx.profile?.owner_name || '').trim().split(/\s+/)[0]
   const hour = now.getHours()
@@ -140,21 +132,25 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         {/* Prochaines tâches */}
         <Card className="lg:col-span-3">
-          <CardHeader title="Prochaines tâches" description="Semis, plantations et récoltes à venir"
+          <CardHeader title="Prochaines tâches"
+            description={tk.loading ? 'Chargement…' : `${aFaireSemaine} à faire cette semaine${groupes.en_retard.length ? ` · ${groupes.en_retard.length} en retard` : ''}`}
             icon={<CalendarClock className="h-4 w-4" />}
-            action={<Button variant="ghost" size="sm" onClick={() => go('calendrier')}>Calendrier</Button>} />
-          <CardContent className="pt-3">
-            <Tabs label="Type de tâche" value={tab} onChange={setTab}
-              options={[
-                { value: 'semis', label: <>Semis <span className="num text-fg-subtle">{sowTasks.length}</span></>, icon: <Sprout className="h-4 w-4" /> },
-                { value: 'plantation', label: <>Plantation <span className="num text-fg-subtle">{plantTasks.length}</span></>, icon: <Shovel className="h-4 w-4" /> },
-                { value: 'recolte', label: <>Récolte <span className="num text-fg-subtle">{harvestTasks.length}</span></>, icon: <Scissors className="h-4 w-4" /> },
-              ]} />
-            <div role="tabpanel" className="mt-1">
-              {tab === 'semis' && <TaskList tasks={sowTasks} empty="Aucun semis en attente." />}
-              {tab === 'plantation' && <TaskList tasks={plantTasks} empty="Aucune plantation dans les prochains jours." />}
-              {tab === 'recolte' && <TaskList tasks={harvestTasks} empty="Aucune culture en récolte cette semaine." />}
-            </div>
+            action={<a href="/#taches" onClick={e => { if (onNav) { e.preventDefault(); onNav('taches') } }}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-btn px-3 text-xs font-medium text-primary hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Voir le mois<ChevronRight className="h-3.5 w-3.5" aria-hidden /></a>} />
+          <CardContent className="pt-1">
+            {tk.loading ? (
+              <div className="space-y-2 pt-3">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-11 w-full" />)}</div>
+            ) : groupes.en_retard.length + groupes.cette_semaine.length + groupes.semaine_prochaine.length === 0 ? (
+              <EmptyState compact icon={<CalendarClock className="h-5 w-5" />} title="Rien à prévoir"
+                description="Aucune tâche cette semaine ni la suivante." />
+            ) : (
+              <>
+                <GroupeTaches titre="En retard" ton="danger" taches={groupes.en_retard} max={3} tk={tk} />
+                <GroupeTaches titre="Cette semaine" taches={groupes.cette_semaine} max={6} tk={tk} />
+                <GroupeTaches titre="Semaine prochaine" taches={groupes.semaine_prochaine} max={4} tk={tk} />
+              </>
+            )}
           </CardContent>
         </Card>
 
