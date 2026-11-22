@@ -170,6 +170,7 @@ describe('marge par culture', () => {
     expect(z.temps_valorise).toEqual({ valeur: null, raison: RAISONS.tauxAbsent })
     expect(z.marge).toEqual({ valeur: null, raison: RAISONS.tauxAbsent })
     expect(z.marge_m2.valeur).toBeNull()
+    expect(z.marge_hors_temps_m2).toEqual({ valeur: Math.round(24329 / 6), raison: null })
     expect(z.marge_hors_temps.valeur).toBe(24329)
     expect(z.marge_par_heure.valeur).toBe(2354)
     expect(s.marge_globale.valeur).toBeNull()

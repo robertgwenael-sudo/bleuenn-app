@@ -315,6 +315,8 @@ export interface MargeCulture {
   marge_hors_temps: Grandeur
   marge: Grandeur
   marge_m2: Grandeur
+  /** Marge hors temps ÷ m² : lisible même sans taux horaire. */
+  marge_hors_temps_m2: Grandeur
   /** Marge hors temps ÷ heures : ce qu'a rapporté chaque heure passée. */
   marge_par_heure: Grandeur
   ca_par_heure: Grandeur
@@ -448,7 +450,7 @@ export function margesParCulture(args: {
       depenses_directes: dd, depenses_planche: dp, depenses_reparties: dr, depenses,
       minutes_directes: md, minutes_planche: mp, minutes_reparties: mr, minutes,
       temps_valorise: tempsValorise,
-      marge_hors_temps: margeHT, marge, marge_m2: parM2(marge),
+      marge_hors_temps: margeHT, marge, marge_m2: parM2(marge), marge_hors_temps_m2: parM2(margeHT),
       marge_par_heure: parHeure(margeHT), ca_par_heure: parHeure(calculee(caC)),
     }
   }).sort((a, b) => a.libelle.localeCompare(b.libelle, 'fr'))
