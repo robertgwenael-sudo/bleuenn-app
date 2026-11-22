@@ -18,7 +18,7 @@
 // imputée à aucune culture et est remontée à part.
 // ============================================================
 
-import { cleSemaine, dansIntervalle, fenetreGlissante, formatDateLongue, formatSemaine, lundiDeSemaine, lundisEntre, type Intervalle } from './dates'
+import { ajouterJours, chevauche, cleSemaine, dansIntervalle, estDateValide, fenetreGlissante, formatDateLongue, formatSemaine, lundiDeSemaine, lundisEntre, type Intervalle } from './dates'
 import { eurosEnCentimes, formatEuros } from './montants'
 import { repartitionPrevue, type LossLite, type PlantingReel } from './reel'
 import { tigesLigne } from './ventes'
@@ -195,4 +195,55 @@ export function ficheDisponibiliteTexte(d: Disponibilites, o: OptionsFiche): str
 
 function majuscule(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+// ------------------------------------------------------------
+// Calendrier annuel de récolte (vue « Calendrier de l'année »)
+// ------------------------------------------------------------
+// Lecture PAR DATES sur une année civile, toutes saisons de la ferme
+// confondues. Remplace l'ancienne comparaison de numéros de semaine sans
+// année, qui (1) ne lisait que la saison active et (2) perdait toute récolte
+// à cheval sur le 1er janvier (semaine de début > semaine de fin) : c'est
+// ainsi que l'aneth semé à l'automne disparaissait de la Disponibilité.
+// ------------------------------------------------------------
+export type PlantingCalendrier = Pick<PlantingReel, 'id' | 'culture_name' | 'culture_type' | 'date_recolte' | 'date_fin'>
+  & Partial<Pick<PlantingReel, 'season_id'>> & { season_name?: string | null; planche_name?: string | null; garden_name?: string | null }
+
+export interface LigneCalendrierRecolte {
+  culture_name: string
+  culture_type: PlantingReel['culture_type']
+  /** Lundis (semaines ISO datées) où au moins une plantation est en récolte. */
+  lundis: Set<DateISO>
+  /** Saisons des plantations retenues (libellés), pour signaler les mélanges. */
+  saisons: string[]
+}
+
+export interface CalendrierRecolte {
+  periode: Intervalle
+  lundis: DateISO[]
+  lignes: LigneCalendrierRecolte[]
+  /** Nombre de cultures en récolte par semaine (même ordre que `lundis`). */
+  parSemaine: number[]
+}
+
+/** Plantations dont la fenêtre de récolte n'est pas calculable : à montrer, jamais à taire. */
+export function plantationsSansRecolte<T extends Pick<PlantingReel, 'date_recolte' | 'date_fin'>>(plantings: T[]): T[] {
+  return plantings.filter(p => !estDateValide(p.date_recolte) || !estDateValide(p.date_fin))
+}
+
+export function calendrierRecolte(plantings: PlantingCalendrier[], periode: Intervalle): CalendrierRecolte {
+  const lundis = lundisEntre(periode)
+  const parNom = new Map<string, LigneCalendrierRecolte>()
+  for (const p of plantings) {
+    if (!estDateValide(p.date_recolte) || !estDateValide(p.date_fin)) continue
+    const recolte = { debut: p.date_recolte, fin: p.date_fin < p.date_recolte ? p.date_recolte : p.date_fin }
+    const semaines = lundis.filter(l => chevauche(recolte, { debut: l, fin: ajouterJours(l, 6) }))
+    if (!semaines.length) continue
+    const ligne = parNom.get(p.culture_name) ?? { culture_name: p.culture_name, culture_type: p.culture_type, lundis: new Set<DateISO>(), saisons: [] }
+    for (const l of semaines) ligne.lundis.add(l)
+    if (p.season_name && !ligne.saisons.includes(p.season_name)) ligne.saisons.push(p.season_name)
+    parNom.set(p.culture_name, ligne)
+  }
+  const lignes = Array.from(parNom.values()).sort((a, b) => a.culture_name.localeCompare(b.culture_name, 'fr'))
+  return { periode, lundis, lignes, parSemaine: lundis.map(l => lignes.filter(x => x.lundis.has(l)).length) }
 }

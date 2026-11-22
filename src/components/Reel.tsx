@@ -5,8 +5,8 @@ import {
   Card, CardContent, CardHeader, EmptyState, PageHeader, Progress, Skeleton, Stat, Tabs,
 } from '@/components/ui'
 import {
-  CULTURE_NON_ATTRIBUEE, ajouterJours, caPrevu, estDateValide, formatEuros, lundiDeSemaine, pertesParRaison,
-  reelParCulture, reelParJardin, reelParSemaine, repartitionPrevue, semaineIso, totalVente,
+  CULTURE_NON_ATTRIBUEE, ajouterJours, caPrevuPlantation, estDateValide, formatEuros, lundiDeSemaine, pertesParRaison,
+  reelParCulture, reelParJardin, reelParSemaine, repartitionPrevueValorisee, semaineIso, totalVente,
   type Centimes, type PlantingReel,
 } from '@/lib/domain'
 import { aujourdhuiParis, useReel, type ReelCtx } from '@/hooks/useReel'
@@ -43,10 +43,11 @@ export default function Reel({ ctx }: { ctx: any }) {
       const aDate = new Map<string, { tiges: number; ca: Centimes }>()
       for (const p of plantings) {
         let tiges = 0, ca = 0
-        for (const s of repartitionPrevue(p)) {
+        // CA réparti comme les tiges, sur le revenu estimé (somme exacte, 016)
+        for (const s of repartitionPrevueValorisee(p, caPrevuPlantation(p))) {
           if (s.lundi > lundiCourant) continue
           tiges += s.tiges
-          ca += caPrevu(s.tiges, p.prix_tige)
+          ca += s.centimes
         }
         aDate.set(p.id, { tiges, ca })
       }
@@ -108,7 +109,7 @@ export default function Reel({ ctx }: { ctx: any }) {
       return {
         ecartees, cultures, jardins, tiges, ca,
         prevuSaison: plantings.reduce((s, p) => s + Math.round(Number(p.tiges_estimees)), 0),
-        caPrevuSaison: plantings.reduce((s, p) => s + caPrevu(Math.round(Number(p.tiges_estimees)), p.prix_tige), 0),
+        caPrevuSaison: plantings.reduce((s, p) => s + caPrevuPlantation(p), 0),
         prevuDate: total.tiges, caPrevuDate: total.ca,
         recolte, perdu,
         caReel: r.ventes.reduce((s, v) => s + totalVente(v), 0),

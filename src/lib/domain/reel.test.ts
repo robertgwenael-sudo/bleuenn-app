@@ -22,11 +22,23 @@ describe('répartition du prévu selon le type', () => {
     expect(repartitionPrevue(plantation({ ...periode, culture_type: 'RU' }))).toEqual([{ lundi: '2027-04-05', tiges: 100 }])
   })
 
-  it('MP : uniforme sur la première moitié (11 jours sur 21)', () => {
+  it('MP : uniforme sur la première moitié des semaines (2 sur 3)', () => {
     expect(joursDeRecoltePrevus(plantation({ ...periode, culture_type: 'MP' }))).toHaveLength(11)
     expect(repartitionPrevue(plantation({ ...periode, culture_type: 'MP' }))).toEqual([
-      { lundi: '2027-04-05', tiges: 64 }, { lundi: '2027-04-12', tiges: 36 },
+      { lundi: '2027-04-05', tiges: 50 }, { lundi: '2027-04-12', tiges: 50 },
     ])
+  })
+
+  it('règle de Marine : semaines = arrondi supérieur de jours de récolte / 7, somme exacte', () => {
+    // 56 jours de récolte (bulbes) : 8 semaines, même si la période touche 9 semaines ISO
+    const p = plantation({ culture_type: 'RR', date_recolte: '2027-03-03', date_fin: '2027-04-28', tiges_estimees: 101 })
+    const r = repartitionPrevue(p)
+    expect(r).toHaveLength(8)
+    expect(r[0].lundi).toBe('2027-03-01')
+    expect(r.reduce((s, x) => s + x.tiges, 0)).toBe(101)
+    // 21 jours : 3 semaines ; 0 jour : 1 semaine
+    expect(repartitionPrevue(plantation({ culture_type: 'RR', date_recolte: '2027-06-02', date_fin: '2027-06-23', tiges_estimees: 10 }))).toHaveLength(3)
+    expect(repartitionPrevue(plantation({ culture_type: 'RR', date_recolte: '2027-06-02', date_fin: '2027-06-02', tiges_estimees: 10 }))).toEqual([{ lundi: '2027-05-31', tiges: 10 }])
   })
 
   it('semis le 15/09/2026, récolte au printemps 2027 : le prévu tombe en 2027', () => {

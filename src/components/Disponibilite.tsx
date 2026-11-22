@@ -1,14 +1,14 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { AlertTriangle, Store } from 'lucide-react'
-import { getWeekNumber } from '@/lib/types'
 import type { PlantingFull } from '@/lib/types'
 import {
   Button, Card, CardContent, CardHeader, EmptyState, PageHeader, SearchInput, Select, Skeleton, Tabs, TypeBadge, cn,
 } from '@/components/ui'
 import { photos } from '@/lib/images'
 import {
-  calculerDisponibilites, estDateValide, formatDateLongue, formatSemaine, semaineIso, surventes,
+  anneesDesSaisons, bornesSaison, calculerDisponibilites, calendrierRecolte, estDateValide, formatDateLongue, formatSemaine,
+  lundiDeSemaine, plantationsSansRecolte, semaineIso, surventes,
   type DisponibiliteSemaine, type Disponibilites,
 } from '@/lib/domain'
 import { aujourdhuiParis, useDisponibiliteFerme, type ReelCtx } from '@/hooks/useReel'
@@ -28,6 +28,7 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
     try {
       // Plantations sans dates de récolte : hors calcul (elles ne produisent rien de datable).
       const plantings = ferme.data.plantings.filter(p => estDateValide(p.date_recolte) && estDateValide(p.date_fin))
+      // …mais nommées à l'écran (AvertissementSansDates), jamais ignorées en silence.
       return {
         dispo: calculerDisponibilites({ plantings, commandes: ferme.data.commandes, recoltes: ferme.data.recoltes, pertes: ferme.data.pertes, aujourdhui }),
         erreur: null,
@@ -52,7 +53,7 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
         } />
 
       <Tabs label="Vue" value={vue} onChange={setVue} className="mb-4"
-        options={[{ value: 'vendre', label: 'À vendre · 12 mois' }, { value: 'annuel', label: 'Calendrier de la saison' }]} />
+        options={[{ value: 'vendre', label: 'À vendre · 12 mois' }, { value: 'annuel', label: 'Calendrier de l’année' }]} />
 
       {vue === 'annuel' ? <VueAnnuelle ctx={ctx} /> : (
         ferme.loading ? (
@@ -61,7 +62,12 @@ export default function Disponibilite({ ctx }: { ctx: any }) {
           <Card><EmptyState icon={<AlertTriangle className="h-6 w-6" aria-hidden />} title="Disponibilités non calculables"
             description={ferme.error ?? calc?.erreur ?? ''} /></Card>
         ) : dispo ? (
-          <VueAVendre dispo={dispo} ventesEnTrop={ventesEnTrop} />
+          <>
+            {ferme.data && plantationsSansRecolte(ferme.data.plantings).length > 0 && (
+              <AvertissementSansDates plantings={plantationsSansRecolte(ferme.data.plantings) as PlantingFull[]} />
+            )}
+            <VueAVendre dispo={dispo} ventesEnTrop={ventesEnTrop} />
+          </>
         ) : null
       )}
 
@@ -194,42 +200,37 @@ function VueAVendre({ dispo, ventesEnTrop }: { dispo: Disponibilites; ventesEnTr
 }
 
 // ------------------------------------------------------------
-// Calendrier de la saison (vue d'origine, semaines 1 à 52)
+// Calendrier de l'année civile, lu par dates, toutes saisons de la ferme
 // ------------------------------------------------------------
 function VueAnnuelle({ ctx }: { ctx: any }) {
   const [filterGarden, setFilterGarden] = useState('')
   const [filterType, setFilterType] = useState('')
   const [search, setSearch] = useState('')
+  const aujourdhui = aujourdhuiParis()
+  const anneeCourante = Number(aujourdhui.slice(0, 4))
+  const [annee, setAnnee] = useState<number>(() => Number(ctx.activeSeason?.year) || anneeCourante)
 
-  const plantings: PlantingFull[] = ctx.plantings || []
+  // Toutes les plantations de la ferme, toutes saisons : une récolte se lit à sa date.
+  const plantings: PlantingFull[] = ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
+  const annees = anneesDesSaisons(ctx.seasons || [], [anneeCourante, anneeCourante + 1, annee])
+  const periode = bornesSaison(annee)
 
   let data = plantings
   if (filterGarden) data = data.filter(p => p.garden_id === filterGarden)
   if (filterType) data = data.filter(p => p.culture_type === filterType)
   if (search.trim()) data = data.filter(p => p.culture_name.toLowerCase().includes(search.trim().toLowerCase()))
-
-  const byName: Record<string, PlantingFull[]> = {}
-  data.forEach(p => {
-    if (!byName[p.culture_name]) byName[p.culture_name] = []
-    byName[p.culture_name].push(p)
-  })
-
-  const weeks = Array.from({ length: 52 }, (_, i) => i + 1)
-  const currentWeek = getWeekNumber(new Date(aujourdhuiParis() + 'T00:00:00'))
-  const enRecolte = (c: PlantingFull, w: number) => {
-    if (!c.date_recolte || !c.date_fin) return false
-    const wr = getWeekNumber(new Date(c.date_recolte + 'T00:00:00'))
-    const wf = getWeekNumber(new Date(c.date_fin + 'T00:00:00'))
-    return w >= wr && w <= wf
-  }
-  const availCount = weeks.map(w => Object.values(byName).filter(cults => cults.some(c => enRecolte(c, w))).length)
-  const maxCount = Math.max(1, ...availCount)
-  const names = Object.keys(byName)
+  const cal = calendrierRecolte(data, periode)
+  const sansDates = plantationsSansRecolte(data)
+  const lundiCourant = lundiDeSemaine(aujourdhui)
+  const maxCount = Math.max(1, ...cal.parSemaine)
 
   return (
     <div>
       <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <SearchInput value={search} onChange={setSearch} placeholder="Rechercher une fleur…" className="col-span-2 sm:w-64" label="Rechercher une fleur" />
+        <Select aria-label="Année" value={String(annee)} onChange={e => setAnnee(Number(e.target.value))} wrapperClassName="sm:w-32">
+          {annees.map(a => <option key={a} value={a}>{a}</option>)}
+        </Select>
         <Select aria-label="Jardin" value={filterGarden} onChange={e => setFilterGarden(e.target.value)} wrapperClassName="sm:w-48">
           <option value="">Tous les jardins</option>
           {(ctx.gardens || []).map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -239,45 +240,47 @@ function VueAnnuelle({ ctx }: { ctx: any }) {
           <option value="RR">RR</option><option value="MP">MP</option><option value="RU">RU</option>
         </Select>
         <ul className="col-span-2 flex items-center gap-4 text-xs text-fg-muted sm:ml-auto">
-          <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-[3px] bg-phase-recolte" aria-hidden />Disponible</li>
-          <li className="flex items-center gap-1.5"><span className="h-3 w-0.5 bg-accent" aria-hidden />Semaine {currentWeek}</li>
+          <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-[3px] bg-phase-recolte" aria-hidden />En récolte</li>
+          {cal.lundis.includes(lundiCourant) && <li className="flex items-center gap-1.5"><span className="h-3 w-0.5 bg-accent" aria-hidden />Semaine en cours</li>}
         </ul>
       </div>
 
-      {names.length === 0 ? (
+      {sansDates.length > 0 && <AvertissementSansDates plantings={sansDates} />}
+
+      {cal.lignes.length === 0 ? (
         <Card>
-          <EmptyState image={photos.tournesol} title="Aucune fleur à afficher"
-            description={plantings.length ? 'Aucune variété ne correspond aux filtres.' : 'La disponibilité se calcule automatiquement depuis vos plantations.'} />
+          <EmptyState image={photos.tournesol} title={`Aucune récolte prévue en ${annee}`}
+            description={plantings.length ? 'Aucune variété ne correspond aux filtres pour cette année.' : 'La disponibilité se calcule automatiquement depuis vos plantations.'} />
         </Card>
       ) : (
-        <div className="relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-card border border-border bg-surface shadow-card" role="region" aria-label="Disponibilité par semaine" tabIndex={0}>
+        <div className="relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-card border border-border bg-surface shadow-card" role="region" aria-label={`Récoltes par semaine en ${annee}`} tabIndex={0}>
           <table className="grid-table w-full">
             <thead className="sticky top-0 z-[2]">
               <tr>
                 <th className="sticky left-0 z-[3] min-w-[190px] border-b border-border bg-surface-2 px-3 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-fg-muted">Culture</th>
-                {weeks.map(w => (
-                  <th key={w} scope="col" className={cn('min-w-[30px] border-b border-border bg-surface-2 px-0 py-2.5 text-center text-[0.62rem] font-semibold',
-                    w === currentWeek ? 'text-accent' : 'text-fg-muted')}>
-                    S{w}
+                {cal.lundis.map(l => (
+                  <th key={l} scope="col" title={formatSemaine(l)} className={cn('min-w-[30px] border-b border-border bg-surface-2 px-0 py-2.5 text-center text-[0.62rem] font-semibold',
+                    l === lundiCourant ? 'text-accent' : 'text-fg-muted')}>
+                    S{semaineIso(l).semaine}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {Object.entries(byName).sort(([a], [b]) => a.localeCompare(b)).map(([name, cults]) => (
-                <tr key={name} className="group">
+              {cal.lignes.map(ligne => (
+                <tr key={ligne.culture_name} className="group">
                   <th scope="row" className="sticky left-0 z-[1] border-b border-border/60 bg-surface px-3 py-1.5 text-left font-normal group-hover:bg-surface-2">
                     <span className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-fg">{name}</span>
-                      <TypeBadge type={cults[0].culture_type} />
+                      <span className="truncate text-sm font-medium text-fg" title={ligne.saisons.length ? `Plantations : ${ligne.saisons.join(', ')}` : undefined}>{ligne.culture_name}</span>
+                      <TypeBadge type={ligne.culture_type} />
                     </span>
                   </th>
-                  {weeks.map(w => {
-                    const avail = cults.some(c => enRecolte(c, w))
+                  {cal.lundis.map(l => {
+                    const avail = ligne.lundis.has(l)
                     return (
-                      <td key={w} className={cn('border-b border-border/60 px-[2px] py-1.5 group-hover:bg-surface-2', w === currentWeek && 'bg-accent-soft/60')}>
+                      <td key={l} className={cn('border-b border-border/60 px-[2px] py-1.5 group-hover:bg-surface-2', l === lundiCourant && 'bg-accent-soft/60')}>
                         <div className={cn('mx-auto h-4 w-[22px] rounded-[3px]', avail ? 'bg-phase-recolte' : 'bg-surface-3/70')}>
-                          <span className="sr-only">{avail ? `Disponible semaine ${w}` : ''}</span>
+                          <span className="sr-only">{avail ? `En récolte ${formatSemaine(l)}` : ''}</span>
                         </div>
                       </td>
                     )
@@ -290,11 +293,11 @@ function VueAnnuelle({ ctx }: { ctx: any }) {
                 <th scope="row" className="sticky left-0 z-[3] border-t border-border bg-surface-2 px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wider text-fg">
                   Total variétés
                 </th>
-                {weeks.map((_, i) => (
-                  <td key={i} className="border-t border-border bg-surface-2 px-0 py-1.5 text-center align-bottom">
+                {cal.parSemaine.map((n, i) => (
+                  <td key={cal.lundis[i]} className="border-t border-border bg-surface-2 px-0 py-1.5 text-center align-bottom">
                     <div className="flex flex-col items-center gap-0.5">
-                      <div className="w-3.5 rounded-sm bg-primary/70" style={{ height: `${availCount[i] > 0 ? Math.max(2, (availCount[i] / maxCount) * 14) : 0}px` }} aria-hidden />
-                      <span className={cn('num text-[0.65rem] font-semibold', availCount[i] > 0 ? 'text-fg' : 'text-fg-subtle/60')}>{availCount[i]}</span>
+                      <div className="w-3.5 rounded-sm bg-primary/70" style={{ height: `${n > 0 ? Math.max(2, (n / maxCount) * 14) : 0}px` }} aria-hidden />
+                      <span className={cn('num text-[0.65rem] font-semibold', n > 0 ? 'text-fg' : 'text-fg-subtle/60')}>{n}</span>
                     </div>
                   </td>
                 ))}
@@ -303,6 +306,21 @@ function VueAnnuelle({ ctx }: { ctx: any }) {
           </table>
         </div>
       )}
+      <div className="mt-3">
+        <Hypothese>Année civile {annee}, du 1er janvier au 31 décembre, lue par dates sur toutes les saisons de la ferme : une récolte à cheval sur deux années apparaît dans les deux.</Hypothese>
+      </div>
     </div>
+  )
+}
+
+/** Plantations hors calcul faute de date de récolte : on les nomme au lieu de les taire. */
+function AvertissementSansDates({ plantings }: { plantings: Pick<PlantingFull, 'id' | 'culture_name' | 'planche_name' | 'garden_name'>[] }) {
+  return (
+    <p className="mb-3 flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning" role="status">
+      <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span>
+        {plantings.length} plantation{plantings.length > 1 ? 's' : ''} sans date de récolte calculable (jours au champ manquants au catalogue), donc hors disponibilités : {plantings.map(p => `${p.culture_name}${p.planche_name ? ` (${p.garden_name ?? ''} ${p.planche_name})` : ''}`).join(', ')}.
+      </span>
+    </p>
   )
 }

@@ -95,3 +95,70 @@ describe('fiche texte pour les fleuristes', () => {
     expect(t).toContain('Aucune disponibilité sur la période.')
   })
 })
+
+// ------------------------------------------------------------
+// « L'aneth manque » (retour de Marine, 22/11/2026)
+// ------------------------------------------------------------
+import { calendrierRecolte, plantationsSansRecolte } from './disponibilite'
+import { bornesSaison } from './saisons'
+import { getWeekNumber } from '../types'
+
+describe('calendrier annuel de récolte : lecture par dates, toutes saisons', () => {
+  // Aneth semé à l'automne 2026, en récolte du 14/12/2026 au 24/01/2027,
+  // première récolte en 2026 : saison 2026.
+  const anethHiver = plantation({
+    id: 'aneth-h', culture_id: 'aneth', culture_name: 'Aneth', culture_type: 'RR', season_id: 's2026', season_name: 'Saison 2026',
+    date_semis: '2026-09-01', date_plantation: '2026-10-01', date_recolte: '2026-12-14', date_fin: '2027-01-24',
+  })
+  // Aneth de printemps 2027, saison 2027 : invisible quand la saison active était 2026
+  const anethPrintemps = plantation({
+    id: 'aneth-p', culture_id: 'aneth', culture_name: 'Aneth', culture_type: 'RR', season_id: 's2027', season_name: 'Saison 2027',
+    date_semis: '2027-03-01', date_plantation: '2027-03-29', date_recolte: '2027-05-24', date_fin: '2027-06-27',
+  })
+  const cosmos2026 = plantation({ id: 'cosmos', culture_name: 'Cosmos', date_recolte: '2026-06-01', date_fin: '2026-06-21' })
+
+  it('reproduction : l’ancienne règle (n° de semaine sans année) perd une récolte à cheval sur le 1er janvier', () => {
+    const ancienne = (p: typeof anethHiver, w: number) => {
+      const wr = getWeekNumber(new Date(p.date_recolte + 'T00:00:00'))
+      const wf = getWeekNumber(new Date(p.date_fin + 'T00:00:00'))
+      return w >= wr && w <= wf
+    }
+    expect(Array.from({ length: 52 }, (_, i) => i + 1).some(w => ancienne(anethHiver, w))).toBe(false)
+  })
+
+  it('la récolte à cheval sur deux années apparaît dans les deux années civiles', () => {
+    const c2026 = calendrierRecolte([anethHiver, cosmos2026], bornesSaison(2026))
+    const c2027 = calendrierRecolte([anethHiver, cosmos2026], bornesSaison(2027))
+    const aneth26 = c2026.lignes.find(l => l.culture_name === 'Aneth')!
+    const aneth27 = c2027.lignes.find(l => l.culture_name === 'Aneth')!
+    expect(Array.from(aneth26.lundis).sort()).toEqual(['2026-12-14', '2026-12-21', '2026-12-28'])
+    expect(Array.from(aneth27.lundis).sort()).toEqual(['2026-12-28', '2027-01-04', '2027-01-11', '2027-01-18'])
+    expect(c2027.lignes.map(l => l.culture_name)).toEqual(['Aneth'])
+  })
+
+  it('les plantations d’une autre saison sont lues par leurs dates', () => {
+    const c = calendrierRecolte([anethHiver, anethPrintemps], bornesSaison(2027))
+    const aneth = c.lignes.find(l => l.culture_name === 'Aneth')!
+    expect(aneth.lundis.has('2027-05-24')).toBe(true)
+    expect(aneth.lundis.has('2027-01-04')).toBe(true)
+    expect(aneth.saisons).toEqual(['Saison 2026', 'Saison 2027'])
+    expect(c.parSemaine[c.lundis.indexOf('2027-06-07')]).toBe(1)
+  })
+
+  it('les années ne se mélangent pas : une récolte 2027 n’apparaît pas en 2026', () => {
+    const c = calendrierRecolte([anethPrintemps], bornesSaison(2026))
+    expect(c.lignes).toEqual([])
+  })
+
+  it('« à vendre » : l’aneth de la saison suivante compte dans les 12 mois glissants', () => {
+    const d = calculerDisponibilites({ plantings: [anethHiver, anethPrintemps], commandes: [], recoltes: [], pertes: [], aujourdhui: AUJOURDHUI })
+    const semaines = d.lignes.filter(l => l.culture_name === 'Aneth').map(l => l.lundi)
+    expect(semaines).toContain('2026-12-14')
+    expect(semaines).toContain('2027-06-21')
+  })
+
+  it('une plantation sans date de récolte calculable est remontée, pas ignorée', () => {
+    const sansDates = { ...anethPrintemps, id: 'x', date_recolte: null as unknown as string, date_fin: null as unknown as string }
+    expect(plantationsSansRecolte([anethPrintemps, sansDates]).map(p => p.id)).toEqual(['x'])
+  })
+})

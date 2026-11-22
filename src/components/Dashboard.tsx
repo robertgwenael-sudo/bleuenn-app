@@ -9,6 +9,7 @@ import type { PlantingFull } from '@/lib/types'
 import { grouperParEcheance, type Tache } from '@/lib/domain'
 import { useTaches, type UseTaches } from '@/hooks/useTaches'
 import { TacheLigne } from '@/components/taches/TacheLigne'
+import { CarteSaisonSuivante } from '@/components/saisons/SaisonSuivante'
 import { Button, Card, CardHeader, CardContent, EmptyState, Progress, Skeleton, Stat } from '@/components/ui'
 import { HBarChart } from '@/components/charts/HBarChart'
 import { SegmentedBar } from '@/components/charts/SegmentedBar'
@@ -82,6 +83,7 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
 
   return (
     <div className="space-y-6">
+      <CarteSaisonSuivante ctx={ctx} />
       {/* Bandeau d'accueil */}
       <section className="relative overflow-hidden rounded-2xl shadow-card">
         <Image src={photos.champPavotsDores} alt="" fill priority sizes="(min-width: 1280px) 1200px, 100vw"

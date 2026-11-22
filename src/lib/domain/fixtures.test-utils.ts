@@ -6,7 +6,8 @@ const BASE: PlantingFull = {
   date_semis: '2026-03-01', date_plantation: '2026-04-01', date_recolte: '2026-06-01', date_fin: '2026-06-21',
   jours_cellule_override: 0, jours_champ_override: null, jours_recolte_override: null,
   rendement_override: null, prix_override: null, plants_count: 100, tiges_estimees: 100,
-  revenu_estime: 50, graines_necessaires: 130, notes: null,
+  // null : le CA prévu se calcule alors en tiges × prix (caPrevuPlantation) ; à fixer pour un test qui le lit
+  revenu_estime: null as unknown as number, graines_necessaires: 130, notes: null,
   planting_m2: 5, culture_name: 'Cosmos', culture_type: 'RR',
   jours_cellule: 31, jours_champ: 61, jours_recolte: 20, rendement: 1, prix_tige: 0.5,
   temp_germination: null, pincer: false, filet: false, couvre_sol: false, semis_direct: false,

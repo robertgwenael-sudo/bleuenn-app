@@ -8,6 +8,7 @@ import { seed_journal } from './journal'
 import { seed_factures } from './factures'
 import { seed_achats } from './achats'
 import { seed_gestion } from './gestion'
+import { seed_saisons } from './saisons'
 
 /** Tables ajoutées par les migrations 005 et 006, vides par défaut. */
 export function extendDemoDb(db: DemoDb) {
@@ -31,5 +32,6 @@ export function extendDemoDb(db: DemoDb) {
   for (const g of x.gardens) g.farm_id = FARM
 
   seed_ferme(x); seed_commercial(x); seed_reel(x); seed_taches(x); seed_couts(x); seed_journal(x); seed_factures(x); seed_achats(x); seed_gestion(x)
+  seed_saisons(x) // 016 : en dernier, reclasse les plantations (et leurs tâches) par année de récolte
   return x
 }

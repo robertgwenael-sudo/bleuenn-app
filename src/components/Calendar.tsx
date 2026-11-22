@@ -4,8 +4,8 @@ import { CalendarRange, Scissors } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { PlantingFull, Season } from '@/lib/types'
 import {
-  ajouterJours, chevauche, dateCivile, dureeJours, fenetreMensuelle, formatJourMois, formatMois,
-  intersection, lundiDeSemaine, lundisEntre, maxDate, minDate, semaineIso, type Intervalle,
+  ajouterJours, bornesSaison, chevauche, dureeJours, fenetreMensuelle, formatJourMois, formatMois,
+  intersection, lundiDeSemaine, lundisEntre, maxDate, minDate, semaineIso, tigesPrevuesParSemaine, type Intervalle,
 } from '@/lib/domain'
 import { Badge, Card, CardContent, CardHeader, Dialog, EmptyState, PageHeader, Select, cn } from '@/components/ui'
 import { EditPlantingForm } from '@/components/plantings/PlantingForms'
@@ -64,19 +64,17 @@ const touche = (i: Intervalle | null, lundi: string) => !!i && chevauche(i, { de
 
 function calcWeeklyTotals(plantings: PlantingFull[], semaines: Semaine[]) {
   const plantsEnCellule = new Array(semaines.length).fill(0)
-  const tigesARecolter = new Array(semaines.length).fill(0)
   for (const p of plantings) {
     const ph = phases(p)
     if (!ph) continue
     const plants = p.plants_count || 0
-    // Les tiges se répartissent sur toutes les semaines de récolte, même hors fenêtre
-    const semRecolte = ph.recolte ? lundisEntre(ph.recolte).length : 0
-    const tigesParSemaine = semRecolte ? Math.round((p.tiges_estimees || 0) / semRecolte) : 0
-    semaines.forEach((s, i) => {
-      if (touche(ph.cellule, s.lundi)) plantsEnCellule[i] += plants
-      if (touche(ph.recolte, s.lundi)) tigesARecolter[i] += tigesParSemaine
-    })
+    semaines.forEach((s, i) => { if (touche(ph.cellule, s.lundi)) plantsEnCellule[i] += plants })
   }
+  // Tiges : répartition commune de reel.ts (semaines = arrondi supérieur des
+  // jours de récolte / 7, règle RR/MP/RU, entiers sans perte). La somme sur
+  // toutes les semaines vaut exactement les tiges nettes ; une semaine hors
+  // de la fenêtre affichée n'est simplement pas montrée.
+  const tigesARecolter = tigesPrevuesParSemaine(plantings, semaines.map(s => s.lundi))
   return { plantsEnCellule, tigesARecolter }
 }
 
@@ -176,11 +174,20 @@ function CourbesSemaines({ data }: { data: { cle: string; label: string; plants:
   )
 }
 
-/** Fenêtre d'une saison : de son premier semis à sa dernière fin de récolte (repli : l'année civile). */
+/**
+ * Fenêtre d'une saison : son année civile (1er janvier au 31 décembre),
+ * élargie aux plantations qui lui sont rattachées et qui en débordent
+ * (bulbes plantés en novembre de l'année précédente, dahlias arrachés en
+ * janvier suivant) : rien ne disparaît au passage d'année.
+ */
 function fenetreSaison(season: Season, ps: PlantingFull[]): Intervalle {
+  const annee = bornesSaison(season.year)
   const dates = ps.filter(p => p.date_semis && p.date_fin)
-  if (!dates.length) return { debut: dateCivile(season.year, 1, 1), fin: dateCivile(season.year, 12, 31) }
-  return { debut: minDate(...dates.map(p => p.date_semis)), fin: maxDate(...dates.map(p => p.date_fin)) }
+  if (!dates.length) return annee
+  return {
+    debut: minDate(annee.debut, ...dates.map(p => p.date_semis)),
+    fin: maxDate(annee.fin, ...dates.map(p => p.date_fin)),
+  }
 }
 
 export default function Calendar({ ctx }: { ctx: any }) {

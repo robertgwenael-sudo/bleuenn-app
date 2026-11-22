@@ -2,6 +2,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase'
+import { dateRecoltePrevue, nomSaisonParDefaut, phraseRattachement, saisonDeLAnnee, saisonProposee } from '@/lib/domain/saisons'
+import type { ResultatReprise } from '@/lib/domain/types'
 import type {
   Season, Garden, Planche, CultureCatalog, PlantingFull,
   Harvest, Sale, SeedOrder, Profile, TeamMember, Farm, FarmMember
@@ -142,9 +144,11 @@ export function useBleuenn() {
 
   // ─── Load all data when user changes ────
   // Déclaré après les fonctions qu'il appelle (react-hooks/immutability).
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (opts?: { silencieux?: boolean }) => {
     if (!user) return
-    setLoading(true)
+    // silencieux : recharge sans l'écran de chargement global, qui démonterait
+    // les dialogues en cours (parcours « Préparer 2027 »).
+    if (!opts?.silencieux) setLoading(true)
 
     // Charger les saisons via team_members (inclut celles partagées)
     const [profRes, memberRes, catRes] = await Promise.all([
@@ -187,6 +191,7 @@ export function useBleuenn() {
   }, [user])
 
   useEffect(() => { loadAll() }, [loadAll])
+  const rechargerSansEcran = () => loadAll({ silencieux: true })
 
   const switchSeason = async (seasonId: string) => {
     // Déactiver toutes, activer celle-ci
@@ -201,6 +206,12 @@ export function useBleuenn() {
 
   // ─── CRUD Saisons ──────────────────────
   const createSeason = async (name: string, year: number, goal: number) => {
+    // Saison = année civile (016) : une seule saison par année dans la ferme.
+    const existante = saisonDeLAnnee(seasons, year, farm?.id ?? activeSeason?.farm_id)
+    if (existante) {
+      toast.error(`La saison ${year} existe déjà`, { description: `« ${existante.name} » couvre déjà l’année ${year}.` })
+      return null
+    }
     // Rattachée à la ferme courante si on en est owner ; sinon la base
     // rattache la saison à la ferme de son créateur (créée au besoin).
     const ownsFarm = !!farm && farmTeam.some(m => m.user_id === user.id && m.role === 'owner')
@@ -212,6 +223,48 @@ export function useBleuenn() {
     // Le créateur est inscrit owner par le trigger trg_add_season_owner
     if (data) await loadAll()
     return data
+  }
+
+  // ─── Saisons civiles (migration 016) ─────
+  /** Crée la saison civile `year` de la ferme, sans en faire la saison active. */
+  const creerSaisonCivile = async (year: number): Promise<Season | null> => {
+    if (!activeSeason) return null
+    const existante = saisonDeLAnnee(seasons, year, activeSeason.farm_id)
+    if (existante) return seasons.find(s => s.id === existante.id) ?? null
+    const res = await supabase.from('seasons').insert({
+      user_id: user.id, farm_id: activeSeason.farm_id, name: nomSaisonParDefaut(year), year,
+      revenue_goal: activeSeason.revenue_goal, is_active: false,
+    }).select().single()
+    if (!ecrire(res, `création de la saison ${year}`)) return null
+    await rechargerSansEcran()
+    return res.data as Season
+  }
+
+  /** Rattache des plantations choisies à une autre saison (RPC atomique `reclasser_plantations`). */
+  const reclasserPlantations = async (fromId: string, toId: string, ids: string[]): Promise<number | null> => {
+    const res = await supabase.rpc('reclasser_plantations', { p_from: fromId, p_to: toId, p_ids: ids })
+    if (!ecrire(res, 'rattachement des plantations')) return null
+    await rechargerSansEcran()
+    return Number(res.data ?? 0)
+  }
+
+  /** Reprend le plan d'une saison dans une saison existante (RPC `reprendre_plan_dans_saison`). */
+  const reprendrePlan = async (sourceId: string, cibleId: string, decalage = 1): Promise<ResultatReprise | null> => {
+    const res = await supabase.rpc('reprendre_plan_dans_saison', { p_source: sourceId, p_cible: cibleId, p_shift_years: decalage })
+    if (!ecrire(res, 'reprise du plan')) return null
+    await rechargerSansEcran()
+    return (res.data ?? null) as ResultatReprise | null
+  }
+
+  /**
+   * Bascule une saison-plan sur une autre année (RPC `basculer_saison`).
+   * `appliquer = false` : aperçu seul, rien n'est écrit.
+   */
+  const basculerSaison = async (seasonId: string, annee: number, appliquer: boolean): Promise<any | null> => {
+    const res = await supabase.rpc('basculer_saison', { p_season: seasonId, p_annee: annee, p_appliquer: appliquer })
+    if (!ecrire(res, appliquer ? `passage de la saison en ${annee}` : `aperçu du passage en ${annee}`)) return null
+    if (appliquer) await rechargerSansEcran()
+    return res.data
   }
 
   // ─── CRUD Jardins ──────────────────────
@@ -258,6 +311,18 @@ export function useBleuenn() {
   }
 
   // ─── CRUD Plantations ─────────────────
+  /**
+   * Saison proposée pour une plantation : celle de l'année de sa première
+   * récolte (règle de Marine). À défaut de saison pour cette année, la saison
+   * active, et on le dit (toast) au lieu de ranger en silence.
+   */
+  const seasonParDefaut = (cultureId: string, dateSemis: string, o?: { jours_cellule_override?: number; jours_champ_override?: number }): string => {
+    const culture = catalog.find(c => c.id === cultureId)
+    const p = saisonProposee(culture ? dateRecoltePrevue(dateSemis, culture, o) : null, seasons, activeSeason)
+    if (p.statut !== 'trouvee') toast.info(phraseRattachement(p), { id: `rattachement-${p.annee ?? 'nc'}` })
+    return p.saison?.id ?? activeSeason!.id
+  }
+
   const createPlanting = async (plancheId: string, cultureId: string, dateSemis: string, surfaceM2: number, overrides?: {
     jours_cellule_override?: number
     jours_champ_override?: number
@@ -265,15 +330,19 @@ export function useBleuenn() {
     rendement_override?: number
     prix_override?: number
     notes?: string
+    /** Saison choisie ; à défaut, celle de l'année de première récolte (016). */
+    season_id?: string
   }) => {
     if (!activeSeason) return null
+    const { season_id: choisie, ...reste } = overrides ?? {}
+    const seasonId = choisie || seasonParDefaut(cultureId, dateSemis, reste)
     const { data, error } = await supabase.from('plantings').insert({
       planche_id: plancheId,
       culture_id: cultureId,
-      season_id: activeSeason.id,
+      season_id: seasonId,
       date_semis: dateSemis,
       surface_m2: surfaceM2,
-      ...overrides
+      ...reste
     }).select().single()
     ecrire({ error }, 'ajout de la plantation')
     if (data && activeSeason) await loadSeasonData(activeSeason.id)
@@ -289,6 +358,7 @@ export function useBleuenn() {
     rendement_override?: number
     prix_override?: number
     notes?: string
+    season_id?: string
   }) => {
     const { error } = await supabase.from('plantings').update(updates).eq('id', id)
     ecrire({ error }, 'modification de la plantation')
@@ -491,6 +561,7 @@ export function useBleuenn() {
     user, profile, loading,
     signIn, signUp, signOut, resetPassword, updateProfile,
     seasons, activeSeason, switchSeason, createSeason,
+    creerSaisonCivile, reclasserPlantations, reprendrePlan, basculerSaison,
     gardens, catalog, plantings, harvests, sales, seedOrders,
     createGarden, updateGarden, deleteGarden,
     createPlanche, updatePlanche, deletePlanche,

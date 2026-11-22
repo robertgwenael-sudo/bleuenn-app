@@ -62,4 +62,4 @@ export function Hypothese({ children, className }: { children: React.ReactNode; 
 }
 
 export const REPARTITION_PREVU =
-  'Prévu réparti dans le temps : RR étalé uniformément sur toute la période de récolte, RU compté en une seule semaine (celle du début de récolte), MP étalé sur la première moitié de la période. Hypothèse à valider.'
+  'Prévu réparti dans le temps (règle de Marine) : nombre de semaines de récolte = jours de récolte / 7, arrondi au supérieur, à partir de la semaine de la première récolte ; RR à parts égales sur toutes ces semaines, MP sur la première moitié, RU sur la première. La somme des semaines vaut exactement les tiges nettes et le revenu estimé.'

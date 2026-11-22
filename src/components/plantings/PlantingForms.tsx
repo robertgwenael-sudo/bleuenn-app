@@ -9,6 +9,7 @@ import {
   segmentsOccupation, dureeJours, type PlantingOccupation,
 } from '@/lib/domain'
 import { AvertissementSaisie, calculables } from './Occupation'
+import { ChoixSaison } from '@/components/saisons/ChoixSaison'
 
 // ─── Vérification d'occupation (toutes saisons, par dates) ──────────
 // Le calcul vient du domaine (`conflitsSiAjout`, `libreAPartirDu`) et porte
@@ -200,6 +201,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
   const [surfaceM2, setSurfaceM2] = useState(1)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const [seasonId, setSeasonId] = useState('') // vide = saison de l'année de récolte (016)
 
   const catalog: CultureCatalog[] = ctx.catalog || []
   const selected = catalog.find(c => c.id === cultureId)
@@ -219,7 +221,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
     e?.preventDefault()
     if (!cultureId || !dateSemis || surfaceM2 <= 0) return
     setLoading(true)
-    await ctx.createPlanting(plancheId, cultureId, dateSemis, surfaceM2)
+    await ctx.createPlanting(plancheId, cultureId, dateSemis, surfaceM2, seasonId ? { season_id: seasonId } : undefined)
     setLoading(false)
     toast.success(`${selected?.name} planté`, {
       description: v.conflits.length ? `${v.plancheName} — en conflit de surface sur la période` : v.plancheName,
@@ -269,7 +271,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Date de semis" hint={`Le calendrier se calcule à partir de cette date. Plantation rattachée à ${ctx.activeSeason?.name || 'la saison active'}.`}>
+        <Field label="Date de semis" hint="Le calendrier se calcule à partir de cette date.">
           <Input type="date" className="h-11" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
         </Field>
         <Field label="Surface allouée (m²)"
@@ -277,6 +279,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
           <Input type="number" inputMode="decimal" className="h-11" min={0.5} step={0.5}
             value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)} />
         </Field>
+        <ChoixSaison ctx={ctx} dateRecolte={v.dates?.recolte ?? null} value={seasonId} onChange={setSeasonId} />
       </div>
 
       <AvertissementSaisie projetId={PROJET_ID} conflits={v.conflits} plancheM2={v.plancheM2} surface={surfaceM2} libre={v.libre}

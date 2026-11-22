@@ -76,9 +76,17 @@ describe('fusion avec les lignes stockées', () => {
     expect(fusion.filter(t => t.fait)).toHaveLength(1)
   })
 
-  it('une auto_key d’une autre saison ne coche rien', () => {
-    const fusion = fusionnerTaches(generees, [stockee({ season_id: 'autre', auto_key: 'semis:z1', done_at: 'x' })])
-    expect(fusion.filter(t => t.fait)).toHaveLength(0)
+  it('plantation passée dans une autre saison (016) : la ligne de l’ancienne saison reste lue', () => {
+    const fusion = fusionnerTaches(generees, [stockee({ id: 'avant', season_id: 's2026', auto_key: 'semis:z1', done_at: 'x' })])
+    expect(fusion.find(t => t.auto_key === 'semis:z1')).toMatchObject({ fait: true, task_id: 'avant' })
+  })
+
+  it('la ligne de la saison de la plantation l’emporte sur celle d’une autre saison', () => {
+    const fusion = fusionnerTaches(generees, [
+      stockee({ id: 'avant', season_id: 's2026', auto_key: 'semis:z1', done_at: 'x' }),
+      stockee({ id: 'apres', season_id: 's2027', auto_key: 'semis:z1', done_at: null }),
+    ])
+    expect(fusion.find(t => t.auto_key === 'semis:z1')).toMatchObject({ fait: false, task_id: 'apres' })
   })
 
   it('ajoute les tâches libres', () => {
