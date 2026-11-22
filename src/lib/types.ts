@@ -95,6 +95,7 @@ export interface Planting {
 
 export interface PlantingFull extends Planting {
   planting_m2: number
+  planting_notes: string | null  // la vue renomme notes en planting_notes
   culture_name: string
   culture_type: 'RR' | 'MP' | 'RU'
   jours_cellule: number

@@ -54,7 +54,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
   const confirm = useConfirm()
   const [dateSemis, setDateSemis] = useState(planting.date_semis)
   const [surfaceM2, setSurfaceM2] = useState(planting.surface_m2)
-  const [notes, setNotes] = useState(planting.notes || '')
+  const [notes, setNotes] = useState(planting.planting_notes ?? planting.notes ?? '')
   const [loading, setLoading] = useState(false)
 
   // Surface disponible (calcul temporel, en excluant la culture en cours)
