@@ -209,3 +209,4 @@ export function buildDemoDb() {
 }
 
 export type DemoDb = ReturnType<typeof buildDemoDb>
+export type DemoDbFull = ReturnType<typeof import('./seeds').extendDemoDb>

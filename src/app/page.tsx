@@ -16,6 +16,10 @@ import Verification from '@/components/Verification'
 import Catalogue from '@/components/Catalogue'
 import Analytique from '@/components/Analytique'
 import OnboardingModal from '@/components/OnboardingModal'
+import Taches from '@/components/Taches'
+import Reel from '@/components/Reel'
+import Clients from '@/components/Clients'
+import Livraisons from '@/components/Livraisons'
 import { AppShell } from '@/components/shell/AppShell'
 import { VALID_IDS } from '@/components/shell/nav'
 import { LogoMark } from '@/components/shell/Logo'
@@ -127,6 +131,10 @@ export default function Home() {
       {section === 'analytique' && <Analytique ctx={ctx} />}
       {section === 'catalogue' && <Catalogue ctx={ctx} />}
       {section === 'verification' && <Verification ctx={ctx} />}
+      {section === 'taches' && <Taches ctx={ctx} />}
+      {section === 'reel' && <Reel ctx={ctx} />}
+      {section === 'clients' && <Clients ctx={ctx} />}
+      {section === 'livraisons' && <Livraisons ctx={ctx} />}
     </AppShell>
   )
 }

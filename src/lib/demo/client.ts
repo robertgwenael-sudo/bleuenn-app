@@ -10,6 +10,7 @@
 // (migration 002), avec les mêmes formules.
 // Aucune requête réseau, aucune écriture hors de la mémoire du navigateur.
 // ============================================================
+import { extendDemoDb } from './seeds'
 import { buildDemoDb, DEMO_USER_ID, DEMO_EMAIL, type DemoDb } from './data'
 
 type Row = Record<string, any>
@@ -21,7 +22,7 @@ const LATENCY = 180
 let db: DemoDb | null = null
 const getDb = (): DemoDb => {
   if (!db) {
-    db = buildDemoDb()
+    db = extendDemoDb(buildDemoDb())
     // Les plantations de démonstration passent par le même « trigger » que les insertions
     db.plantings.forEach(calcPlanting)
   }
