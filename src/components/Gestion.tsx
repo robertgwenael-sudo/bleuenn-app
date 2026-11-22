@@ -50,10 +50,10 @@ export default function Gestion({ ctx, onNav }: { ctx: ReturnType<typeof useBleu
         <>
           <Tabs label="Gestion" value={onglet} onChange={setOnglet} className="mb-5 overflow-x-auto"
             options={[
-              { value: 'tableau', label: 'Tableau de bord' },
-              { value: 'banque', label: `Banque · ${d.nonRapproches.length} à rapprocher` },
+              { value: 'tableau', label: <span className="whitespace-nowrap">Tableau de bord</span> },
+              { value: 'banque', label: <span className="whitespace-nowrap">Banque · {d.nonRapproches.length}<span className="hidden sm:inline"> à rapprocher</span></span> },
               { value: 'comptes', label: 'Comptes' },
-              { value: 'export', label: 'Export comptable' },
+              { value: 'export', label: <span className="whitespace-nowrap">Export<span className="hidden sm:inline"> comptable</span></span> },
             ]} />
           <div role="tabpanel">
             {onglet === 'tableau' && <TableauDeBord d={d} versBanque={() => setOnglet('banque')} versJustificatifs={() => onNav('justificatifs')} versComptes={() => setOnglet('comptes')} />}

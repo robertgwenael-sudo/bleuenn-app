@@ -49,13 +49,15 @@ export function TableauDeBord({ d, versBanque, versJustificatifs, versComptes }:
       </div>
 
       <Card>
-        <CardHeader title="Encaissé et dépensé par mois" description="12 derniers mois, mois en cours compris"
-          action={<Segmented size="sm" label="Affichage" value={vue} onChange={setVue}
-            options={[{ value: 'graphique', label: 'Graphique' }, { value: 'tableau', label: 'Tableau' }]} />} />
+        <CardHeader title="Encaissé et dépensé par mois" description="12 derniers mois, mois en cours compris" />
         <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            {vue === 'graphique' ? <Legend items={[{ label: 'Encaissé', color: t.c1 }, { label: 'Dépensé', color: t.c2 }]} /> : <span />}
+            <Segmented size="sm" label="Affichage" value={vue} onChange={setVue}
+              options={[{ value: 'graphique', label: 'Graphique' }, { value: 'tableau', label: 'Tableau' }]} />
+          </div>
           {vue === 'graphique' ? (
             <>
-              <Legend items={[{ label: 'Encaissé', color: t.c1 }, { label: 'Dépensé', color: t.c2 }]} />
               <div className="mt-3 h-[260px] w-full" role="img"
                 aria-label={`Encaissé et dépensé par mois. Total : ${formatEuros(d.total.encaisse)} encaissés, ${formatEuros(d.total.depense)} dépensés. Détail dans la vue Tableau.`}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -125,7 +127,7 @@ export function TableauDeBord({ d, versBanque, versJustificatifs, versComptes }:
               {d.soldes.length === 0 && <li className="py-4 text-sm text-fg-muted">Aucun compte. Créez-en un pour importer un relevé.</li>}
               {d.soldes.map(({ compte, solde }) => (
                 <li key={compte.id} className="flex items-center gap-3 py-3">
-                  <Landmark className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden />
+                  {compte.kind === 'caisse' ? <Wallet className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden /> : <Landmark className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden />}
                   <span className="min-w-0 flex-1 truncate text-sm">{compte.name}<span className="ml-1.5 text-xs text-fg-subtle">{compte.kind === 'caisse' ? 'caisse' : 'banque'}</span></span>
                   <span className="text-right font-semibold"><Valeur g={solde} signe /></span>
                 </li>

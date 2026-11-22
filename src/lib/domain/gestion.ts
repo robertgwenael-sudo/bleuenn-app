@@ -594,7 +594,7 @@ export function nomFichierJustificatif(
     return `${Math.floor(c / 100)}-${String(c % 100).padStart(2, '0')}`
   })() : 'sans-montant'
   const ext = p.mime === 'application/pdf' ? 'pdf' : p.mime === 'image/png' ? 'png' : p.mime === 'image/webp' ? 'webp' : 'jpg'
-  return `${date}_${slug(r.fournisseur ?? 'sans-fournisseur')}_${montant}_${r.id.slice(0, 8)}_p${p.page}.${ext}`
+  return `${date}_${slug(r.fournisseur ?? 'sans-fournisseur')}_${montant}_${r.id.replace(/-/g, '').slice(-8)}_p${p.page}.${ext}`
 }
 
 // ------------------------------------------------------------

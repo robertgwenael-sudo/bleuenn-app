@@ -119,7 +119,7 @@ export function Export({ g, d, aujourdhui }: { g: G; d: DonneesGestion; aujourdh
     <div className="space-y-5">
       <Card>
         <CardHeader title="Période" description="Fichiers CSV lisibles par un tableur (point-virgule, virgule décimale), à transmettre au comptable" />
-        <div className="space-y-4 px-4 pb-5 sm:px-5">
+        <div className="space-y-4 px-4 pb-5 pt-2 sm:px-5">
           <div className="flex flex-wrap gap-2">
             {presets.map(p => (
               <Button key={p.label} size="sm" variant={p.du === du && p.au === au ? 'primary' : 'secondary'} onClick={() => { setDu(p.du); setAu(p.au) }}>{p.label}</Button>
@@ -144,7 +144,7 @@ export function Export({ g, d, aujourdhui }: { g: G; d: DonneesGestion; aujourdh
               <p className="font-semibold text-fg">{titre}</p>
               <p className="mt-0.5 flex-1 text-xs text-fg-muted">{desc}</p>
               <p className="num mt-2 text-sm text-fg-muted">{t.lignes.length} ligne{t.lignes.length > 1 ? 's' : ''}</p>
-              <Button className="mt-3" variant="secondary" onClick={() => csv(cle, t)}><FileDown className="h-4 w-4" aria-hidden /> Télécharger {titre.toLowerCase()} (CSV)</Button>
+              <Button className="mt-3" variant="secondary" onClick={() => csv(cle, t)}><FileDown className="h-4 w-4" aria-hidden /> Télécharger<span className="sr-only"> {titre.toLowerCase()}</span> (CSV)</Button>
             </Card>
           ))}
         </div>

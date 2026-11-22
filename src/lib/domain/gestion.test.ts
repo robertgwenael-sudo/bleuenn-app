@@ -355,9 +355,9 @@ describe('fichiers et exports', () => {
 
   it('nom de fichier lisible pour le comptable', () => {
     expect(nomFichierJustificatif({ id: rec, date_piece: '2026-11-03', fournisseur: 'Graineterie du Lac', montant: '59.08', created_at: '2026-11-04T08:00:00Z' },
-      { page: 1, mime: 'image/jpeg' })).toBe('2026-11-03_graineterie-du-lac_59-08_a1b2c3d4_p1.jpg')
+      { page: 1, mime: 'image/jpeg' })).toBe('2026-11-03_graineterie-du-lac_59-08_00000001_p1.jpg')
     expect(nomFichierJustificatif({ id: rec, date_piece: null, fournisseur: null, montant: null, created_at: '2026-11-04T08:00:00Z' },
-      { page: 2, mime: 'application/pdf' })).toBe('2026-11-04_sans-fournisseur_sans-montant_a1b2c3d4_p2.pdf')
+      { page: 2, mime: 'application/pdf' })).toBe('2026-11-04_sans-fournisseur_sans-montant_00000001_p2.pdf')
   })
 
   it('CSV des dépenses : justificatif manquant signalé', () => {

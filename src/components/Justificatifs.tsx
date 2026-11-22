@@ -77,10 +77,10 @@ export default function Justificatifs({ ctx }: { ctx: ReturnType<typeof useBleue
         <>
           <Tabs label="Justificatifs" value={onglet} onChange={setOnglet} className="mb-5 overflow-x-auto"
             options={[
-              { value: 'a_traiter', label: `À traiter · ${parStatut.a_traiter.length}` },
-              { value: 'traites', label: `Rattachés · ${parStatut.depense.length + parStatut.paiement.length}` },
-              { value: 'sans_objet', label: `Sans objet · ${parStatut.sans_objet.length}` },
-              { value: 'manquants', label: `Dépenses sans justificatif · ${manquants.length}`, icon: manquants.length ? <FileWarning className="h-3.5 w-3.5 text-warning" aria-hidden /> : undefined },
+              { value: 'a_traiter', label: <span className="whitespace-nowrap">À traiter · {parStatut.a_traiter.length}</span> },
+              { value: 'traites', label: <span className="whitespace-nowrap">Rattachés · {parStatut.depense.length + parStatut.paiement.length}</span> },
+              { value: 'sans_objet', label: <span className="whitespace-nowrap">Sans objet · {parStatut.sans_objet.length}</span> },
+              { value: 'manquants', label: <span className="whitespace-nowrap">Sans justificatif · {manquants.length}</span>, icon: manquants.length ? <FileWarning className="h-3.5 w-3.5 text-warning" aria-hidden /> : undefined },
             ]} />
 
           <div role="tabpanel">

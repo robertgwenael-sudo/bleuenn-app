@@ -79,8 +79,8 @@ export function Banque({ g, d, ctx, aujourdhui, versComptes }: { g: G; d: Donnee
         <Segmented label="Compte" value={compte.id} onChange={setCompteId} className="w-full sm:w-auto"
           options={actifs.map(c => ({ value: c.id, label: c.name }))} />
         <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
-          <Button onClick={() => setImportOuvert(true)}><Upload className="h-4 w-4" aria-hidden /> Importer un relevé</Button>
-          <Button variant="secondary" onClick={() => setSaisie(true)}><Plus className="h-4 w-4" aria-hidden /> Saisir un mouvement</Button>
+          <Button className="flex-1 sm:flex-none" onClick={() => setImportOuvert(true)}><Upload className="h-4 w-4" aria-hidden /> Importer un relevé</Button>
+          <Button className="flex-1 sm:flex-none" variant="secondary" onClick={() => setSaisie(true)}><Plus className="h-4 w-4" aria-hidden /> Saisir<span className="hidden sm:inline">&nbsp;un mouvement</span></Button>
         </div>
       </div>
 

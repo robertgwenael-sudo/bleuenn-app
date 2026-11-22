@@ -49,7 +49,18 @@ export function FicheJustificatif({ j, r, ctx, aujourdhui, onClose }: {
     setImage(null)
     if (!url || p?.mime === 'application/pdf') return
     let annule = false
-    fetch(url).then(res => (res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    // Repassée par un canvas (PNG) : le moteur de lecture ne lit pas tous les formats d'image
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.src = url
+    img.decode().then(() => new Promise<Blob>((ok, ko) => {
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth; c.height = img.naturalHeight
+      const g = c.getContext('2d')
+      if (!g) return ko(new Error('Canvas indisponible'))
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0)
+      c.toBlob(b => (b ? ok(b) : ko(new Error('Encodage PNG impossible'))), 'image/png')
+    }))
       .then(b => { if (!annule) setImage(b) })
       .catch(e => console.error('[justificatifs] image pour la lecture automatique', e))
     return () => { annule = true }
@@ -74,7 +85,7 @@ export function FicheJustificatif({ j, r, ctx, aujourdhui, onClose }: {
   }, [j.costs, j.receipts, r.montant])
   const [coutChoisi, setCoutChoisi] = useState('')
   const numeros = useMemo(() => new Map(j.factures.map(f => [f.id, f])), [j.factures])
-  const paiements = useMemo(() => j.payments.filter(x => Number(x.amount) > 0 && !j.receipts.some(y => y.payment_id === x.id)), [j.payments, j.receipts])
+  const paiements = useMemo(() => j.payments.filter(x => (centimesOuNull(x.amount) ?? 0) > 0 && !j.receipts.some(y => y.payment_id === x.id)), [j.payments, j.receipts])
   const [paiementChoisi, setPaiementChoisi] = useState('')
 
   const creer = async () => {

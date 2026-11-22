@@ -53,7 +53,7 @@ export function LectureAuto({ image, aujourdhui, onTexte, onUtiliser }: {
         <Button variant="secondary" size="sm" onClick={lire} loading={!!etat} disabled={!image}>
           <ScanText className="h-4 w-4" aria-hidden /> Lire automatiquement
         </Button>
-        <p className="min-w-0 flex-1 text-xs text-fg-muted">
+        <p className="min-w-0 grow basis-56 text-xs text-fg-muted">
           {!image ? 'Lecture automatique indisponible pour un PDF.'
             : `Facultatif. La lecture automatique télécharge ${TAILLE_OCR} la première fois, puis fonctionne depuis le cache.`}
         </p>
@@ -195,7 +195,7 @@ export function ScanDialog({ open, onOpenChange, aujourdhui, titre = 'Scanner un
               {pages.map((p, i) => (
                 <li key={i} className="relative shrink-0">
                   <Vignette url={p.apercu || null} pdf={p.mime === 'application/pdf'} alt={`Page ${i + 1}`} className="h-40 w-28 sm:h-48 sm:w-36" />
-                  <span className="absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 text-2xs font-semibold text-white">p. {i + 1}</span>
+                  <span className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 text-2xs font-semibold text-white">p. {i + 1}</span>
                   <Button size="icon-sm" variant="secondary" className="absolute right-1 top-1" aria-label={`Retirer la page ${i + 1}`} onClick={() => retirer(i)}>
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
                   </Button>
