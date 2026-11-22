@@ -1,6 +1,8 @@
 // ============================================================
 // Types Bleuenn SaaS
 // ============================================================
+import type { ChampsCultureCycle, ChampsPlantingCycle } from './domain/types'
+import { enRecolteLe, vivaceEnPlace } from './domain/cultures'
 
 export interface Profile {
   id: string
@@ -51,7 +53,7 @@ export interface TeamMember {
   owner_name?: string  // jointure profiles
 }
 
-export interface CultureCatalog {
+export interface CultureCatalog extends ChampsCultureCycle {
   id: string
   user_id: string | null
   name: string
@@ -95,7 +97,7 @@ export interface Planche {
   plantings?: PlantingFull[]
 }
 
-export interface Planting {
+export interface Planting extends ChampsPlantingCycle {
   id: string
   planche_id: string
   culture_id: string
@@ -195,7 +197,10 @@ export function aujourdhuiParisISO(): string {
 export function getPlantingStatus(p: PlantingFull, jour: string = aujourdhuiParisISO()): PlantingStatus {
   if (jour < p.date_semis) return 'À semer'
   if (jour < p.date_plantation && p.jours_cellule > 0) return 'En germination'
+  if (p.arrachee_le && jour > p.arrachee_le) return 'Terminé'
   if (jour < p.date_recolte) return 'Planté'
+  // Vivace en place (013) : en récolte chaque année dans sa fenêtre, plantée entre deux
+  if (vivaceEnPlace(p, jour)) return enRecolteLe(p, jour) ? 'En récolte' : 'Planté'
   if (jour <= p.date_fin) return 'En récolte'
   return 'Terminé'
 }

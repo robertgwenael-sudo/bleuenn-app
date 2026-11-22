@@ -5,14 +5,18 @@ import { AlertTriangle, ArrowRight, CornerDownRight, Fence, Pencil, Plus, Trash2
 import { getPlantingStatus } from '@/lib/types'
 import type { PlantingFull, Garden, CultureCatalog } from '@/lib/types'
 import {
-  Badge, Button, Card, Dialog, EmptyState, Field, Input, PageHeader, Select, StatusBadge, cn, useConfirm,
+  Badge, Button, Card, Dialog, EmptyState, Field, Input, PageHeader, Segmented, Select, StatusBadge, cn, useConfirm,
 } from '@/components/ui'
 import { AddPlantingForm, EditPlantingForm } from '@/components/plantings/PlantingForms'
 import { EditerSurfaceDialog } from '@/components/plantings/EditerSurface'
 import {
   AlerteConflits, LegendeFrise, OccupationFrise, calculables, conflitsPlanche, periodeSure,
 } from '@/components/plantings/Occupation'
-import { chevauche, fenetreMensuelle, formatJourMois, formatMois, phraseOccupation, segmentsOccupation, surfaceOccupeeLe } from '@/lib/domain'
+import {
+  ajouterJours, ajouterMois, premiereRecolte, chevauche, cycleDe, estDateValide, estSansFin, fenetreMensuelle, formatJourMois, formatMois,
+  phraseOccupation, premierDuMois, segmentsOccupation, surfaceOccupeeLe, type Intervalle,
+} from '@/lib/domain'
+import { CycleBadge } from '@/components/plantings/Cycle'
 import { useIntent } from '@/components/shell/ui-context'
 import { photos } from '@/lib/images'
 
@@ -93,13 +97,10 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
     const planche = await ctx.createPlanche(gardenId, plancheName, m2)
     let n = 0
     if (planche) {
-      // 2. Créer les plantations associées
-      for (const c of cultures) {
-        if (c.cultureId && c.dateSemis && c.surfaceM2 > 0) {
-          await ctx.createPlanting(planche.id, c.cultureId, c.dateSemis, c.surfaceM2)
-          n++
-        }
-      }
+      // 2. Créer les plantations associées, en une seule écriture (013)
+      const lignes = cultures.filter(c => c.cultureId && estDateValide(c.dateSemis) && c.surfaceM2 > 0)
+        .map(c => ({ culture_id: c.cultureId, date_semis: c.dateSemis, surface_m2: c.surfaceM2 }))
+      n = lignes.length ? await ctx.createPlantings(planche.id, lignes) : 0
       toast.success(`${plancheName} créée`, { description: n ? `${n} culture${n > 1 ? 's' : ''} plantée${n > 1 ? 's' : ''}` : garden?.name })
     }
     setLoading(false)
@@ -121,8 +122,8 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
       </div>
 
       <div className="rounded-xl bg-surface-2 px-3.5 py-2.5 text-sm text-fg-muted">
-        Planche <strong className="text-fg">{plancheName}</strong> — {m2} m²
-        {cultures.length > 0 && <> — <span className="num">{usedM2}/{m2} m² attribués</span></>}
+        Planche <strong className="text-fg">{plancheName}</strong>, {m2} m²
+        {cultures.length > 0 && <>, <span className="num">{usedM2}/{m2} m² attribués</span></>}
       </div>
 
       {/* Cultures associées */}
@@ -132,11 +133,11 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
             const sel = catalog.find(c => c.id === row.cultureId)
             // Preview dates
             let preview = ''
-            if (sel && row.dateSemis) {
-              const ds = new Date(row.dateSemis + 'T00:00:00')
-              const dp = new Date(ds); dp.setDate(dp.getDate() + (sel.jours_cellule || 0))
-              const dr = new Date(dp); dr.setDate(dr.getDate() + sel.jours_champ)
-              preview = `Plantation ${dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} — Récolte ${dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
+            if (sel && estDateValide(row.dateSemis)) {
+              const anneeRef = Number(String(ctx.today).slice(0, 4))
+              const dp = ajouterJours(row.dateSemis, sel.jours_cellule || 0)
+              const dr = premiereRecolte(sel, dp)
+              preview = `Plantation ${formatJourMois(dp, anneeRef)}, ${cycleDe(sel) === 'vivace' ? '1re récolte' : 'récolte'} ${formatJourMois(dr, anneeRef)}`
             }
             return (
               <div key={idx} className="space-y-3 rounded-xl border border-border p-3.5">
@@ -145,9 +146,9 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
                   <Button variant="ghost" size="icon-sm" onClick={() => removeCultureRow(idx)} aria-label={`Retirer la culture ${idx + 1}`}><X className="h-4 w-4" /></Button>
                 </div>
                 <Select aria-label={`Culture ${idx + 1}`} value={row.cultureId} onChange={e => updateCultureRow(idx, { cultureId: e.target.value })}>
-                  <option value="">— Choisir —</option>
+                  <option value="">Choisir une culture</option>
                   {catalog.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} ({c.type}) — {c.prix_tige} €</option>
+                    <option key={c.id} value={c.id}>{c.name} ({c.type}{cycleDe(c) !== 'annuelle' ? `, ${cycleDe(c)}` : ''})</option>
                   ))}
                 </Select>
                 <div className="grid grid-cols-2 gap-2">
@@ -255,7 +256,16 @@ export default function Gardens({ ctx }: { ctx: any }) {
   const farmPlantings: PlantingFull[] = ctx.farmPlantings || ctx.plantings || []
   const activeSeasonId: string | undefined = ctx.activeSeason?.id
   const today: string = ctx.today
-  const fenetre = fenetreMensuelle(today, 12)
+  // « Plantations en cours » : 12 mois à venir, sans les plantations terminées.
+  // « Aussi l'an dernier » : la frise remonte 12 mois, les anciennes en petit et grisées.
+  const [vue, setVue] = useState<'en-cours' | 'an-dernier'>('en-cours')
+  const aussiAnDernier = vue === 'an-dernier'
+  const fenetreFutur = fenetreMensuelle(today, 12)
+  const fenetre: Intervalle = aussiAnDernier
+    ? { debut: premierDuMois(ajouterMois(today, -12)), fin: fenetreFutur.fin }
+    : fenetreFutur
+  /** A quitté la planche avant aujourd'hui ; une vivace en place ne l'est jamais. */
+  const ancienne = (p: PlantingFull) => { const per = periodeSure(p); return !!per && per.fin < today }
   const anneeRef = Number(today.slice(0, 4))
   const totalM2 = gardens.reduce((s, g) => s + g.surface_m2, 0)
 
@@ -265,7 +275,7 @@ export default function Gardens({ ctx }: { ctx: any }) {
   // Conflits de surface sur les 12 mois affichés, toutes planches
   const conflitsParPlanche = new Map<string, ReturnType<typeof conflitsPlanche>>()
   for (const g of gardens) for (const pl of (g.planches || [])) {
-    const c = conflitsPlanche(pl, getPlanchePlantings(pl.id), fenetre)
+    const c = conflitsPlanche(pl, getPlanchePlantings(pl.id), fenetreFutur)
     if (c.length) conflitsParPlanche.set(pl.id, c)
   }
   const nbPlanchesEnConflit = conflitsParPlanche.size
@@ -299,7 +309,7 @@ export default function Gardens({ ctx }: { ctx: any }) {
     <div>
       <PageHeader
         title="Jardins & planches"
-        description={`${gardens.length} jardin${gardens.length > 1 ? 's' : ''} — ${totalM2} m² · occupation lue par dates, toutes saisons confondues`}
+        description={`${gardens.length} jardin${gardens.length > 1 ? 's' : ''}, ${totalM2} m² · occupation lue par dates, toutes saisons confondues`}
         image={photos.champCoucherSoleil}
         actions={<Button onClick={() => setModal('garden')}><Plus className="h-4 w-4" />Nouveau jardin</Button>}
       />
@@ -308,9 +318,11 @@ export default function Gardens({ ctx }: { ctx: any }) {
         <div className="mb-5 flex flex-col gap-3 rounded-card border border-border bg-surface px-4 py-3 shadow-card lg:flex-row lg:items-center">
           <p className="text-sm text-fg">
             <span className="font-semibold">Frises de {formatMois(fenetre.debut)} à {formatMois(fenetre.fin)}</span>
-            <span className="text-fg-muted"> — les jardins et planches durent d’une saison à l’autre.</span>
+            <span className="text-fg-muted"> : les jardins et planches durent d’une saison à l’autre.</span>
           </p>
-          <div className="lg:ml-auto"><LegendeFrise activeSeasonName={ctx.activeSeason?.name} /></div>
+          <Segmented label="Plantations affichées" value={vue} onChange={setVue} size="sm" className="lg:w-auto"
+            options={[{ value: 'en-cours', label: 'Plantations en cours' }, { value: 'an-dernier', label: 'Aussi l’an dernier' }]} />
+          <div className="lg:ml-auto"><LegendeFrise activeSeasonName={ctx.activeSeason?.name} anciennes={aussiAnDernier} /></div>
         </div>
       )}
       {nbPlanchesEnConflit > 0 && (
@@ -339,7 +351,7 @@ export default function Gardens({ ctx }: { ctx: any }) {
                       <h2 className="font-serif text-xl">
                         <EditableName value={g.name} label="le jardin" onSave={v => ctx.updateGarden(g.id, { name: v })} />
                       </h2>
-                      <p className="mt-0.5 text-sm text-fg-muted">{g.surface_m2} m²{g.description ? ` — ${g.description}` : ''}</p>
+                      <p className="mt-0.5 text-sm text-fg-muted">{g.surface_m2} m²{g.description ? `, ${g.description}` : ''}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <Button variant="ghost" size="icon-sm" onClick={() => setEditJardin(g)} aria-label={`Modifier ${g.name} (nom, surface)`}>
@@ -366,12 +378,16 @@ export default function Gardens({ ctx }: { ctx: any }) {
                     try { phrase = phraseOccupation({ surface_m2: Number(pl.surface_m2) }, calc, today) } catch { phrase = 'Occupation non calculable (dates incomplètes)' }
                     const occupeAujourdhui = surfaceOccupeeLe(calc, today)
                     const plPct = pl.surface_m2 > 0 ? (occupeAujourdhui / pl.surface_m2 * 100) : 0
-                    // Liste : la saison active + ce qui occupe la planche dans la fenêtre, quelle que soit la saison
+                    // Liste : ce qui occupe la planche dans la fenêtre, quelle que soit la saison.
+                    // En cours : sans les plantations terminées ; l'an dernier : avec, en petit.
                     const visibles = plPlantings.filter(p => {
-                      if (p.season_id === activeSeasonId) return true
                       const per = periodeSure(p)
+                      if (!aussiAnDernier && (!per || per.fin < today)) return false
+                      if (p.season_id === activeSeasonId) return true
                       return per ? chevauche(per, fenetre) : false
                     })
+                    const masquees = aussiAnDernier ? 0 : plPlantings.filter(p => ancienne(p) && chevauche(periodeSure(p)!, { debut: premierDuMois(ajouterMois(today, -12)), fin: today })).length
+                    const friseVisibles = aussiAnDernier ? plPlantings : plPlantings.filter(p => !ancienne(p))
                     const sorted = [...visibles].sort((a, b) => a.date_semis.localeCompare(b.date_semis))
 
                     // Détecter les successions : une culture dont le semis démarre après la fin d'une précédente
@@ -410,17 +426,35 @@ export default function Gardens({ ctx }: { ctx: any }) {
                         </div>
                         <p className={cn('mt-1 text-xs', phrase === 'Libre' ? 'font-medium text-primary' : 'text-fg-muted')}>{phrase}</p>
                         <AlerteConflits conflits={conflits} today={today} />
-                        <OccupationFrise plantings={plPlantings} planche={pl} fenetre={fenetre} today={today}
+                        <OccupationFrise plantings={friseVisibles} planche={pl} fenetre={fenetre} today={today}
                           activeSeasonId={activeSeasonId} conflits={conflits} onSelect={editer} />
+                        {masquees > 0 && sorted.length === 0 && (
+                          <p className="mt-2 text-xs text-fg-subtle">{masquees} plantation{masquees > 1 ? 's' : ''} terminée{masquees > 1 ? 's' : ''} sur les 12 derniers mois (voir « Aussi l’an dernier »).</p>
+                        )}
                         {sorted.length > 0 && (
                           <details className="group mt-2">
                             <summary className="cursor-pointer list-none text-xs font-medium text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
-                              <span className="inline-flex items-center gap-1"><ArrowRight className="h-3 w-3 transition group-open:rotate-90" aria-hidden />{sorted.length} plantation{sorted.length > 1 ? 's' : ''}</span>
+                              <span className="inline-flex items-center gap-1"><ArrowRight className="h-3 w-3 transition group-open:rotate-90" aria-hidden />{sorted.length} plantation{sorted.length > 1 ? 's' : ''}{masquees > 0 ? `, ${masquees} terminée${masquees > 1 ? 's' : ''} masquée${masquees > 1 ? 's' : ''}` : ''}</span>
                             </summary>
                           <ul className="mt-2 space-y-1">
                             {sorted.map((p: PlantingFull, idx: number) => {
                               const succession = isSuccession(p, idx)
                               const autre = p.season_id !== activeSeasonId
+                              const vieille = ancienne(p)
+                              const per = periodeSure(p)
+                              const vivaceEnPlace = cycleDe(p) === 'vivace' && !!per && estSansFin(per.fin)
+                              if (vieille) return (
+                                <li key={p.id}>
+                                  <button type="button" onClick={() => editer(p)} title="Ancienne plantation : cliquer pour la consulter"
+                                    className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-dashed border-border px-2 py-1 text-left text-[0.7rem] text-fg-subtle opacity-80 transition hover:bg-surface-2 hover:opacity-100">
+                                    <span className="font-medium">{p.culture_name}</span>
+                                    <Badge tone="neutral">Ancienne</Badge>
+                                    {p.season_name && <span>{p.season_name}</span>}
+                                    <span className="num">{p.surface_m2} m²</span>
+                                    <span className="num">{p.arrachee_le ? `arrachée le ${formatJourMois(p.arrachee_le, anneeRef)}` : `fin ${formatJourMois(per?.fin ?? p.date_fin, anneeRef)}`}</span>
+                                  </button>
+                                </li>
+                              )
                               return (
                                 <li key={p.id}>
                                   {succession && (
@@ -436,12 +470,16 @@ export default function Gardens({ ctx }: { ctx: any }) {
                                     title="Cliquer pour modifier ou supprimer"
                                   >
                                     <span className="min-w-[7rem] text-sm font-medium text-fg">{p.culture_name}</span>
-                                    {autre && <Badge tone="violet">{p.season_name || 'Autre saison'}</Badge>}
+                                    <CycleBadge cycle={p.cycle} masquerAnnuelle />
+                                    {p.achat_plant && <Badge tone="amber">Plant acheté</Badge>}
+                                    {autre && !vivaceEnPlace && <Badge tone="violet">{p.season_name || 'Autre saison'}</Badge>}
                                     <span className="num text-fg-muted">{p.surface_m2} m²</span>
                                     <span className="num flex items-center gap-1 text-fg-muted">
-                                      <span title="Entrée cellule">Semis {formatJourMois(p.date_semis, anneeRef)}</span>
+                                      <span title={p.achat_plant ? 'Plantation (plant acheté)' : 'Entrée cellule'}>{p.achat_plant ? 'Plantation' : 'Semis'} {formatJourMois(p.date_semis, anneeRef)}</span>
                                       <ArrowRight className="h-3 w-3 text-fg-subtle" aria-hidden />
-                                      <span title="Fin de récolte : la planche se libère le lendemain">fin {formatJourMois(p.date_fin, anneeRef)}</span>
+                                      {vivaceEnPlace
+                                        ? <span title="Vivace : fleurit chaque année, la planche reste occupée jusqu’à l’arrachage">en place, fleurit chaque année vers le {formatJourMois(p.date_recolte)}</span>
+                                        : <span title="Dernier jour en place : la planche se libère le lendemain">{p.arrachee_le ? 'arrachée le' : 'fin'} {formatJourMois(per?.fin ?? p.date_fin, anneeRef)}</span>}
                                     </span>
                                     <span className="ml-auto"><StatusBadge status={getPlantingStatus(p)} /></span>
                                   </button>
@@ -474,12 +512,12 @@ export default function Gardens({ ctx }: { ctx: any }) {
       <Dialog open={modal === 'planche'} onOpenChange={o => !o && close()} title="Nouvelle planche" description={selectedGarden?.name}>
         <AddPlancheForm key={selectedGardenId} gardenId={selectedGardenId} ctx={ctx} onClose={close} />
       </Dialog>
-      <Dialog open={modal === 'planting'} onOpenChange={o => !o && close()} size="lg" title="Ajouter une culture"
+      <Dialog open={modal === 'planting'} onOpenChange={o => !o && close()} size="lg" title="Ajouter des cultures"
         description={selectedPlanche ? `${selectedPlanche.gardenName} · ${selectedPlanche.name}` : undefined}>
         <AddPlantingForm key={selectedPlancheId} plancheId={selectedPlancheId} ctx={ctx} onClose={close} />
       </Dialog>
       <Dialog open={modal === 'editPlanting'} onOpenChange={o => !o && close()} size="lg"
-        title={selectedPlanting ? `Modifier — ${selectedPlanting.culture_name}` : 'Modifier'}>
+        title={selectedPlanting ? `Modifier ${selectedPlanting.culture_name}` : 'Modifier'}>
         {selectedPlanting && (
           <EditPlantingForm key={selectedPlanting.id} planting={selectedPlanting} ctx={ctx} onClose={close} />
         )}

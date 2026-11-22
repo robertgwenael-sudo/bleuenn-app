@@ -9,8 +9,10 @@
 // Période d'occupation d'une plantation (intervalle fermé) :
 //   début = date_plantation (mise en place au champ),
 //           ou date_semis pour un semis direct ;
-//   fin   = date_fin (dernier jour de récolte, arrachage compris).
-// La planche est donc libre à partir du lendemain de date_fin. Le temps
+//   fin   = date_fin (dernier jour de récolte, arrachage compris),
+//           ou `arrachee_le` s'il est renseigné ; une vivace sans
+//           `arrachee_le` reste en place sans fin connue (013, `cultures.ts`).
+// La planche est donc libre à partir du lendemain de la fin. Le temps
 // passé en cellule (semis en godets) n'occupe pas la planche.
 // ============================================================
 
@@ -18,12 +20,13 @@ import {
   ajouterJours, chevauche, dansIntervalle, formatJourMois, intervalle, lundisEntre,
   maxDate, minDate, joursEntre, type Intervalle,
 } from './dates'
+import { estSansFin, finOccupation } from './cultures'
 import type { DateISO, PlantingFull } from './types'
 
 /** Colonnes de `plantings_full` nécessaires au calcul. */
 export type PlantingOccupation = Pick<PlantingFull,
   'id' | 'surface_m2' | 'date_semis' | 'date_plantation' | 'date_fin' | 'semis_direct' | 'culture_name'
-> & Partial<Pick<PlantingFull, 'season_name' | 'season_year' | 'season_id'>>
+> & Partial<Pick<PlantingFull, 'season_name' | 'season_year' | 'season_id' | 'cycle' | 'arrachee_le'>>
 
 export interface PlancheSurface {
   surface_m2: number
@@ -32,12 +35,14 @@ export interface PlancheSurface {
 /** Tolérance sur les m² (les surfaces sont des `numeric` décimaux). */
 const EPSILON_M2 = 1e-9
 
-export function periodeOccupation(p: Pick<PlantingOccupation, 'id' | 'date_semis' | 'date_plantation' | 'date_fin' | 'semis_direct'>): Intervalle {
+export function periodeOccupation(p: Pick<PlantingOccupation, 'id' | 'date_semis' | 'date_plantation' | 'date_fin' | 'semis_direct' | 'cycle' | 'arrachee_le'>): Intervalle {
   const debut = p.semis_direct ? p.date_semis : p.date_plantation
-  if (!debut || !p.date_fin) {
+  if (!debut || (!p.date_fin && !p.arrachee_le && p.cycle !== 'vivace')) {
     throw new Error(`Plantation ${p.id} : dates incomplètes, occupation non calculable`)
   }
-  return intervalle(debut, p.date_fin)
+  const fin = finOccupation(p)
+  // Arrachée avant même sa mise en place : elle n'a occupé la planche qu'un jour
+  return intervalle(debut, fin < debut ? debut : fin)
 }
 
 export function surfaceOccupeeLe(plantings: PlantingOccupation[], jour: DateISO): number {
@@ -210,14 +215,16 @@ export function libreAPartirDu(
   const periodes = plantings.map(periodeOccupation)
   // La place ne se libère qu'au lendemain d'une fin : seuls ces jours-là
   // (et le jour de départ) sont candidats.
-  const candidats = [aPartirDe, ...periodes.map(i => ajouterJours(i.fin, 1)).filter(d => d > aPartirDe)]
+  // Une vivace en place ne libère jamais sa surface (fin « sans fin »).
+  const candidats = [aPartirDe, ...periodes.filter(i => !estSansFin(i.fin)).map(i => ajouterJours(i.fin, 1)).filter(d => d > aPartirDe)]
   const uniques = Array.from(new Set(candidats)).sort()
   for (const c of uniques) {
+    if (estSansFin(ajouterJours(c, dureeJours - 1))) return null
     const fenetre: Intervalle = { debut: c, fin: ajouterJours(c, dureeJours - 1) }
     const pic = segmentsOccupation(plantings, fenetre).reduce((m, s) => Math.max(m, s.surface_occupee), 0)
     if (pic + surfaceDemandee <= planche.surface_m2 + EPSILON_M2) return c
   }
-  return null // inatteignable : après la dernière fin, la planche est vide
+  return null // seulement si des vivaces en place occupent la place pour toujours
 }
 
 // ------------------------------------------------------------
@@ -268,10 +275,11 @@ export function phraseOccupation(planche: PlancheSurface, plantings: PlantingOcc
   const finMax = enPlace[enPlace.length - 1].i.fin
   const memeFin = enPlace.every(x => x.i.fin === finMax)
 
-  if (pleine && memeFin) {
+  if (pleine && memeFin && !estSansFin(finMax)) {
     return `Occupée jusqu'au ${formatJourMois(finMax, annee)} par ${enumerer(enPlace.map(x => nommer(x.p)))}`
   }
-  const detail = enumerer(enPlace.map(x => `${nommer(x.p)} jusqu'au ${formatJourMois(x.i.fin, annee)}`))
+  const jusquAu = (fin: DateISO) => estSansFin(fin) ? ' (vivace en place)' : ` jusqu'au ${formatJourMois(fin, annee)}`
+  const detail = enumerer(enPlace.map(x => `${nommer(x.p)}${jusquAu(x.i.fin)}`))
   if (pleine) return `Occupée par ${detail}`
   return `Occupée à ${formatM2(occupee)} m² sur ${formatM2(planche.surface_m2)} : ${detail}`
 }

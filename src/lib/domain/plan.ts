@@ -10,6 +10,7 @@
 // ============================================================
 
 import { ajouterAnnees, ajouterJours, ecartJours } from './dates'
+import { cycleDe } from './cultures'
 import { conflitsSiAjout, type ConflitOccupation, type PlancheSurface, type PlantingOccupation } from './occupation'
 import type { PlantingFull } from './types'
 
@@ -19,10 +20,13 @@ export type PlantingDuplicable = PlantingOccupation & Pick<PlantingFull, 'planch
  * Plantations telles que la duplication les créera : semis décalé de
  * `decalageAnnees` (un 29 février devient un 28 février, comme
  * `make_interval` en SQL), autres dates décalées du même nombre de jours.
- * Les identifiants sont préfixés `projet:` pour les distinguer.
+ * Les identifiants sont préfixés `projet:` pour les distinguer. Les
+ * vivaces ne sont pas recopiées.
  */
 export function projeterDuplication<T extends PlantingDuplicable>(source: T[], decalageAnnees = 1, saison?: { name: string; year: number }): T[] {
-  return source.map(p => {
+  // Une vivace reste en place d'une année sur l'autre : elle ne se replante
+  // pas (comme `duplicate_season_plan` depuis 013).
+  return source.filter(p => cycleDe(p) !== 'vivace').map(p => {
     const semis = ajouterAnnees(p.date_semis, decalageAnnees)
     const delta = ecartJours(p.date_semis, semis)
     return {

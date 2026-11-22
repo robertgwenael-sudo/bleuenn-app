@@ -63,11 +63,34 @@ function addDays(date: string, days: number): string {
 const coalesce = (...v: any[]) => v.find(x => x !== null && x !== undefined) ?? null
 const nullif0 = (v: any) => (v === 0 ? null : v)
 
-// ─── Trigger calc_planting_dates (migration 002) ─────────────────
+// make_interval(years => n) : un 29 février devient un 28 février
+function addYears(date: string, years: number): string {
+  if (!years) return date
+  const [y, mo, j] = date.split('-').map(Number)
+  const ny = y + years
+  const last = new Date(Date.UTC(ny, mo, 0)).getUTCDate()
+  return `${String(ny).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(Math.min(j, last)).padStart(2, '0')}`
+}
+/** Migration 013 : années avant la 1re floraison, vivaces seulement. */
+const anneesVivace = (cat: Row) => (cat.cycle === 'vivace' ? Number(cat.annees_avant_recolte || 0) : 0)
+/** Migration 013 : prochaine_date_jjmm(d, floraison_debut) pour une vivace ou bisannuelle. */
+function caleFloraison(cat: Row, d: string): string {
+  if (!cat.floraison_debut || (cat.cycle ?? 'annuelle') === 'annuelle') return d
+  const [j, m] = String(cat.floraison_debut).split('/').map(Number)
+  for (const a of [Number(d.slice(0, 4)), Number(d.slice(0, 4)) + 1]) {
+    const dernier = new Date(Date.UTC(a, m, 0)).getUTCDate()
+    const c = `${String(a).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(Math.min(j, dernier)).padStart(2, '0')}`
+    if (c >= d) return c
+  }
+  return d
+}
+
+// ─── Trigger calc_planting_dates (migrations 002, 013) ───────────
 function calcPlanting(p: Row) {
   const d = getDb()
   const cat = d.culture_catalog.find(c => c.id === p.culture_id) || {}
-  const jCellule = coalesce(nullif0(p.jours_cellule_override), cat.jours_cellule, 0)
+  // 013 : plant acheté, pas de passage en cellule
+  const jCellule = p.achat_plant ? 0 : coalesce(nullif0(p.jours_cellule_override), cat.jours_cellule, 0)
   const jChamp = coalesce(p.jours_champ_override, cat.jours_champ)
   const jRecolte = coalesce(p.jours_recolte_override, cat.jours_recolte, 21)
   const rend = coalesce(p.rendement_override, cat.rendement_plant, 1)
@@ -76,7 +99,7 @@ function calcPlanting(p: Row) {
   const espacement = coalesce(cat.espacement_cm, 20)
 
   p.date_plantation = addDays(p.date_semis, jCellule)
-  p.date_recolte = addDays(p.date_plantation, jChamp)
+  p.date_recolte = caleFloraison(cat, addYears(addDays(p.date_plantation, jChamp), anneesVivace(cat)))
   p.date_fin = addDays(p.date_recolte, jRecolte)
 
   let plants = Math.max(1, Math.floor((surface * 10000) / (espacement * espacement)))
@@ -84,7 +107,25 @@ function calcPlanting(p: Row) {
   p.plants_count = plants
   p.tiges_estimees = Math.round(plants * rend * 0.7)
   p.revenu_estime = Math.round(p.tiges_estimees * prix * 100) / 100
-  p.graines_necessaires = Math.ceil(plants * 1.3 * coalesce(cat.graines_par_plant, 1))
+  p.graines_necessaires = p.achat_plant ? 0 : Math.ceil(plants * 1.3 * coalesce(cat.graines_par_plant, 1))
+}
+
+// ─── Contraintes 013 (culture_catalog, plantings) ───────────────
+const RE_JJMM_013 = /^((0[1-9]|1[0-9]|2[0-9])\/(0[1-9]|1[0-2])|30\/(0[13-9]|1[0-2])|31\/(0[13578]|1[02]))$/
+function contraintes013(t: string, r: Row): { message: string; code?: string } | null {
+  const viole = (nom: string) => ({ code: '23514', message: `new row for relation "${t}" violates check constraint "${nom}"` })
+  if (t === 'culture_catalog') {
+    const cycle = r.cycle ?? 'annuelle'
+    if (!['annuelle', 'bisannuelle', 'vivace'].includes(cycle)) return viole('culture_catalog_cycle_check')
+    if (r.premiere_implantation != null && !RE_JJMM_013.test(r.premiere_implantation)) return viole('culture_catalog_premiere_implantation_check')
+    const a = Number(r.annees_avant_recolte ?? 0)
+    if (a < 0 || a > 10 || (a > 0 && cycle !== 'vivace')) return viole('culture_catalog_annees_avant_recolte_check')
+    if (r.floraison_debut != null && (cycle === 'annuelle' || !RE_JJMM_013.test(r.floraison_debut))) return viole('culture_catalog_floraison_debut_check')
+    const jc = Number(r.jours_cellule ?? 0), jch = Number(r.jours_champ), jr = Number(r.jours_recolte ?? 21)
+    if (jc + jch > 365 || jr > 365 || (cycle === 'annuelle' && jc + jch + jr > 365)) return viole('culture_catalog_cycle_365_check')
+  }
+  if (t === 'plantings' && r.arrachee_le != null && r.arrachee_le < r.date_semis) return viole('plantings_arrachee_le_check')
+  return null
 }
 
 // ─── Vue plantings_full (dates recalculées depuis le catalogue) ──
@@ -97,11 +138,12 @@ function plantingsFull(): Row[] {
     const g = pl && d.gardens.find(x => x.id === pl.garden_id)
     const s = d.seasons.find(x => x.id === p.season_id)
     if (!c || !pl || !g || !s) continue // jointures internes
-    const jc = coalesce(nullif0(p.jours_cellule_override), c.jours_cellule, 0)
+    const jc = p.achat_plant ? 0 : coalesce(nullif0(p.jours_cellule_override), c.jours_cellule, 0)
     const jch = coalesce(p.jours_champ_override, c.jours_champ)
     const jr = coalesce(p.jours_recolte_override, c.jours_recolte, 21)
     const datePlantation = addDays(p.date_semis, jc)
-    const dateRecolte = addDays(datePlantation, jch)
+    const dateRecolte = caleFloraison(c, addYears(addDays(datePlantation, jch), anneesVivace(c)))
+    const cycle = c.cycle ?? 'annuelle'
     out.push({
       id: p.id, planche_id: p.planche_id, culture_id: p.culture_id, season_id: p.season_id,
       surface_m2: p.surface_m2, date_semis: p.date_semis,
@@ -123,6 +165,11 @@ function plantingsFull(): Row[] {
       garden_name: g.name, garden_id: g.id, garden_m2: g.surface_m2,
       user_id: s.user_id,
       farm_id: g.farm_id ?? s.farm_id, season_name: s.name, season_year: s.year,  // migration 006
+      // migration 013
+      cycle, achat_plant: !!p.achat_plant, arrachee_le: p.arrachee_le ?? null,
+      annees_avant_recolte: anneesVivace(c), premiere_implantation: c.premiere_implantation ?? null,
+      floraison_debut: c.floraison_debut ?? null,
+      fin_occupation: p.arrachee_le ?? (cycle === 'vivace' ? null : addDays(dateRecolte, jr)),
     })
   }
   return out
@@ -148,10 +195,10 @@ function plantingActuals(): Row[] {
 // ─── Valeurs par défaut des tables (001_schema.sql) ──────────────
 const DEFAULTS: Record<string, Row> = {
   seasons: { revenue_goal: 15000, is_active: false, invite_enabled: false },
-  culture_catalog: { jours_cellule: 0, jours_recolte: 21, rendement_plant: 1, prix_tige: 0.5, pincer: false, filet: false, couvre_sol: false, semis_direct: false, espacement_cm: 20, rangs_par_planche: 5, graines_par_plant: 1, notes: null, temp_germination: null },
+  culture_catalog: { jours_cellule: 0, jours_recolte: 21, rendement_plant: 1, prix_tige: 0.5, pincer: false, filet: false, couvre_sol: false, semis_direct: false, espacement_cm: 20, rangs_par_planche: 5, graines_par_plant: 1, notes: null, temp_germination: null, cycle: 'annuelle', premiere_implantation: null, annees_avant_recolte: 0, floraison_debut: null },
   gardens: { sort_order: 0, description: null },
   planches: { sort_order: 0 },
-  plantings: { surface_m2: 1, jours_cellule_override: 0, jours_champ_override: null, jours_recolte_override: null, rendement_override: null, prix_override: null, notes: null },
+  plantings: { surface_m2: 1, jours_cellule_override: 0, jours_champ_override: null, jours_recolte_override: null, rendement_override: null, prix_override: null, notes: null, achat_plant: false, arrachee_le: null },
   harvests: { quality: 'A', notes: null },
   sales: { client: null, notes: null },
   seed_orders: { graines_needed: 0, graines_ordered: 0, supplier: null, bio: false, received: false },
@@ -446,6 +493,8 @@ class DemoQuery implements PromiseLike<Result> {
         const refus010 = refusFacturesDemo(d, t, 'insert', list, list[0])
         if (refus010) return { data: null, error: refus010 }
         const inserted: Row[] = []
+        // Une insertion multi-lignes est un seul ordre SQL : tout ou rien (013)
+        const avant = (d[t] as Row[]).length
         for (const v of list) {
           // Clé primaire : un identifiant client déjà présent est refusé (23505),
           // comme en base — la file hors ligne s'en sert pour ne jamais doublonner.
@@ -453,6 +502,8 @@ class DemoQuery implements PromiseLike<Result> {
             return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint "${t}_pkey"` }, status: 409 }
           }
           const row: Row = { id: uuid(), created_at: new Date().toISOString(), ...DEFAULTS[t], ...v }
+          const err013 = contraintes013(t, row)
+          if (err013) { (d[t] as Row[]).length = avant; return { data: null, error: err013 } }
           if (t === 'plantings') calcPlanting(row)
           if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === row.id)) row.total = Math.round(row.tiges * row.prix_unitaire * 100) / 100
           // Migration 005 : season_id recopié du parent, line_total généré
@@ -525,6 +576,8 @@ class DemoQuery implements PromiseLike<Result> {
             Object.assign(r, copie)
             continue
           }
+          const err013 = contraintes013(t, { ...r, ...this.payload })
+          if (err013) return { data: null, error: err013 }
           Object.assign(r, this.payload)
           coutsSetFarm(t, r)
           if (t === 'plantings') calcPlanting(r)
@@ -741,7 +794,9 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
       const last = new Date(Date.UTC(ny, mo, 0)).getUTCDate()
       return `${String(ny).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(Math.min(j, last)).padStart(2, '0')}`
     }
-    for (const p of d.plantings.filter(x => x.season_id === src.id)) {
+    // 013 : une vivace en place ne se replante pas
+    const vivace = (p: Row) => d.culture_catalog.find(c => c.id === p.culture_id)?.cycle === 'vivace'
+    for (const p of d.plantings.filter(x => x.season_id === src.id && !vivace(x))) {
       const row: Row = { ...p, id: uuid(), season_id: nid, date_semis: shiftDate(p.date_semis), created_at: now }
       calcPlanting(row)
       d.plantings.push(row)
@@ -840,3 +895,6 @@ let client: any = null
 export function createDemoClient(): any {
   return (client ??= { auth, from: (t: string) => new DemoQuery(t), rpc, storage })
 }
+
+/** Tests seulement : la vue `plantings_full` et les contraintes 013 de la démo. */
+export const pourTestsDemo = { plantingsFull: () => plantingsFull(), contraintes013, catalogue: () => getDb().culture_catalog }

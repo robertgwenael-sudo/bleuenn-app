@@ -265,6 +265,7 @@ export function useBleuenn() {
     rendement_override?: number
     prix_override?: number
     notes?: string
+    achat_plant?: boolean
   }) => {
     if (!activeSeason) return null
     const { data, error } = await supabase.from('plantings').insert({
@@ -280,9 +281,33 @@ export function useBleuenn() {
     return data
   }
 
+  /**
+   * 013 : plusieurs cultures d'un coup sur une planche. Une seule requête
+   * INSERT multi-lignes : tout ou rien. Renvoie le nombre de plantations
+   * créées (0 si l'insertion a été refusée, erreur signalée).
+   */
+  const createPlantings = async (plancheId: string, lignes: {
+    culture_id: string; date_semis: string; surface_m2: number; achat_plant?: boolean
+  }[]): Promise<number> => {
+    if (!activeSeason || lignes.length === 0) return 0
+    const res = await supabase.from('plantings').insert(lignes.map(l => ({
+      planche_id: plancheId,
+      culture_id: l.culture_id,
+      season_id: activeSeason.id,
+      date_semis: l.date_semis,
+      surface_m2: l.surface_m2,
+      achat_plant: !!l.achat_plant,
+    }))).select('id')
+    if (!ecrire(res, `ajout de ${lignes.length} plantation${lignes.length > 1 ? 's' : ''}`)) return 0
+    await loadSeasonData(activeSeason.id)
+    return (res.data ?? []).length
+  }
+
   const updatePlanting = async (id: string, updates: {
     date_semis?: string
     surface_m2?: number
+    achat_plant?: boolean
+    arrachee_le?: string | null
     jours_cellule_override?: number
     jours_champ_override?: number
     jours_recolte_override?: number
@@ -291,8 +316,9 @@ export function useBleuenn() {
     notes?: string
   }) => {
     const { error } = await supabase.from('plantings').update(updates).eq('id', id)
-    ecrire({ error }, 'modification de la plantation')
+    const ok = ecrire({ error }, 'modification de la plantation')
     if (activeSeason) await loadSeasonData(activeSeason.id)
+    return ok
   }
 
   const deletePlanting = async (id: string) => {
@@ -494,7 +520,7 @@ export function useBleuenn() {
     gardens, catalog, plantings, harvests, sales, seedOrders,
     createGarden, updateGarden, deleteGarden,
     createPlanche, updatePlanche, deletePlanche,
-    createPlanting, updatePlanting, deletePlanting,
+    createPlanting, createPlantings, updatePlanting, deletePlanting,
     createHarvest, deleteHarvest,
     createSale, deleteSale,
     upsertSeedOrder, addCulture, updateCulture, deleteCulture,

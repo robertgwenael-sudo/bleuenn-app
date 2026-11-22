@@ -8,7 +8,7 @@
 // ============================================================
 import { AlertTriangle, CalendarClock } from 'lucide-react'
 import {
-  conflitsOccupation, dureeJours, ecartJours, formatJourMois, intersection,
+  conflitsOccupation, dureeJours, ecartJours, estSansFin, formatJourMois, intersection,
   libelleSaison, moisEntre, periodeOccupation,
   type ConflitOccupation, type Intervalle, type PlantingOccupation,
 } from '@/lib/domain'
@@ -45,9 +45,16 @@ export function phraseConflit(c: ConflitOccupation, anneeRef: number) {
 // ------------------------------------------------------------
 // Frise
 // ------------------------------------------------------------
-type Barre = { p: PlantingFull; i: Intervalle; lane: number; autre: boolean }
+type Barre = { p: PlantingFull; i: Intervalle; lane: number; autre: boolean; ancienne: boolean }
 
-function rangerEnCouloirs(ps: PlantingFull[], fenetre: Intervalle, activeSeasonId?: string): { barres: Barre[]; couloirs: number } {
+/** « en place du 1er mai au 15 juin », ou « en place depuis le 1er mai (vivace, jusqu'à l'arrachage) ». */
+export function phrasePeriode(per: Intervalle, anneeRef: number) {
+  return estSansFin(per.fin)
+    ? `en place depuis le ${formatJourMois(per.debut, anneeRef)} (vivace, jusqu’à l’arrachage)`
+    : `en place du ${formatJourMois(per.debut, anneeRef)} au ${formatJourMois(per.fin, anneeRef)}`
+}
+
+function rangerEnCouloirs(ps: PlantingFull[], fenetre: Intervalle, activeSeasonId?: string, today?: string): { barres: Barre[]; couloirs: number } {
   const items = ps
     .map(p => ({ p, per: periodeSure(p) }))
     .map(x => ({ p: x.p, i: x.per ? intersection(x.per, fenetre) : null }))
@@ -57,7 +64,9 @@ function rangerEnCouloirs(ps: PlantingFull[], fenetre: Intervalle, activeSeasonI
   const barres = items.map(({ p, i }) => {
     let lane = finCouloir.findIndex(f => f < i.debut)
     if (lane === -1) { lane = finCouloir.length; finCouloir.push(i.fin) } else finCouloir[lane] = i.fin
-    return { p, i, lane, autre: !!activeSeasonId && p.season_id !== activeSeasonId }
+    // Ancienne : a quitté la planche avant aujourd'hui (une vivace en place ne l'est jamais)
+    const per = periodeSure(p)
+    return { p, i, lane, autre: !!activeSeasonId && p.season_id !== activeSeasonId, ancienne: !!today && !!per && per.fin < today }
   })
   return { barres, couloirs: Math.max(1, finCouloir.length) }
 }
@@ -74,7 +83,7 @@ export function OccupationFrise({ plantings, planche, fenetre, today, activeSeas
   const total = dureeJours(fenetre)
   const x = (d: string) => (ecartJours(fenetre.debut, d) / total) * 100
   const w = (i: Intervalle) => (dureeJours(i) / total) * 100
-  const { barres, couloirs } = rangerEnCouloirs(plantings, fenetre, activeSeasonId)
+  const { barres, couloirs } = rangerEnCouloirs(plantings, fenetre, activeSeasonId, today)
   const mois = moisEntre(fenetre)
   const anneeRef = Number(today.slice(0, 4))
   const H = 22, GAP = 3
@@ -116,7 +125,9 @@ export function OccupationFrise({ plantings, planche, fenetre, today, activeSeas
         {barres.map(b => {
           const saison = libelleSaison(b.p)
           const per = periodeSure(b.p)!
-          const titre = `${nomAvecSaison(b.p)} — ${fmtM2(Number(b.p.surface_m2))} m² — en place du ${formatJourMois(per.debut, anneeRef)} au ${formatJourMois(per.fin, anneeRef)}`
+          const titre = `${nomAvecSaison(b.p)}, ${fmtM2(Number(b.p.surface_m2))} m², ${phrasePeriode(per, anneeRef)}${b.ancienne ? ' (ancienne plantation)' : ''}`
+          // Anciennes : barre plus fine et grisée, centrée dans son couloir
+          const h = b.ancienne ? 12 : H
           const coupeAvant = per.debut < fenetre.debut
           const coupeApres = per.fin > fenetre.fin
           const Comp: any = onSelect ? 'button' : 'span'
@@ -126,15 +137,17 @@ export function OccupationFrise({ plantings, planche, fenetre, today, activeSeas
               className={cn(
                 'absolute flex items-center gap-1 overflow-hidden whitespace-nowrap px-1.5 text-left text-[0.68rem] font-medium leading-none transition',
                 coupeAvant ? 'rounded-l-none' : 'rounded-l-[4px]', coupeApres ? 'rounded-r-none' : 'rounded-r-[4px]',
-                b.autre
-                  ? 'bg-violet-soft text-violet ring-1 ring-inset ring-violet/50'
-                  : 'bg-primary text-primary-fg',
+                b.ancienne
+                  ? 'bg-surface-3 text-[0.6rem] text-fg-subtle ring-1 ring-inset ring-border-strong/40'
+                  : b.autre
+                    ? 'bg-violet-soft text-violet ring-1 ring-inset ring-violet/50'
+                    : 'bg-primary text-primary-fg',
                 onSelect && 'hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               )}
-              style={{ left: `${x(b.i.debut)}%`, width: `${w(b.i)}%`, top: GAP + b.lane * (H + GAP), height: H }}>
+              style={{ left: `${x(b.i.debut)}%`, width: `${w(b.i)}%`, top: GAP + b.lane * (H + GAP) + (H - h) / 2, height: h }}>
               {w(b.i) >= 5 && <>
                 <span className="truncate">{b.p.culture_name}</span>
-                {b.autre && saison && <span className="hidden shrink-0 rounded-sm bg-surface/70 px-1 py-px text-[0.6rem] font-semibold sm:inline">{saison}</span>}
+                {b.autre && !b.ancienne && saison && <span className="hidden shrink-0 rounded-sm bg-surface/70 px-1 py-px text-[0.6rem] font-semibold sm:inline">{saison}</span>}
                 <span className="num hidden shrink-0 opacity-75 sm:inline">{fmtM2(Number(b.p.surface_m2))} m²</span>
               </>}
             </Comp>
@@ -150,11 +163,12 @@ export function OccupationFrise({ plantings, planche, fenetre, today, activeSeas
 }
 
 /** Légende commune des frises. */
-export function LegendeFrise({ activeSeasonName }: { activeSeasonName?: string }) {
+export function LegendeFrise({ activeSeasonName, anciennes }: { activeSeasonName?: string; anciennes?: boolean }) {
   return (
     <ul className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-fg-muted">
       <li className="flex items-center gap-2"><span className="h-3 w-5 rounded-[3px] bg-primary" aria-hidden />{activeSeasonName || 'Saison active'}</li>
       <li className="flex items-center gap-2"><span className="h-3 w-5 rounded-[3px] bg-violet-soft ring-1 ring-inset ring-violet/50" aria-hidden />Autre saison</li>
+      {anciennes && <li className="flex items-center gap-2"><span className="h-2 w-5 rounded-[3px] bg-surface-3 ring-1 ring-inset ring-border-strong/40" aria-hidden />Ancienne plantation</li>}
       <li className="flex items-center gap-2"><span className="h-3 w-0.5 bg-accent" aria-hidden />Aujourd’hui</li>
       <li className="flex items-center gap-2"><span className="h-1.5 w-5 rounded-sm bg-danger" aria-hidden /><AlertTriangle className="h-3 w-3 text-danger" aria-hidden />Conflit de surface</li>
     </ul>
@@ -175,7 +189,7 @@ export function AlerteConflits({ conflits, today }: { conflits: ConflitOccupatio
         {conflits.map((c, k) => (
           <p key={k}>
             <span className="num">{phraseConflit(c, anneeRef)}</span>
-            <span className="text-fg-muted"> — {c.plantings.map(nomAvecSaison).join(', ')}</span>
+            <span className="text-fg-muted"> : {c.plantings.map(nomAvecSaison).join(', ')}</span>
           </p>
         ))}
       </div>
