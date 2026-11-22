@@ -24,6 +24,7 @@ import Rentabilite from '@/components/Rentabilite'
 import Exports from '@/components/Exports'
 import Journal from '@/components/Journal'
 import Factures from '@/components/Factures'
+import Fournisseurs from '@/components/Fournisseurs'
 import { AppShell } from '@/components/shell/AppShell'
 import { VALID_IDS } from '@/components/shell/nav'
 import { LogoMark } from '@/components/shell/Logo'
@@ -143,6 +144,7 @@ export default function Home() {
       {section === 'exports' && <Exports ctx={ctx} />}
       {section === 'journal' && <Journal ctx={ctx} />}
       {section === 'factures' && <Factures ctx={ctx} />}
+      {section === 'fournisseurs' && <Fournisseurs ctx={ctx} />}
     </AppShell>
   )
 }

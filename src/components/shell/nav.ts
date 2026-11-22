@@ -1,12 +1,12 @@
 import {
   LayoutDashboard, Fence, Sprout, CalendarRange, Scissors, Store, PackageOpen,
-  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, PiggyBank, FileDown, NotebookPen, ReceiptText, type LucideIcon,
+  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, PiggyBank, FileDown, NotebookPen, ReceiptText, Factory, type LucideIcon,
 } from 'lucide-react'
 
 export type SectionId =
   | 'dashboard' | 'jardins' | 'semis' | 'calendrier' | 'recoltes' | 'ventes'
   | 'commandes' | 'disponibilite' | 'analytique' | 'catalogue' | 'verification'
-  | 'taches' | 'reel' | 'clients' | 'livraisons' | 'rentabilite' | 'exports' | 'journal' | 'factures'
+  | 'taches' | 'reel' | 'clients' | 'livraisons' | 'rentabilite' | 'exports' | 'journal' | 'factures' | 'fournisseurs'
 
 export type Section = { id: SectionId; label: string; short: string; icon: LucideIcon; key: string; description: string }
 
@@ -26,7 +26,8 @@ export const SECTIONS: Section[] = [
   { id: 'factures', label: 'Factures & paiements', short: 'Factures', icon: ReceiptText, key: 'f', description: 'Factures numérotées, avoirs, encaissements' },
   { id: 'clients', label: 'Clients', short: 'Clients', icon: Users, key: 'l', description: 'Fleuristes, particuliers, mariages' },
   { id: 'ventes', label: 'Ventes', short: 'Ventes', icon: Store, key: 'v', description: 'Ventes par canal' },
-  { id: 'commandes', label: 'Commandes de graines', short: 'Graines', icon: PackageOpen, key: 'o', description: 'Besoins et commandes de semences' },
+  { id: 'fournisseurs', label: 'Fournisseurs', short: 'Fourniss.', icon: Factory, key: 'u', description: 'Semenciers, pépinières, fournitures' },
+  { id: 'commandes', label: 'Achats & bons de commande', short: 'Graines', icon: PackageOpen, key: 'o', description: 'Besoins et commandes de semences' },
   { id: 'catalogue', label: 'Catalogue des cultures', short: 'Catalogue', icon: BookOpen, key: 'k', description: 'Référentiel technique' },
   { id: 'exports', label: 'Exports', short: 'Exports', icon: FileDown, key: 'e', description: 'Fichiers CSV pour le comptable' },
   { id: 'verification', label: 'Vérification', short: 'Vérif.', icon: TableProperties, key: 'x', description: 'Tableau complet de production' },
@@ -36,7 +37,7 @@ export const NAV_GROUPS: { label: string; ids: SectionId[] }[] = [
   { label: 'Pilotage', ids: ['dashboard', 'taches', 'reel', 'rentabilite', 'analytique'] },
   { label: 'Cultures', ids: ['jardins', 'semis', 'calendrier', 'journal', 'disponibilite'] },
   { label: 'Commercial', ids: ['recoltes', 'livraisons', 'ventes', 'factures', 'clients'] },
-  { label: 'Référentiel', ids: ['catalogue', 'commandes', 'verification', 'exports'] },
+  { label: 'Référentiel', ids: ['catalogue', 'commandes', 'fournisseurs', 'verification', 'exports'] },
 ]
 
 /** Raccourcis de la barre basse mobile (le reste est dans le tiroir). */
