@@ -8,9 +8,11 @@ test('mobile : barre du bas', async ({ page }) => {
   const barre = page.getByRole('navigation', { name: 'Navigation rapide' })
   await expect(barre).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Navigation principale' })).toBeHidden()
-  for (const nom of ['Accueil', 'Récoltes', 'Ventes', 'Calendrier']) {
+  for (const nom of ['Accueil', 'Quoi semer', 'Ventes', 'Calendrier']) {
     await expect(barre.getByRole('link', { name: nom })).toBeVisible()
   }
+  // Récoltes : hors barre basse, accessible par « Plus »
+  await expect(barre.getByRole('link', { name: 'Récoltes' })).toHaveCount(0)
 
   await barre.getByRole('link', { name: 'Ventes' }).tap()
   await expect(titre(page)).toHaveText('Ventes')
@@ -28,7 +30,8 @@ test('mobile : barre du bas', async ({ page }) => {
 
 test('mobile : formulaire de récolte', async ({ page }) => {
   await connexion(page)
-  await page.getByRole('navigation', { name: 'Navigation rapide' }).getByRole('link', { name: 'Récoltes' }).tap()
+  await page.getByRole('navigation', { name: 'Navigation rapide' }).getByRole('button', { name: 'Plus' }).tap()
+  await page.getByRole('dialog').getByRole('link', { name: 'Récoltes' }).tap()
   await expect(titre(page)).toHaveText('Récoltes')
 
   const culture = page.getByRole('combobox', { name: 'Culture / planche' })

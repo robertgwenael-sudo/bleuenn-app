@@ -45,7 +45,8 @@ export const NAV_GROUPS: { label: string; ids: SectionId[] }[] = [
 ]
 
 /** Raccourcis de la barre basse mobile (le reste est dans le tiroir). */
-export const MOBILE_TABS: SectionId[] = ['dashboard', 'recoltes', 'ventes', 'calendrier']
+// Récoltes : hors barre basse (Marine ne les saisit pas), toujours accessible depuis le menu complet.
+export const MOBILE_TABS: SectionId[] = ['dashboard', 'quoi-semer', 'ventes', 'calendrier']
 
 export const sectionById = (id: string) => SECTIONS.find(s => s.id === id) || SECTIONS[0]
 export const VALID_IDS = new Set<string>(SECTIONS.map(s => s.id))
