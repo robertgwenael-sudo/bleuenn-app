@@ -15,6 +15,7 @@ import { extendDemoDb } from './seeds'
 import { buildDemoDb, DEMO_USER_ID, DEMO_EMAIL, type DemoDb } from './data'
 import { recalculerVenteDemo, totalLigneDemo } from './seeds/commercial'
 import { OBJETS_JOURNAL_DEMO } from './seeds/journal'
+import { emettreAvoirDemo, emettreFactureDemo, enregistrerPaiementDemo, invoicesStatusDemo, refusFacturesDemo } from './seeds/factures'
 
 type Row = Record<string, any>
 type Result = { data: any; error: { message: string; code?: string } | null; count?: number | null; status?: number }
@@ -162,6 +163,8 @@ const DEFAULTS: Record<string, Row> = {
   treatments: { season_id: null, amm: null, culture_id: null, culture_libelle: null, cible_type: 'autre', garden_id: null, planche_id: null, planting_id: null,
     lieu_libelle: null, ilot_pac: null, date_recolte_suivante: null, delai_avant_recolte_j: null, operateur_id: null, operateur_nom: null,
     vent: null, temperature_c: null, notes: null, updated_at: null },
+  // Migration 010 (factures)
+  farm_billing: { prefixe_facture: 'F', prefixe_avoir: 'AV' },
 }
 
 // Migration 009 : triggers journal_entries_set_farm, journal_photos_set_farm,
@@ -237,6 +240,7 @@ function tableRows(table: string): Row[] {
   const d = getDb() as any
   if (table === 'plantings_full') return plantingsFull()
   if (table === 'planting_actuals') return plantingActuals()
+  if (table === 'invoices_status') return invoicesStatusDemo(d)  // migration 010
   if (!d[table]) throw new Error(`Table inconnue en mode démo : ${table}`)
   if (TABLES_JOURNAL.has(table)) {
     // Policy 009 : farm_id in my_farm_ids()
@@ -415,6 +419,9 @@ class DemoQuery implements PromiseLike<Result> {
 
       if (this.op === 'insert') {
         const list: Row[] = Array.isArray(this.payload) ? this.payload : [this.payload]
+        // Migration 010 : documents émis en lecture seule, ventes facturées protégées
+        const refus010 = refusFacturesDemo(d, t, 'insert', list, list[0])
+        if (refus010) return { data: null, error: refus010 }
         const inserted: Row[] = []
         for (const v of list) {
           // Clé primaire : un identifiant client déjà présent est refusé (23505),
@@ -449,6 +456,8 @@ class DemoQuery implements PromiseLike<Result> {
 
       if (this.op === 'upsert') {
         const list: Row[] = Array.isArray(this.payload) ? this.payload : [this.payload]
+        const refus010 = refusFacturesDemo(d, t, 'upsert', list)
+        if (refus010) return { data: null, error: refus010 }
         const out: Row[] = []
         for (const v of list) {
           const hit = (d[t] as Row[]).find(r => this.conflict.every(c => v[c] != null && r[c] === v[c]))
@@ -461,6 +470,8 @@ class DemoQuery implements PromiseLike<Result> {
 
       if (this.op === 'update') {
         const rows = this.match(tableRows(t))
+        const refus010 = refusFacturesDemo(d, t, 'update', rows, this.payload)
+        if (refus010) return { data: null, error: refus010 }
         for (const r of rows) {
           if (TABLES_JOURNAL.has(t)) {
             const copie = { ...r, ...this.payload }
@@ -482,6 +493,8 @@ class DemoQuery implements PromiseLike<Result> {
 
       if (this.op === 'delete') {
         const rows = this.match(tableRows(t))
+        const refus010 = refusFacturesDemo(d, t, 'delete', rows)
+        if (refus010) return { data: null, error: refus010 }
         if (t === 'culture_catalog' && rows.some(r => [...d.costs, ...d.time_entries].some((x: Row) => x.culture_id === r.id))) {
           return { data: null, error: { code: '23503', message: 'Cette culture porte des dépenses ou du temps saisi (on delete restrict).' } }
         }
@@ -602,7 +615,13 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
     await q('orders').update({ sale_id: r.data, status: 'livree' }).eq('id', o.id)
     return r
   }
+  // ─── Migration 010 : factures, avoirs, paiements ─────────────────
+  if (fn === 'emettre_facture') return emettreFactureDemo(d as any, args, me.id)
+  if (fn === 'emettre_avoir') return emettreAvoirDemo(d as any, args, me.id)
+  if (fn === 'enregistrer_paiement') return enregistrerPaiementDemo(d as any, args, me.id)
   if (fn === 'supprimer_vente') {
+    const refus010 = refusFacturesDemo(d as any, 'sales', 'delete', [{ id: args.p_sale_id }])
+    if (refus010) return { data: null, error: refus010 }
     const o = (d as any).orders.find((x: Row) => x.sale_id === args.p_sale_id)
     if (o) await q('orders').update({ status: 'prete', sale_id: null }).eq('id', o.id)
     const r = await q('sales').delete().eq('id', args.p_sale_id)
