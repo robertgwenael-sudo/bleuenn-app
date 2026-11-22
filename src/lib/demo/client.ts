@@ -13,6 +13,8 @@
 import { extendDemoDb } from './seeds'
 import { buildDemoDb, DEMO_USER_ID, DEMO_EMAIL, type DemoDb } from './data'
 import { recalculerVenteDemo, totalLigneDemo } from './seeds/commercial'
+import { rpcAchatsDemo, refusSuppressionAchats } from './seeds/achats'
+import { aujourdhuiParisISO } from '../types'
 
 type Row = Record<string, any>
 type Result = { data: any; error: { message: string; code?: string } | null; count?: number | null; status?: number }
@@ -152,9 +154,15 @@ const DEFAULTS: Record<string, Row> = {
   sale_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
   order_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
   // Migration 008 (coûts)
-  costs: { culture_id: null, planche_id: null, supplier: null, notes: null },
+  costs: { culture_id: null, planche_id: null, supplier: null, notes: null, purchase_order_id: null, purchase_order_line_id: null },
   time_entries: { kind: 'autre', culture_id: null, planche_id: null, notes: null },
+  // Migration 011 (achats)
+  suppliers: { kind: 'semencier', contact_name: null, email: null, phone: null, website: null, address: null, customer_number: null,
+    min_order_amount: null, free_shipping_threshold: null, lead_time_days: null, organic_certified: false, notes: null, archived_at: null },
 }
+
+// Migration 011 : colonnes des bons réservées aux fonctions (privilèges de colonnes)
+const COLONNES_BON_CLIENT = new Set(['season_id', 'supplier_id', 'expected_date', 'shipping_amount', 'notes'])
 
 // Migration 008, trigger couts_set_farm : farm_id recopié de la saison, jamais du client
 function coutsSetFarm(t: string, row: Row): { message: string; code?: string } | null {
@@ -216,6 +224,13 @@ function cascadeDelete(table: string, removed: Row[]) {
     for (const t of ['orders', 'sales']) for (const r of dx[t]) if (ids.has(r.client_id)) r.client_id = null
   }
   if (table === 'sale_lines') new Set(removed.map(r => r.sale_id)).forEach(sid => recalculerVenteDemo(dx, sid))
+  // Migration 011 : bons et lignes en cascade ; dépense et ligne gardent leur trace (set null)
+  if (table === 'seasons') drop('purchase_orders' as keyof DemoDb, r => ids.has(r.season_id))
+  if (table === 'purchase_orders') {
+    drop('purchase_order_lines' as keyof DemoDb, r => ids.has(r.purchase_order_id))
+    for (const c of dx.costs) if (ids.has(c.purchase_order_id)) c.purchase_order_id = null
+  }
+  if (table === 'seed_orders') for (const l of dx.purchase_order_lines) if (ids.has(l.seed_order_id)) l.seed_order_id = null
 }
 
 type Filter = (r: Row) => boolean
@@ -360,6 +375,13 @@ class DemoQuery implements PromiseLike<Result> {
           if (errCout) return { data: null, error: errCout }
           if (t === 'seasons') row.invite_token ??= uuid()
           if (t === 'team_members') row.joined_at ??= new Date().toISOString()
+          if (t === 'suppliers') {
+            row.created_by ??= currentUser()?.id ?? null
+            if ((d.suppliers as Row[]).some(f => f.farm_id === row.farm_id && f.name.trim().toLowerCase() === String(row.name ?? '').trim().toLowerCase()))
+              return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "suppliers_farm_name_uidx"' }, status: 409 }
+          }
+          if (t === 'purchase_orders' && Object.keys(v).some(k => !COLONNES_BON_CLIENT.has(k)))
+            return { data: null, error: { code: '42501', message: `permission denied for table ${t}` } }
           d[t].push(row)
           inserted.push(row)
           if (t === 'sale_lines') recalculerVenteDemo(d, row.sale_id)
@@ -382,6 +404,12 @@ class DemoQuery implements PromiseLike<Result> {
 
       if (this.op === 'update') {
         const rows = this.match(d[t])
+        // Migration 011 : statut, numéro, quantités reçues ne s'écrivent que par les fonctions
+        if ((t === 'purchase_orders' && Object.keys(this.payload).some(k => !COLONNES_BON_CLIENT.has(k)))
+          || (t === 'purchase_order_lines' && 'quantity_received' in this.payload))
+          return { data: null, error: { code: '42501', message: `permission denied for table ${t}` } }
+        if (t === 'purchase_orders' && rows.some(r => r.status !== 'brouillon' && Object.keys(this.payload).some(k => !['expected_date', 'notes'].includes(k))))
+          return { data: null, error: { code: 'P0001', message: 'Bon déjà envoyé : seuls la date de livraison prévue, les notes, la réception et l\'annulation restent possibles' } }
         for (const r of rows) {
           Object.assign(r, this.payload)
           coutsSetFarm(t, r)
@@ -399,6 +427,10 @@ class DemoQuery implements PromiseLike<Result> {
         if (t === 'culture_catalog' && rows.some(r => [...d.costs, ...d.time_entries].some((x: Row) => x.culture_id === r.id))) {
           return { data: null, error: { code: '23503', message: 'Cette culture porte des dépenses ou du temps saisi (on delete restrict).' } }
         }
+        const refusAchats = refusSuppressionAchats(t, rows)
+        if (refusAchats) return { data: null, error: refusAchats }
+        if (t === 'suppliers' && rows.some(r => d.purchase_orders.some((b: Row) => b.supplier_id === r.id)))
+          return { data: null, error: { code: '23503', message: 'Ce fournisseur a des bons de commande : archivez-le plutôt (on delete restrict).' } }
         if (t === 'culture_catalog' && rows.some(r => d.plantings.some((p: Row) => p.culture_id === r.id))) {
           return { data: null, error: { code: '23503', message: 'Cette culture est utilisée par des plantations (on delete restrict).' } }
         }
@@ -523,6 +555,10 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
     if (r.error) return r
     return { data: o?.id ?? null, error: null }
   }
+
+  // ─── Migration 011 : fonctions des bons de commande ──
+  const rAchats = await rpcAchatsDemo(fn, args, { db: d as any, me: me.id, q, aujourdhui: aujourdhuiParisISO(), uuid })
+  if (rAchats) return rAchats
 
   if (fn === 'season_team') {
     const sid = args.p_season_id

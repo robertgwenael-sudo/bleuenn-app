@@ -489,7 +489,7 @@ begin
       insert into public.costs (season_id, date, category, amount, culture_id, supplier, notes, purchase_order_id, purchase_order_line_id)
       values (b.season_id, p_date, v_cat, v_montant, r.culture_id, f.name,
               b.number || ' · ' || r.label || coalesce(' « ' || r.variety || ' »', '') || ' · reçu '
-                || trim(to_char(v_q - r.quantity_received, 'FM999999990.99')) || ' ' || r.unit,
+                || replace(trim_scale(v_q - r.quantity_received)::text, '.', ',') || ' ' || r.unit,
               b.id, r.id);
       v_nb := v_nb + 1;
       v_total := v_total + v_montant;
