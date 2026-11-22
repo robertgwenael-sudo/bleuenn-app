@@ -110,8 +110,8 @@ describe('ventes détaillées', () => {
     expect(t.lignes.map(l => l[0])).toEqual(['2026-07-02', '2026-07-14', '2026-07-14', '2026-07-14', '2026-08-01'])
   })
   it('vente historique : tiges, prix et total d’origine, sans flottant', () => {
-    expect(tableauFormate(t)[0]).toEqual(['02/07/2026', 'BBBBBBBB', 'Marché de Landerneau', 'Marché', 'Zinnia, Cosmos', 'Tige', '3', '3', '0,10', '0,30'])
-    expect(tableauFormate(t)[4]).toEqual(['01/08/2026', 'CCCCCCCC', '', 'Marché', '', 'Tige', '40', '40', '0,50', '20,00'])
+    expect(tableauFormate(t)[0]).toEqual(['02/07/2026', '00000002', 'Marché de Landerneau', 'Marché', 'Zinnia, Cosmos', 'Tige', '3', '3', '0,10', '0,30'])
+    expect(tableauFormate(t)[4]).toEqual(['01/08/2026', '00000003', '', 'Marché', '', 'Tige', '40', '40', '0,50', '20,00'])
   })
   it('lignes : quantité décimale, tiges et montant arrondi comme la base', () => {
     const [, l1, l2, l3] = tableauFormate(t)
@@ -167,7 +167,7 @@ describe('récoltes, pertes, plan', () => {
   })
   it('plan de culture : surface décimale, dates et CA estimé', () => {
     expect(tableauFormate(exportPlanDeCulture(plantations))).toEqual([[
-      'DDDDDDDD', 'Dahlia', 'Jardin du haut', 'P3', '7,5', '01/04/2026', '01/04/2026', '10/07/2026', '15/10/2026', '600', '480,00', 'Saison 2026',
+      '00000004', 'Dahlia', 'Jardin du haut', 'P3', '7,5', '01/04/2026', '01/04/2026', '10/07/2026', '15/10/2026', '600', '480,00', 'Saison 2026',
     ]])
   })
 })

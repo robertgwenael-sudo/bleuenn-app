@@ -224,9 +224,13 @@ export interface PlantationExport {
   season_name: string
 }
 
-/** Référence courte et stable d'un enregistrement (8 premiers caractères de l'uuid). */
+/**
+ * Référence courte et stable d'un enregistrement : les 8 derniers caractères
+ * de l'uuid (aléatoires en v4 ; les identifiants de démonstration, eux, ne
+ * varient qu'en fin). Sert à regrouper les lignes d'une même vente.
+ */
 export function reference(id: string): string {
-  return id.replace(/-/g, '').slice(0, 8).toUpperCase()
+  return id.replace(/-/g, '').slice(-8).toUpperCase()
 }
 
 function nomClient(v: { client_id?: string | null; client?: string | null }, clients: Map<string, string>): string | null {
