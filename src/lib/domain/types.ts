@@ -111,6 +111,8 @@ export interface Order {
   sale_id: string | null
   created_by: string | null
   created_at: string
+  /** Migration 014 : référence lisible du bon de commande (« BC2026-0007 »). */
+  numero?: string | null
 }
 
 export type LineUnit = 'tige' | 'botte' | 'bouquet' | 'seau' | 'autre'
@@ -125,6 +127,10 @@ export interface LigneBase {
   unit_price: EurosNumeric
   /** Colonne générée `round(quantity * unit_price, 2)`, absente avant insertion. */
   line_total?: EurosNumeric | null
+  /** Migration 014 : catégorie de TVA choisie (farm_vat_rates), null = non renseignée. */
+  vat_rate_id?: string | null
+  /** Migration 014 : taux recopié de la catégorie à l'enregistrement, en points de base. */
+  taux_tva_pb?: number | null
 }
 
 export interface SaleLine extends LigneBase {
@@ -388,6 +394,10 @@ export interface FarmBilling {
   mentions_libres: string | null
   prefixe_facture: string
   prefixe_avoir: string
+  /** Migration 014 : la ferme facture la TVA. Faux : comportement 010 (mention d'absence de TVA). */
+  assujettie_tva: boolean
+  /** Migration 014 : numéro de TVA intracommunautaire, exigé si assujettie. */
+  numero_tva: string | null
   updated_by?: string | null
   updated_at?: string
 }
@@ -404,6 +414,8 @@ export interface VendeurFige {
   iban?: string
   bic?: string
   mentions_libres?: string
+  /** Migration 014 : numéro de TVA intracommunautaire (ferme assujettie). */
+  numero_tva?: string
 }
 
 /** Instantané de l'acheteur, figé à l'émission. */
@@ -414,6 +426,8 @@ export interface AcheteurFige {
   email?: string
   /** SIREN du client (facturation électronique 2027), facultatif. */
   siren?: string
+  /** Migration 014 : numéro de TVA du client professionnel, facultatif. */
+  numero_tva?: string
   /** Adresse de livraison si différente, facultative. */
   adresse_livraison?: string
   professionnel?: boolean
@@ -434,9 +448,20 @@ export interface Invoice {
   date_echeance: DateISO | null
   vendeur: VendeurFige
   acheteur: AcheteurFige
-  /** numeric(12,2) ; négatif pour un avoir. */
+  /** numeric(12,2) ; négatif pour un avoir. Montant dû : TTC si la ferme est assujettie. */
   total: EurosNumeric
-  mention_tva: string
+  /** Mention d'absence de TVA ; null sur une facture avec TVA (migration 014). */
+  mention_tva: string | null
+  /** Migration 014 : régime figé à l'émission. */
+  assujettie_tva: boolean
+  /** Migration 014 : somme des lignes (HT). Égal à `total` sans TVA. */
+  total_ht: EurosNumeric
+  /** Migration 014 : somme des TVA par taux ; 0 sans TVA. */
+  total_tva: EurosNumeric
+  /** Migration 014 : ventilation figée par taux (vide sans TVA). */
+  ventilation_tva: VentilationTvaFigee[]
+  /** Migration 014 : bons de commande à l'origine des ventes facturées. */
+  commandes: CommandeFigee[]
   conditions_paiement: string | null
   penalites_retard: string | null
   indemnite_recouvrement: string | null
@@ -465,6 +490,10 @@ export interface InvoiceLine {
   stems_per_unit: number
   unit_price: EurosNumeric
   line_total: EurosNumeric
+  /** Migration 014 : catégorie et taux figés à l'émission (null sans TVA). */
+  vat_rate_id: string | null
+  taux_tva_pb: number | null
+  libelle_tva: string | null
 }
 
 export interface InvoiceSale {
@@ -508,6 +537,9 @@ export interface InvoiceStatusRow {
   date_emission: DateISO
   date_echeance: DateISO | null
   total: EurosNumeric
+  /** Migration 014 */
+  total_ht?: EurosNumeric
+  total_tva?: EurosNumeric
   client_nom: string | null
   avoir_de: string | null
   annulee_par: string | null
@@ -716,3 +748,48 @@ export interface BankMatch {
   created_by: string | null
   created_at: string
 }
+
+// ============================================================
+// TVA (014) : DÉBUT DE SECTION
+// ============================================================
+// Les taux ne sont jamais écrits dans le code : ils viennent de
+// `farm_vat_rates`, une table de paramétrage par ferme, pré-remplie par la
+// migration et modifiable dans les réglages de facturation. Un taux est un
+// entier en points de base : 1000 = 10 %, 550 = 5,5 %.
+
+/** Catégorie fonctionnelle d'un taux : sert au choix par défaut d'une ligne. */
+export const VAT_CATEGORIES = ['non_travaillee', 'travaillee', 'autre'] as const
+export type VatCategorie = (typeof VAT_CATEGORIES)[number]
+
+/** Points de base : 1000 = 10 %. Entier, entre 0 et 10000. */
+export type PointsDeBase = number
+
+export interface VatRate {
+  id: string
+  farm_id: string
+  categorie: VatCategorie
+  libelle: string
+  taux_pb: PointsDeBase
+  actif: boolean
+  ordre: number
+  created_at: string
+}
+
+/** Une ligne de la ventilation par taux, figée sur la facture (euros numeric). */
+export interface VentilationTvaFigee {
+  taux_pb: PointsDeBase
+  libelle: string
+  base_ht: EurosNumeric
+  tva: EurosNumeric
+  ttc: EurosNumeric
+}
+
+/** Bon de commande cité par une facture (instantané). */
+export interface CommandeFigee {
+  order_id: string
+  numero: string | null
+  date_livraison: DateISO
+}
+// ============================================================
+// TVA (014) : FIN DE SECTION
+// ============================================================

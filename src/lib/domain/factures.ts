@@ -9,14 +9,17 @@
 // Aucune valeur réglementaire n'est écrite ici : mention d'absence de TVA,
 // pénalités de retard et indemnité de recouvrement sont des textes saisis
 // dans les réglages. Ce module ne fait que vérifier qu'ils sont remplis.
+// Migration 014 : une ferme assujettie facture la TVA ; les taux viennent de
+// farm_vat_rates (paramètre), la ventilation de tva.ts.
 // ============================================================
 
 import { ajouterJours, ecartJours } from './dates'
 import { eurosEnCentimes, formatEuros, sommeCentimes, verifierCentimes } from './montants'
 import { montantLigne } from './ventes'
+import { ventilerTva, type TotauxTva } from './tva'
 import type {
   Centimes, ClientKind, DateISO, EurosNumeric, FarmBilling, Invoice, InvoiceLine, InvoiceSale, InvoiceStatut,
-  LineUnit, Payment, PaymentMode, Sale, SaleLine,
+  LineUnit, Payment, PaymentMode, PointsDeBase, Sale, SaleLine, VatRate,
 } from './types'
 
 // ------------------------------------------------------------
@@ -60,20 +63,23 @@ export function controlerSerie(sequences: number[]): { manquants: number[]; doub
 // Réglages obligatoires
 // ------------------------------------------------------------
 export type ChampReglage = keyof Pick<FarmBilling,
-  'raison_sociale' | 'adresse' | 'siret' | 'mention_tva' | 'penalites_retard' | 'indemnite_recouvrement'>
+  'raison_sociale' | 'adresse' | 'siret' | 'mention_tva' | 'numero_tva' | 'penalites_retard' | 'indemnite_recouvrement'>
 
 export interface MentionManquante {
   champ: ChampReglage
   libelle: string
   /** Exigée seulement pour un client professionnel. */
   pourProfessionnel: boolean
+  /** Exigée seulement dans ce régime de TVA (migration 014) ; absent = toujours. */
+  regime?: 'assujettie' | 'non_assujettie'
 }
 
 const CHAMPS: MentionManquante[] = [
   { champ: 'raison_sociale', libelle: 'Nom ou raison sociale', pourProfessionnel: false },
   { champ: 'adresse', libelle: 'Adresse', pourProfessionnel: false },
   { champ: 'siret', libelle: 'SIREN ou SIRET', pourProfessionnel: false },
-  { champ: 'mention_tva', libelle: 'Mention d’absence de TVA', pourProfessionnel: false },
+  { champ: 'mention_tva', libelle: 'Mention d’absence de TVA', pourProfessionnel: false, regime: 'non_assujettie' },
+  { champ: 'numero_tva', libelle: 'Numéro de TVA intracommunautaire', pourProfessionnel: false, regime: 'assujettie' },
   { champ: 'penalites_retard', libelle: 'Taux des pénalités de retard', pourProfessionnel: true },
   { champ: 'indemnite_recouvrement', libelle: 'Indemnité forfaitaire de recouvrement', pourProfessionnel: true },
 ]
@@ -83,13 +89,18 @@ const vide = (v: unknown) => typeof v !== 'string' || v.trim() === ''
 /** Les mentions contrôlées, dans l'ordre d'affichage de la liste de contrôle. */
 export const MENTIONS_CONTROLEES: readonly MentionManquante[] = CHAMPS
 
+/** Mentions contrôlées pour un régime de TVA donné. */
+export function mentionsDuRegime(assujettie: boolean): MentionManquante[] {
+  return CHAMPS.filter(c => !c.regime || c.regime === (assujettie ? 'assujettie' : 'non_assujettie'))
+}
+
 /**
  * Champs obligatoires non remplis. Sans `professionnel`, ne contrôle que
  * ce qu'exige toute facture ; avec, ajoute pénalités et indemnité.
  * Un SIREN/SIRET mal formé compte comme manquant.
  */
 export function reglagesManquants(b: Partial<FarmBilling> | null | undefined, opts: { professionnel?: boolean } = {}): MentionManquante[] {
-  return CHAMPS.filter(c => {
+  return mentionsDuRegime(!!b?.assujettie_tva).filter(c => {
     if (c.pourProfessionnel && !opts.professionnel) return false
     const v = b?.[c.champ]
     if (c.champ === 'siret') return vide(v) || !siretBienForme(v as string)
@@ -127,6 +138,11 @@ export function estClientProfessionnel(kind: ClientKind | null | undefined): boo
 // ------------------------------------------------------------
 export function totalFacture(lignes: Pick<InvoiceLine, 'line_total'>[]): Centimes {
   return sommeCentimes(lignes.map(l => eurosEnCentimes(l.line_total)))
+}
+
+/** Totaux HT / TVA / TTC d'une facture à partir de ses lignes figées (miroir de emettre_facture). */
+export function totauxFacture(lignes: Pick<LigneFigee, 'line_total' | 'taux_tva_pb' | 'libelle_tva'>[], assujettie: boolean): TotauxTva {
+  return ventilerTva(lignes.map(l => ({ montant_ht: l.line_total, taux_pb: l.taux_tva_pb, libelle: l.libelle_tva })), assujettie)
 }
 
 export function montantPaye(paiements: Pick<Payment, 'amount'>[]): Centimes {
@@ -219,7 +235,7 @@ export function paiementsContrepassables<P extends Pick<Payment, 'id' | 'amount'
 // Ventes à facturer
 // ------------------------------------------------------------
 export type VenteFacturable = Pick<Sale, 'id' | 'date' | 'total' | 'tiges' | 'prix_unitaire' | 'cultures_sold' | 'client_id' | 'client'>
-  & { season_id?: string; created_at?: string; lignes?: Pick<SaleLine, 'id' | 'label' | 'unit' | 'quantity' | 'stems_per_unit' | 'unit_price' | 'culture_id' | 'line_total' | 'created_at'>[] }
+  & { season_id?: string; created_at?: string; lignes?: (Pick<SaleLine, 'id' | 'label' | 'unit' | 'quantity' | 'stems_per_unit' | 'unit_price' | 'culture_id' | 'line_total' | 'created_at'> & Pick<SaleLine, 'vat_rate_id' | 'taux_tva_pb'>)[] }
 
 /** Ventes couvertes par une facture non annulée (lien non libéré). */
 export function ventesFacturees(liens: Pick<InvoiceSale, 'sale_id' | 'liberee_par_avoir' | 'invoice_id'>[]): Map<string, string> {
@@ -294,6 +310,10 @@ export interface LigneFigee {
   stems_per_unit: number
   unit_price: Centimes
   line_total: Centimes
+  /** Migration 014 : catégorie et taux figés ; null sans TVA. */
+  vat_rate_id: string | null
+  taux_tva_pb: PointsDeBase | null
+  libelle_tva: string | null
 }
 
 /** Vrai si un prix en euros tombe pile au centime. */
@@ -310,9 +330,26 @@ function auCentime(prix: EurosNumeric): boolean {
  * prix tombe au centime, sinon 1 × total, tiges rappelées dans le libellé).
  * Ordre : vente par vente (date, création), puis création et libellé.
  */
-export function lignesAFacturer(ventes: VenteFacturable[]): LigneFigee[] {
+export function lignesAFacturer(ventes: VenteFacturable[], tva?: {
+  /** Ferme assujettie : chaque ligne doit porter un taux. */
+  assujettie: boolean
+  /** Taux de la ferme (pour le libellé figé). */
+  taux: Pick<VatRate, 'id' | 'libelle' | 'taux_pb' | 'actif'>[]
+  /** Catégorie choisie à l'émission pour les lignes saisies sans catégorie. */
+  defaut?: string | null
+}): LigneFigee[] {
   type Brute = Omit<LigneFigee, 'position'> & { k: string[] }
   const brutes: Brute[] = []
+  const parId = new Map((tva?.taux ?? []).map(t => [t.id, t]))
+  const defaut = tva?.defaut ? parId.get(tva.defaut) : undefined
+  if (tva?.defaut && (!defaut || !defaut.actif)) throw new Error('Catégorie de TVA par défaut introuvable ou inactive')
+  /** Catégorie figée d'une ligne : la sienne, sinon celle choisie à l'émission ; rien sans TVA. */
+  const figer = (rateId: string | null | undefined, taux: number | null | undefined) => {
+    if (!tva?.assujettie) return { vat_rate_id: null, taux_tva_pb: null, libelle_tva: null }
+    if (rateId && taux !== null && taux !== undefined) return { vat_rate_id: rateId, taux_tva_pb: taux, libelle_tva: parId.get(rateId)?.libelle ?? null }
+    if (defaut) return { vat_rate_id: defaut.id, taux_tva_pb: defaut.taux_pb, libelle_tva: defaut.libelle }
+    throw new Error('Ligne sans catégorie de TVA : choisissez la catégorie à appliquer')
+  }
   for (const v of ventes) {
     const cv = v.created_at ?? ''
     if (v.lignes && v.lignes.length > 0) {
@@ -321,6 +358,7 @@ export function lignesAFacturer(ventes: VenteFacturable[]): LigneFigee[] {
           sale_id: v.id, sale_date: v.date, culture_id: l.culture_id ?? null, label: l.label, unit: l.unit,
           quantity: Number(l.quantity), stems_per_unit: l.stems_per_unit,
           unit_price: eurosEnCentimes(l.unit_price), line_total: montantLigne(l),
+          ...figer(l.vat_rate_id, l.taux_tva_pb),
           k: [v.date, cv, v.id, l.created_at ?? '', l.label, l.id],
         })
       }
@@ -333,6 +371,7 @@ export function lignesAFacturer(ventes: VenteFacturable[]): LigneFigee[] {
         unit: ok ? 'tige' : 'autre', quantity: ok ? v.tiges : 1, stems_per_unit: 1,
         unit_price: ok ? eurosEnCentimes(v.prix_unitaire) : eurosEnCentimes(v.total),
         line_total: eurosEnCentimes(v.total),
+        ...figer(null, null),
         k: [v.date, cv, v.id, cv, libelle, ''],
       })
     }

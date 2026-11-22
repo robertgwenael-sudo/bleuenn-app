@@ -59,11 +59,16 @@ export interface LigneSaisie {
   unit_price: string
   /** Prix encore tiré du catalogue : il suit l'unité et les tiges par unité. */
   prixAuto: boolean
+  /** Catégorie de TVA (farm_vat_rates.id), '' = non renseignée. */
+  vat_rate_id: string
+  /** Catégorie encore proposée par défaut : elle suit l'unité, le canal et le client. */
+  tvaAuto: boolean
 }
 
 let k = 0
 export const nouvelleLigne = (p: Partial<LigneSaisie> = {}): LigneSaisie => ({
-  key: `l${++k}`, culture_id: '', label: '', unit: 'tige', quantity: '1', stems_per_unit: '1', unit_price: '', prixAuto: true, ...p,
+  key: `l${++k}`, culture_id: '', label: '', unit: 'tige', quantity: '1', stems_per_unit: '1', unit_price: '', prixAuto: true,
+  vat_rate_id: '', tvaAuto: true, ...p,
 })
 
 /** Saisie décimale tolérante (virgule acceptée) ; null si vide ou illisible. */
@@ -96,6 +101,7 @@ export function validerLigne(l: LigneSaisie): { erreur: string } | { ligne: Lign
       quantity: q / 100, // centièmes entiers → numeric(10,2) exact
       stems_per_unit: spu,
       unit_price: centimesEnEuros(p),
+      vat_rate_id: l.vat_rate_id || null,
     },
   }
 }
@@ -108,6 +114,7 @@ export function versSaisie(l: LigneVenteAInserer): LigneSaisie {
     stems_per_unit: String(l.stems_per_unit),
     unit_price: String(centimesEnEuros(eurosEnCentimes(l.unit_price))),
     prixAuto: false,
+    vat_rate_id: l.vat_rate_id ?? '', tvaAuto: false,
   })
 }
 

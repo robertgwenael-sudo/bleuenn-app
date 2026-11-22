@@ -18,6 +18,7 @@ import { recalculerVenteDemo, totalLigneDemo } from './seeds/commercial'
 import { OBJETS_JOURNAL_DEMO } from './seeds/journal'
 import { emettreAvoirDemo, emettreFactureDemo, enregistrerPaiementDemo, invoicesStatusDemo, refusFacturesDemo } from './seeds/factures'
 import { rpcAchatsDemo, refusSuppressionAchats } from './seeds/achats'
+import { ligneSetTvaDemo, numeroCommandeDemo } from './seeds/tva'
 import { aujourdhuiParisISO } from '../types'
 import {
   DEFAULTS_GESTION, OBJETS_JUSTIFICATIFS_DEMO, TABLES_GESTION, filtreFermeGestion, gestionApresSuppression, gestionAvantEcriture,
@@ -159,8 +160,8 @@ const DEFAULTS: Record<string, Row> = {
   // Migration 005 (commercial)
   clients: { kind: 'particulier', contact_name: null, email: null, phone: null, address: null, notes: null, archived_at: null },
   orders: { status: 'confirmee', channel: null, notes: null, sale_id: null, client_id: null },
-  sale_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
-  order_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
+  sale_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1, vat_rate_id: null, taux_tva_pb: null },
+  order_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1, vat_rate_id: null, taux_tva_pb: null },
   // Migration 008 (coûts)
   costs: { culture_id: null, planche_id: null, supplier: null, notes: null, purchase_order_id: null, purchase_order_line_id: null },
   time_entries: { kind: 'autre', culture_id: null, planche_id: null, notes: null },
@@ -171,7 +172,9 @@ const DEFAULTS: Record<string, Row> = {
     lieu_libelle: null, ilot_pac: null, date_recolte_suivante: null, delai_avant_recolte_j: null, operateur_id: null, operateur_nom: null,
     vent: null, temperature_c: null, notes: null, updated_at: null },
   // Migration 010 (factures)
-  farm_billing: { prefixe_facture: 'F', prefixe_avoir: 'AV' },
+  farm_billing: { prefixe_facture: 'F', prefixe_avoir: 'AV', assujettie_tva: false, numero_tva: null },
+  // Migration 014 (TVA)
+  farm_vat_rates: { actif: true, ordre: 0 },
   // Migration 011 (achats)
   suppliers: { kind: 'semencier', contact_name: null, email: null, phone: null, website: null, address: null, customer_number: null,
     min_order_amount: null, free_shipping_threshold: null, lead_time_days: null, organic_certified: false, notes: null, archived_at: null },
@@ -251,11 +254,30 @@ function coutsSetFarm(t: string, row: Row): { message: string; code?: string } |
   return null
 }
 
+/** Policies 014 de farm_vat_rates : écriture par un owner de la ferme seulement. */
+function droitTauxDemo(d: any, row: Row): { message: string; code?: string } | null {
+  const me = currentUser()?.id
+  const owner = d.farm_members.some((m: Row) => m.farm_id === row.farm_id && m.user_id === me && m.role === 'owner')
+  if (!owner) return { code: '42501', message: 'new row violates row-level security policy for table "farm_vat_rates"' }
+  if (!String(row.libelle ?? '').trim()) return { code: '23514', message: 'Libellé de taux requis' }
+  if (!Number.isInteger(row.taux_pb) || row.taux_pb < 0 || row.taux_pb > 10000) return { code: '23514', message: 'Taux de TVA hors limites' }
+  if (row.actif && row.categorie !== 'autre'
+    && d.farm_vat_rates.some((r: Row) => r.id !== row.id && r.farm_id === row.farm_id && r.actif && r.categorie === row.categorie))
+    return { code: '23505', message: 'duplicate key value violates unique constraint "farm_vat_rates_categorie_uidx"' }
+  return null
+}
+
 function tableRows(table: string): Row[] {
   const d = getDb() as any
   if (table === 'plantings_full') return plantingsFull()
   if (table === 'planting_actuals') return plantingActuals()
   if (table === 'invoices_status') return invoicesStatusDemo(d)  // migration 010
+  if (table === 'farm_vat_rates' || table === 'order_counters') {
+    // Policies 014 : farm_id in my_farm_ids()
+    const me = currentUser()?.id
+    const fermes = new Set(d.farm_members.filter((m: Row) => m.user_id === me).map((m: Row) => m.farm_id))
+    return d[table].filter((r: Row) => fermes.has(r.farm_id))
+  }
   if (!d[table]) throw new Error(`Table inconnue en mode démo : ${table}`)
   if (TABLES_GESTION.has(table)) return filtreFermeGestion(d, table, currentUser()?.id)  // policies 012
   if (TABLES_JOURNAL.has(table)) {
@@ -462,6 +484,13 @@ class DemoQuery implements PromiseLike<Result> {
             if (!parent) return { data: null, error: { code: 'P0001', message: `${t === 'sale_lines' ? 'Vente' : 'Commande'} ${row.sale_id ?? row.order_id} introuvable` } }
             row.season_id = parent.season_id
             row.line_total = totalLigneDemo(row)
+            const errTva = ligneSetTvaDemo(d, row, null)  // trigger ligne_set_tva (014)
+            if (errTva) return { data: null, error: errTva }
+          }
+          if (t === 'orders') numeroCommandeDemo(d, row, Number(aujourdhuiParisISO().slice(0, 4)))  // trigger order_set_numero (014)
+          if (t === 'farm_vat_rates') {
+            const errTaux = droitTauxDemo(d, row)
+            if (errTaux) return { data: null, error: errTaux }
           }
           const errCout = coutsSetFarm(t, row)
           if (errCout) return { data: null, error: errCout }
@@ -525,7 +554,18 @@ class DemoQuery implements PromiseLike<Result> {
             Object.assign(r, copie)
             continue
           }
-          Object.assign(r, this.payload)
+          if (t === 'sale_lines' || t === 'order_lines') {
+            const copie = { ...r, ...this.payload }
+            const errTva = ligneSetTvaDemo(d, copie, r)  // trigger ligne_set_tva (014)
+            if (errTva) return { data: null, error: errTva }
+            Object.assign(r, copie)
+          } else if (t === 'farm_vat_rates') {
+            const errTaux = droitTauxDemo(d, { ...r, ...this.payload })
+            if (errTaux) return { data: null, error: errTaux }
+            Object.assign(r, this.payload, { farm_id: r.farm_id })
+          } else if (t === 'orders') {
+            Object.assign(r, this.payload, { numero: r.numero })  // numéro figé (014)
+          } else Object.assign(r, this.payload)
           coutsSetFarm(t, r)
           if (t === 'plantings') calcPlanting(r)
           if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === r.id)) r.total = Math.round(r.tiges * r.prix_unitaire * 100) / 100
@@ -542,6 +582,7 @@ class DemoQuery implements PromiseLike<Result> {
         if (refus010) return { data: null, error: refus010 }
         const refus012 = gestionAvantSuppression(d, t, rows)
         if (refus012) return { data: null, error: refus012 }
+        if (t === 'farm_vat_rates' || t === 'order_counters') return { data: null, error: { code: '42501', message: `permission denied for table ${t}` } }
         if (t === 'culture_catalog' && rows.some(r => [...d.costs, ...d.time_entries].some((x: Row) => x.culture_id === r.id))) {
           return { data: null, error: { code: '23503', message: 'Cette culture porte des dépenses ou du temps saisi (on delete restrict).' } }
         }
@@ -622,7 +663,7 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
   const q = (t: string) => new DemoQuery(t) as any
   const lignes = (sid: string, key: 'sale_id' | 'order_id', arr: Row[]) => (arr ?? []).map(l => ({
     [key]: sid, culture_id: l.culture_id ?? null, label: l.label, unit: l.unit ?? 'tige',
-    quantity: l.quantity, stems_per_unit: l.stems_per_unit ?? 1, unit_price: l.unit_price,
+    quantity: l.quantity, stems_per_unit: l.stems_per_unit ?? 1, unit_price: l.unit_price, vat_rate_id: l.vat_rate_id ?? null,
   }))
   const venteAvecLignes = async (v: Row, arr: Row[]): Promise<Result> => {
     if (!arr?.length) return { data: null, error: { message: 'Une vente doit avoir au moins une ligne' } }
@@ -659,15 +700,34 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
     }
     return { data: id, error: null }
   }
-  if (fn === 'livrer_commande') {
-    const o = (d as any).orders.find((x: Row) => x.id === args.p_order_id)
+  const livrer = async (a: Row): Promise<Result> => {
+    const o = (d as any).orders.find((x: Row) => x.id === a.p_order_id)
     if (!o) return { data: null, error: { message: 'Commande introuvable ou inaccessible' } }
-    if (o.sale_id || o.status === 'livree') return { data: null, error: { message: 'Commande déjà livrée et facturée' } }
+    if (o.sale_id || o.status === 'livree') return { data: null, error: { message: 'Commande déjà livrée' } }
     if (o.status === 'annulee') return { data: null, error: { message: 'Commande annulée' } }
-    const r = await venteAvecLignes({ ...args.p_sale, season_id: o.season_id, order_id: o.id, client_id: args.p_sale?.client_id ?? o.client_id }, args.p_lines)
+    // Migration 014 : sans lignes fournies, celles de la commande sont recopiées
+    const lignesCmd = a.p_lines?.length ? a.p_lines : (d as any).order_lines.filter((l: Row) => l.order_id === o.id)
+    const r = await venteAvecLignes({ ...(a.p_sale ?? {}), season_id: o.season_id, order_id: o.id, client_id: a.p_sale?.client_id ?? o.client_id }, lignesCmd)
     if (r.error) return r
     await q('orders').update({ sale_id: r.data, status: 'livree' }).eq('id', o.id)
     return r
+  }
+  if (fn === 'livrer_commande') return livrer(args)
+  if (fn === 'livrer_et_facturer') {
+    // Une seule transaction en base : si la facture est refusée, la livraison est défaite.
+    const o = (d as any).orders.find((x: Row) => x.id === args.p_order_id)
+    const avant = o ? { status: o.status, sale_id: o.sale_id } : null
+    const r = await livrer(args)
+    if (r.error) return r
+    const f = emettreFactureDemo(d as any, { p_sale_ids: [r.data], p_options: args.p_options ?? {} }, me.id)
+    if (f.error) {
+      const dx = d as any
+      dx.sale_lines = dx.sale_lines.filter((l: Row) => l.sale_id !== r.data)
+      dx.sales = dx.sales.filter((v: Row) => v.id !== r.data)
+      if (o && avant) Object.assign(o, avant)
+      return f
+    }
+    return { data: { sale_id: r.data, invoice_id: f.data }, error: null }
   }
   // ─── Migration 010 : factures, avoirs, paiements ─────────────────
   if (fn === 'emettre_facture') return emettreFactureDemo(d as any, args, me.id)

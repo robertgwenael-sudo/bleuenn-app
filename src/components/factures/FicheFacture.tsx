@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Ban, Banknote, FileMinus, Printer, Undo2 } from 'lucide-react'
 import { Button, Dialog, Field, Input, Select, Textarea, useConfirm, cn } from '@/components/ui'
-import { eurosEnCentimes, formatEuros, PAYMENT_MODES, type Invoice, type PaymentMode } from '@/lib/domain'
+import { eurosEnCentimes, formatEuros, formatTaux, PAYMENT_MODES, type Invoice, type PaymentMode } from '@/lib/domain'
 import {
   MODE_PAIEMENT_LIBELLE, controlerPaiement, paiementsContrepassables, type SituationFacture,
 } from '@/lib/domain/factures'
@@ -72,7 +72,7 @@ export function FicheFacture({ f, facture, s, aujourdhui, onClose, onOuvrir }: {
         </div>
 
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Chiffre label="Total" valeur={formatEuros(s.total)} />
+          <Chiffre label={facture.assujettie_tva ? 'Total TTC' : 'Total'} valeur={formatEuros(s.total)} />
           {estFacture && <Chiffre label="Payé" valeur={formatEuros(s.paye)} />}
           {estFacture && <Chiffre label={s.reste < 0 ? 'À rembourser' : 'Reste dû'} valeur={formatEuros(Math.abs(s.reste))} alerte={s.statut === 'en_retard'} />}
           {estFacture && <Chiffre label="Échéance" valeur={dateFr(facture.date_echeance)} alerte={s.statut === 'en_retard'} />}
@@ -87,11 +87,26 @@ export function FicheFacture({ f, facture, s, aujourdhui, onClose, onOuvrir }: {
               <li key={l.id} className="flex items-baseline gap-3 px-3 py-2">
                 <span className="min-w-0 flex-1 truncate">{l.label}
                   <span className="text-xs text-fg-subtle"> · {quantiteFr(l.quantity)} × {formatEuros(eurosEnCentimes(l.unit_price))}</span></span>
-                <span className="num font-semibold">{formatEuros(eurosEnCentimes(l.line_total))}</span>
+                <span className="num font-semibold">{formatEuros(eurosEnCentimes(l.line_total))}{facture.assujettie_tva ? ` HT · ${l.taux_tva_pb === null ? '' : formatTaux(l.taux_tva_pb)}` : ''}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-1.5 text-xs text-fg-subtle">{facture.mention_tva}</p>
+          {facture.assujettie_tva ? (
+            <dl className="num mt-2 space-y-0.5 text-sm" aria-label="Ventilation de la TVA">
+              <div className="flex justify-between"><dt className="text-fg-muted">Total HT</dt><dd>{formatEuros(eurosEnCentimes(facture.total_ht))}</dd></div>
+              {facture.ventilation_tva.map(v => (
+                <div key={v.taux_pb} className="flex justify-between text-xs text-fg-muted">
+                  <dt>TVA {formatTaux(v.taux_pb)} sur {formatEuros(eurosEnCentimes(v.base_ht))}</dt><dd>{formatEuros(eurosEnCentimes(v.tva))}</dd>
+                </div>
+              ))}
+              <div className="flex justify-between font-semibold"><dt>Total TTC</dt><dd>{formatEuros(eurosEnCentimes(facture.total))}</dd></div>
+            </dl>
+          ) : (
+            <p className="mt-1.5 text-xs text-fg-subtle">{facture.mention_tva}</p>
+          )}
+          {facture.commandes?.length > 0 && (
+            <p className="mt-1.5 text-xs text-fg-muted">Bon{facture.commandes.length > 1 ? 's' : ''} de commande : {facture.commandes.map(c => c.numero ?? 'sans numéro').join(', ')}</p>
+          )}
         </section>
 
         {estFacture && (

@@ -2,11 +2,11 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertTriangle, FileText, Receipt, Settings } from 'lucide-react'
-import { Badge, Button, Card, Dialog, EmptyState, Field, Input, Textarea, cn } from '@/components/ui'
-import { formatEuros, type Client } from '@/lib/domain'
+import { Badge, Button, Card, Dialog, EmptyState, Field, Input, Select, Textarea, cn } from '@/components/ui'
+import { formatEuros, formatTaux, type Client } from '@/lib/domain'
 import { totalVente } from '@/lib/domain/ventes'
 import {
-  controlerSelection, estClientProfessionnel, grouperAFacturer, reglagesManquants, type GroupeAFacturer,
+  controlerSelection, estClientProfessionnel, grouperAFacturer, lignesAFacturer, reglagesManquants, totauxFacture, type GroupeAFacturer,
 } from '@/lib/domain/factures'
 import { dejaAffichee, type Factures, type VenteAvecLignes } from '@/hooks/useFactures'
 import { KIND_LABEL, pluriel } from '@/components/commercial/commun'
@@ -118,14 +118,30 @@ function EmissionDialog({ f, groupe, ventes, client, onClose, onEmise, versRegla
   const [pro, setPro] = useState(estClientProfessionnel(client?.kind))
   const [delai, setDelai] = useState(f.billing?.delai_paiement_jours == null ? '' : String(f.billing.delai_paiement_jours))
   const [siren, setSiren] = useState('')
+  const [numeroTva, setNumeroTva] = useState('')
+  const [defaut, setDefaut] = useState('')
   const [livraison, setLivraison] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const total = ventes.reduce((s, v) => s + totalVente(v), 0)
+  const assujettie = !!f.billing?.assujettie_tva
+  // Lignes sans catégorie (ventes antérieures à la TVA) : catégorie à choisir explicitement
+  const sansCategorie = assujettie
+    ? ventes.reduce((n, v) => n + (v.lignes.length === 0 ? 1 : v.lignes.filter(l => l.taux_tva_pb === null || l.taux_tva_pb === undefined).length), 0)
+    : 0
+  const calcul = useMemo(() => {
+    try {
+      const lignes = lignesAFacturer(ventes, { assujettie, taux: f.taux, defaut: sansCategorie > 0 ? defaut || null : null })
+      return { ok: true as const, t: totauxFacture(lignes, assujettie) }
+    } catch (e) {
+      return { ok: false as const, erreur: e instanceof Error ? e.message : String(e) }
+    }
+  }, [ventes, assujettie, f.taux, defaut, sansCategorie])
+  const total = calcul.ok ? calcul.t.total_ttc : ventes.reduce((s, v) => s + totalVente(v), 0)
+  const suffixe = assujettie ? (calcul.ok ? ' TTC' : ' HT') : ''
   const manque = reglagesManquants(f.billing, { professionnel: pro })
   const sansAdresse = !client?.address?.trim()
-  const bloque = (pro && (sansAdresse || !groupe.nom)) || manque.length > 0
+  const bloque = (pro && (sansAdresse || !groupe.nom)) || manque.length > 0 || !calcul.ok
   const nDelai = delai.trim() === '' ? null : Number(delai)
   const delaiOk = nDelai === null || (Number.isInteger(nDelai) && nDelai >= 0 && nDelai <= 365)
   const erreurSel = controlerSelection(ventes, f.factureDeVente)
@@ -136,8 +152,9 @@ function EmissionDialog({ f, groupe, ventes, client, onClose, onEmise, versRegla
     try {
       const { id, numero } = await f.emettreFacture(ventes.map(v => v.id), {
         professionnel: pro, delai_jours: nDelai, client_siren: siren.replace(/\s/g, ''), adresse_livraison: livraison, notes,
+        client_numero_tva: assujettie ? numeroTva : undefined, vat_rate_id: sansCategorie > 0 ? defaut || null : null,
       })
-      toast.success(numero ? `Facture ${numero} émise` : 'Facture émise', { description: `${groupe.nom} · ${formatEuros(total)}` })
+      toast.success(numero ? `Facture ${numero} émise` : 'Facture émise', { description: `${groupe.nom} · ${formatEuros(total)}${suffixe}` })
       onEmise(id)
     } catch (e) {
       if (!dejaAffichee(e)) toast.error('Émission impossible', { description: e instanceof Error ? e.message : String(e) })
@@ -148,11 +165,11 @@ function EmissionDialog({ f, groupe, ventes, client, onClose, onEmise, versRegla
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose() }} title="Émettre la facture" size="lg"
-      description={`${groupe.nom} · ${pluriel(ventes.length, 'vente')} · ${formatEuros(total)}`}
+      description={`${groupe.nom} · ${pluriel(ventes.length, 'vente')} · ${formatEuros(total)}${suffixe}`}
       footer={<>
         <Button variant="secondary" onClick={onClose}>Annuler</Button>
         <Button onClick={emettre} loading={busy} disabled={bloque || !delaiOk || !!erreurSel}>
-          <FileText className="h-4 w-4" aria-hidden /> Émettre la facture · {formatEuros(total)}
+          <FileText className="h-4 w-4" aria-hidden /> Émettre la facture · {formatEuros(total)}{suffixe}
         </Button>
       </>}>
       <div className="space-y-4">
@@ -193,6 +210,21 @@ function EmissionDialog({ f, groupe, ventes, client, onClose, onEmise, versRegla
           <Field label="SIREN du client" hint="Facultatif (facturation électronique 2027)">
             <Input inputMode="numeric" value={siren} onChange={e => setSiren(e.target.value)} />
           </Field>
+          {assujettie && pro && (
+            <Field label="N° de TVA du client" hint="Facultatif, client professionnel">
+              <Input value={numeroTva} onChange={e => setNumeroTva(e.target.value)} autoComplete="off" />
+            </Field>
+          )}
+          {sansCategorie > 0 && (
+            <Field label="Catégorie de TVA des lignes sans catégorie" className="sm:col-span-2"
+              hint={`${pluriel(sansCategorie, 'ligne')} saisie${sansCategorie > 1 ? 's' : ''} avant la TVA : choisissez explicitement la catégorie à appliquer.`}
+              error={!defaut ? 'À choisir pour émettre' : undefined}>
+              <Select value={defaut} onChange={e => setDefaut(e.target.value)}>
+                <option value="">Choisir…</option>
+                {f.taux.filter(t => t.actif).map(t => <option key={t.id} value={t.id}>{t.libelle} · {formatTaux(t.taux_pb)}</option>)}
+              </Select>
+            </Field>
+          )}
           <Field label="Adresse de livraison" hint="Facultative, si différente" className="sm:col-span-2">
             <Textarea rows={2} value={livraison} onChange={e => setLivraison(e.target.value)} />
           </Field>
@@ -201,8 +233,18 @@ function EmissionDialog({ f, groupe, ventes, client, onClose, onEmise, versRegla
           </Field>
         </div>
 
+        {assujettie && calcul.ok && (
+          <dl className="num space-y-1 rounded-lg bg-primary-soft px-3 py-2 text-sm" aria-label="Totaux de la facture">
+            <div className="flex justify-between"><dt className="text-fg-muted">Total HT</dt><dd>{formatEuros(calcul.t.total_ht)}</dd></div>
+            {calcul.t.ventilation.map(v => (
+              <div key={v.taux_pb} className="flex justify-between text-xs text-fg-muted"><dt>TVA {formatTaux(v.taux_pb)} sur {formatEuros(v.base_ht)}</dt><dd>{formatEuros(v.tva)}</dd></div>
+            ))}
+            <div className="flex justify-between font-semibold"><dt>Total TTC</dt><dd>{formatEuros(calcul.t.total_ttc)}</dd></div>
+          </dl>
+        )}
+
         <div>
-          <p className="mb-1.5 text-xs font-medium text-fg-muted">Ventes facturées</p>
+          <p className="mb-1.5 text-xs font-medium text-fg-muted">Ventes facturées{assujettie ? ' (montants HT)' : ''}</p>
           <ul className="divide-y divide-border rounded-lg border border-border text-sm">
             {ventes.map(v => (
               <li key={v.id} className="flex items-center gap-3 px-3 py-2">

@@ -38,7 +38,8 @@ d'abord pour la saisie au champ.
      par trigger dans la même instruction (`INSERT … RETURNING` refusé) : ajouter
      une comparaison directe (`user_id = auth.uid()`, `created_by = auth.uid()`).
 5. **Écritures multi-tables atomiques** : vente ou commande avec lignes, livraison,
-   suppression de vente passent par les fonctions SQL de la migration 007.
+   suppression de vente passent par les fonctions SQL de la migration 007 ; livraison
+   avec facture par `livrer_et_facturer` (014).
 6. **Migrations testées avant application** : rejouer la migration et des
    scénarios (owner, membre, compte étranger, anonyme) dans une transaction
    terminée par `raise exception` puis `rollback`, et n'appliquer qu'ensuite.
@@ -46,13 +47,14 @@ d'abord pour la saisie au champ.
 ## Structure
 
     src/lib/domain/   logique métier pure + tests vitest (dates, montants, occupation,
-                      tâches, prévu/réel, disponibilités, ventes, duplication de plan)
+                      tâches, prévu/réel, disponibilités, ventes, TVA, calculateur de
+                      commande, duplication de plan)
     src/hooks/        useBleuenn (ferme, saison, données de base), useTaches,
                       useReel, useCommercial
     src/components/   écrans ; ui/ design system ; shell/ navigation (nav.ts)
     src/lib/demo/     faux client Supabase en mémoire (NEXT_PUBLIC_DEMO=1) ;
                       données par domaine dans seeds/
-    supabase/migrations/  001 → 012, appliquées en production
+    supabase/migrations/  001 → 012, appliquées en production ; 014 (TVA) écrite, non appliquée
 
 ## Commandes
 
@@ -81,10 +83,20 @@ rejet définitif visible. Les appels Supabase ne sont jamais mis en cache.
 - Prévu réparti dans le temps : RR étalé, RU en une semaine, MP sur la 1re moitié.
 - Statut prévu/réel : en avance ≥ 110 %, en retard < 90 %.
 - Une semaine appartient au mois de son lundi (vue Tâches).
-- Commande : livrer = facturer ; unités par défaut botte 10, bouquet 15, seau 25.
+- Commande : livrer, puis facturer dans la foulée (case cochée par défaut) ; unités par défaut botte 10, bouquet 15, seau 25.
 - Disponibilités : seules les commandes confirmées, prêtes ou livrées réservent.
-- Factures : sans TVA ; la mention d'absence de TVA est saisie d'après le comptable (jamais en dur) ;
-  numérotation F/AV par année, avoir total uniquement.
+- TVA (migration 014, à faire valider par la comptable) : la ferme est assujettie ou non
+  (`farm_billing.assujettie_tva`). Assujettie : taux par catégorie dans `farm_vat_rates`
+  (paramétrage par ferme, pré-rempli « Fleur non travaillée » 10 % et « Fleur travaillée »
+  20 %, jamais en dur dans le code), en points de base ; catégorie choisie ligne par ligne
+  (proposée : travaillée pour un mariage ou un bouquet, non travaillée sinon) ; prix saisis
+  HT partout, TTC affiché en direct ; TVA arrondie au centime sur le total HT de chaque taux ;
+  taux recopié sur la ligne de vente, figé sur la facture. Non assujettie : un seul total et
+  la mention d'absence de TVA saisie d'après le comptable. Ligne sans catégorie (vente
+  ancienne) : catégorie choisie explicitement à l'émission, jamais devinée.
+- Factures : numérotation F/AV par année, avoir total uniquement ; la facture cite les bons
+  de commande d'origine (`orders.numero`, BC2026-0001) ; « Livrer et facturer » émet la
+  facture dans la même transaction que la livraison (`livrer_et_facturer`).
 - Achats : prix au centime ; réception saisie en cumul, dépenses créées sans doublon.
 - Gestion : vente sans facture = encaissée le jour même ; dépense datée à sa date.
 - Rentabilité : frais généraux répartis au prorata surface × jours (ou CA) ; un seul

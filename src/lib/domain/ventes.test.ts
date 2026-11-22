@@ -99,7 +99,7 @@ describe('commande → vente', () => {
       season_id: 's2027', date: '2027-05-12', channel: 'Fleuriste', client_id: 'cl1', client: 'Atelier Pivoine',
       order_id: 'o1', tiges: 65, cultures_sold: 'Cosmos, Renoncule',
     })
-    expect(r.lignes).toEqual(lignes)
+    expect(r.lignes).toEqual(lignes.map(l => ({ ...l, vat_rate_id: null })))
   })
 
   it('refuse une commande annulée ou déjà vendue', () => {

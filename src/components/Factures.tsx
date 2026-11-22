@@ -42,7 +42,7 @@ export default function Factures({ ctx }: { ctx: ReturnType<typeof useBleuenn> }
 
   return (
     <div>
-      <PageHeader title="Factures & paiements" description="Factures numérotées, avoirs, encaissements — sans TVA facturée" />
+      <PageHeader title="Factures & paiements" description={f.billing?.assujettie_tva ? 'Factures numérotées avec TVA ventilée, avoirs, encaissements' : 'Factures numérotées, avoirs, encaissements, sans TVA facturée'} />
 
       {f.erreur ? (
         <Card role="alert" className="mb-6 flex items-start gap-3 border-danger/30 p-5 text-sm">
@@ -92,7 +92,7 @@ export default function Factures({ ctx }: { ctx: ReturnType<typeof useBleuenn> }
                 onEmise={id => { setOnglet('factures'); setOuverte(id) }} />
             )}
             {onglet === 'factures' && <ListeFactures lignes={lignes} onOuvrir={setOuverte} />}
-            {onglet === 'reglages' && <Reglages billing={f.billing} estOwner={!!ctx.isFarmOwner} onSave={f.saveBilling} />}
+            {onglet === 'reglages' && <Reglages billing={f.billing} estOwner={!!ctx.isFarmOwner} onSave={f.saveBilling} taux={f.taux} onSaveTaux={f.saveTaux} />}
           </div>
         </>
       )}
