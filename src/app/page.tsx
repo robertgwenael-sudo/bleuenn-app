@@ -7,6 +7,7 @@ import AuthScreen from '@/components/AuthScreen'
 import Dashboard from '@/components/Dashboard'
 import Gardens from '@/components/Gardens'
 import Semis from '@/components/Semis'
+import QuoiSemer from '@/components/QuoiSemer'
 import Calendar from '@/components/Calendar'
 import Recoltes from '@/components/Recoltes'
 import Ventes from '@/components/Ventes'
@@ -130,6 +131,7 @@ export default function Home() {
       {section === 'dashboard' && <Dashboard ctx={ctx} onNav={setSection} />}
       {section === 'jardins' && <Gardens ctx={ctx} />}
       {section === 'semis' && <Semis ctx={ctx} />}
+      {section === 'quoi-semer' && <QuoiSemer ctx={ctx} />}
       {section === 'calendrier' && <Calendar ctx={ctx} />}
       {section === 'recoltes' && <Recoltes ctx={ctx} />}
       {section === 'ventes' && <Ventes ctx={ctx} />}

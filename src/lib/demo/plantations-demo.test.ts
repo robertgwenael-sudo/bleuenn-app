@@ -51,11 +51,14 @@ describe('vivaces, anémones et plant acheté de la démo', () => {
     expect(r.date_fin).toBeNull()
   })
 
-  it('un plant acheté : planté à la date saisie, aucune graine', () => {
+  it('un plant acheté : planté à la date saisie, aucun passage en cellule', () => {
+    // 013 (cultures) et 015 (semis) ajoutent chacune un plant acheté à la démo
     const achats = pf().filter(p => p.achat_plant)
-    expect(achats).toHaveLength(1)
-    expect(achats[0].date_plantation).toBe(achats[0].date_semis)
-    expect(achats[0].jours_cellule).toBe(0)
+    expect(achats.length).toBeGreaterThanOrEqual(1)
+    for (const a of achats) {
+      expect(a.date_plantation).toBe(a.date_semis)
+      expect(a.jours_cellule).toBe(0)
+    }
   })
 
   it('le catalogue respecte les contraintes de la migration 013', () => {

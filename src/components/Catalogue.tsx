@@ -200,9 +200,11 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
           <Field label="Rendement/plant">{num(rendement, setRendement, { min: 0, step: 0.5 })}</Field>
           <Field label="Prix/tige (€)">{num(prix, setPrix, { min: 0, step: 0.05 })}</Field>
           <Field label="Temp. germ. (°C)">{num(tempGerm, setTempGerm)}</Field>
-          <Field label="Espacement (cm)">{num(espacement, setEspacement, { min: 5 })}</Field>
-          <Field label="Rangs/planche">{num(rangs, setRangs, { min: 1 })}</Field>
-          <Field label="Graines/plant">{num(graines, setGraines, { min: 1 })}</Field>
+          {/* 015 : sens du tableur de Marine, « MARINE espacement sur les plants (cm) » ;
+              2,54 (1 pouce) et 22,86 (9 pouces) doivent passer, d'où le pas au centième. */}
+          <Field label="Espacement sur le rang (cm)">{num(espacement, setEspacement, { min: 0.5, step: 0.01 })}</Field>
+          <Field label="Rangs/planche (20 × 1 m)">{num(rangs, setRangs, { min: 1 })}</Field>
+          <Field label="Graines par motte">{num(graines, setGraines, { min: 1 })}</Field>
         </div>
       </fieldset>
 

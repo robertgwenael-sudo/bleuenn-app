@@ -10,6 +10,9 @@ import {
 } from '@/lib/domain'
 import { AvertissementSaisie, calculables, periodeSure } from './Occupation'
 import { CycleBadge } from './Cycle'
+// 015 : capacité des tables de semis, alerte non bloquante
+import { useControlePepiniere } from '@/hooks/useControlePepiniere'
+import { AlertePepiniere } from '@/components/semis/AlertePepiniere'
 
 // ─── Vérification d'occupation (toutes saisons, par dates) ──────────
 // Le calcul vient du domaine (`conflitsSiAjout`, `libreAPartirDu`) et porte
@@ -188,6 +191,8 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
   const [achatPlant, setAchatPlant] = useState(!!planting.achat_plant)
   const [dateArrachage, setDateArrachage] = useState(planting.arrachee_le ?? (today >= planting.date_semis ? today : planting.date_semis))
   const [loading, setLoading] = useState(false)
+  const pepiniere = useControlePepiniere(ctx)
+  const controlePep = pepiniere.controler({ id: planting.id, culture_id: planting.culture_id, date_semis: dateSemis, surface_m2: surfaceM2, achat_plant: achatPlant, base: planting })
 
   // Jours en cellule du catalogue : la vue renvoie 0 pour un plant acheté
   const cat: CultureCatalog | undefined = (ctx.catalog || []).find((c: CultureCatalog) => c.id === planting.culture_id)
@@ -211,6 +216,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
     const ok = await ctx.updatePlanting(planting.id, { date_semis: dateSemis, surface_m2: surfaceM2, notes: notes || null, achat_plant: achatPlant })
     setLoading(false)
     if (ok === false) return
+    pepiniere.avertir(controlePep, planting.culture_name)
     toast.success(`${planting.culture_name} mis à jour`, {
       description: v.conflits.length ? 'Attention : la planche est en conflit de surface sur cette période.' : `${achatPlant ? 'Plantation' : 'Semis'} le ${formatJourMois(dateSemis, anneeRef)}`,
     })
@@ -272,6 +278,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
 
       <AvertissementSaisie projetId={planting.id} conflits={v.conflits} plancheM2={v.plancheM2} surface={surfaceM2} libre={v.libre}
         semisSuggere={v.semisSuggere} dateSemis={dateSemis} onUseDate={setDateSemis} today={today} />
+      <AlertePepiniere controle={controlePep} culture={planting.culture_name} />
 
       {v.dates && <DatesPreview title="Dates recalculées" vivace={vivace} delaiNonConfirme={delaiAConfirmer(planting)} plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={fmtDate(v.dates.recolte, anneeRef)} fin={fmtDate(v.dates.fin, anneeRef)} />}
 
@@ -323,6 +330,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
   const [lignes, setLignes] = useState<Ligne[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const pepiniere = useControlePepiniere(ctx)
 
   const today: string = ctx.today
   const catalog: CultureCatalog[] = ctx.catalog || []
@@ -358,6 +366,8 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
   const enConflit = lignes.some(l => (verifs.get(l.cultureId)?.conflits.length ?? 0) > 0)
   const enPlace = planche.voisines.filter(p => { const per = periodeSure(p); return per ? per.fin >= today : false })
   const premiere = lignes[0] ? verifs.get(lignes[0].cultureId) : undefined
+  // 015 : chaque culture cochée est contrôlée face à la capacité des tables (alerte seule)
+  const controlesPep = new Map(lignes.map(l => [l.cultureId, pepiniere.controler({ culture_id: l.cultureId, date_semis: l.dateSemis, surface_m2: l.surface, achat_plant: l.achatPlant })]))
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -368,6 +378,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
     })))
     setLoading(false)
     if (!n) return
+    for (const l of lignes) pepiniere.avertir(controlesPep.get(l.cultureId) ?? null, parId.get(l.cultureId)?.name ?? '')
     const noms = lignes.map(l => parId.get(l.cultureId)?.name).filter(Boolean)
     toast.success(n > 1 ? `${n} cultures plantées` : `${noms[0]} planté`, {
       description: `${planche.plancheName}${n > 1 ? ` : ${noms.join(', ')}` : ''}${enConflit ? ', en conflit de surface sur la période' : ''}`,
@@ -440,6 +451,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
                 {v.dates && <DatesPreview compact title="" vivace={vivace} delaiNonConfirme={delaiAConfirmer(c)} plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={fmtDate(v.dates.recolte, anneeRef)} fin={fmtDate(v.dates.fin, anneeRef)} />}
                 <AvertissementSaisie projetId={projetId(l.cultureId)} conflits={v.conflits} plancheM2={v.plancheM2} surface={l.surface} libre={v.libre}
                   semisSuggere={v.semisSuggere} dateSemis={l.dateSemis} onUseDate={d => maj(l.cultureId, { dateSemis: d })} today={today} />
+                <AlertePepiniere controle={controlesPep.get(l.cultureId) ?? null} culture={c.name} />
               </li>
             )
           })}
