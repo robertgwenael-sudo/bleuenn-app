@@ -127,7 +127,7 @@ function EmissionDialog({ f, groupe, ventes, client, onClose, onEmise, versRegla
   const assujettie = !!f.billing?.assujettie_tva
   // Lignes sans catégorie (ventes antérieures à la TVA) : catégorie à choisir explicitement
   const sansCategorie = assujettie
-    ? ventes.reduce((n, v) => n + (v.lignes.length === 0 ? 1 : v.lignes.filter(l => l.taux_tva_pb === null || l.taux_tva_pb === undefined).length), 0)
+    ? ventes.reduce((n, v) => n + (v.lignes.length === 0 ? (v.assujettie_tva && v.taux_tva_pb != null ? 0 : 1) : v.lignes.filter(l => l.taux_tva_pb === null || l.taux_tva_pb === undefined).length), 0)
     : 0
   const calcul = useMemo(() => {
     try {

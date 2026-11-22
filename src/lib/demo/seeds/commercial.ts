@@ -1,5 +1,6 @@
 import { type DemoDb, DEMO_USER_ID, SEASON_2026 } from '../data'
 import { centimesEnEuros, diviserArrondi, montantLigne, totauxLignes } from '../../domain'
+import { venteSetTotauxDemo } from './tva'
 
 type Row = Record<string, any>
 
@@ -21,6 +22,7 @@ export function recalculerVenteDemo(db: Row, saleId: string): void {
   // round(total / tiges, 4), comme en base (affichage seulement)
   vente.prix_unitaire = t.tiges > 0 ? Number(diviserArrondi(BigInt(t.total_centimes) * BigInt(100), BigInt(t.tiges))) / 10000 : 0
   vente.cultures_sold = t.libelles
+  venteSetTotauxDemo(db, vente, false)  // 014 : HT, TVA, TTC
 }
 
 // ─── Données ───────────────────────────────────────────────────────

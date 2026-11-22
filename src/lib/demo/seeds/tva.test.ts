@@ -29,4 +29,19 @@ describe('démo TVA', () => {
     const corrigee = db.invoices.find((f: any) => f.id === avoir.avoir_de)
     expect(eurosEnCentimes(avoir.total_tva)).toBe(-eurosEnCentimes(corrigee.total_tva))
   })
+  it('ventes : HT, TVA et TTC tenus comme par sales_set_total', () => {
+    for (const v of db.sales) {
+      expect(eurosEnCentimes(v.total_ht)).toBe(eurosEnCentimes(v.total))
+      if (!v.assujettie_tva) expect(eurosEnCentimes(v.total_ttc)).toBe(eurosEnCentimes(v.total))
+      else expect(eurosEnCentimes(v.total_ttc)).toBe(eurosEnCentimes(v.total) + eurosEnCentimes(v.total_tva))
+    }
+    const mariage = db.sales.find((v: any) => v.client === 'Mariage Le Bris')
+    expect(mariage.assujettie_tva).toBe(true)
+    expect(eurosEnCentimes(mariage.total_tva)).toBeGreaterThan(0)
+    // Remises d'espèces de marché : rapprochées pour l'encaissé TTC
+    for (const m of db.bank_matches.filter((x: any) => x.kind === 'vente')) {
+      const v = db.sales.find((s: any) => s.id === m.sale_id)
+      expect(eurosEnCentimes(m.amount)).toBeLessThanOrEqual(eurosEnCentimes(v.total_ttc))
+    }
+  })
 })

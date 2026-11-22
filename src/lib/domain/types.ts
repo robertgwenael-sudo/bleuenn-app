@@ -158,6 +158,15 @@ export interface Sale extends Omit<SaleBase, 'total' | 'prix_unitaire' | 'cultur
   client_id: string | null
   order_id: string | null
   notes?: string | null
+  /** Migration 014 : régime figé à la création de la vente. */
+  assujettie_tva?: boolean
+  /** Migration 014 : catégorie par défaut d'une vente sans lignes (ferme assujettie). */
+  vat_rate_id?: string | null
+  taux_tva_pb?: number | null
+  /** Migration 014 : `total` reste le HT ; total_ttc = encaissé (null = TVA non calculable). */
+  total_ht?: EurosNumeric
+  total_tva?: EurosNumeric | null
+  total_ttc?: EurosNumeric | null
 }
 
 // ------------------------------------------------------------

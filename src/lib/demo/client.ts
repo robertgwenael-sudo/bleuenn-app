@@ -18,7 +18,7 @@ import { recalculerVenteDemo, totalLigneDemo } from './seeds/commercial'
 import { OBJETS_JOURNAL_DEMO } from './seeds/journal'
 import { emettreAvoirDemo, emettreFactureDemo, enregistrerPaiementDemo, invoicesStatusDemo, refusFacturesDemo } from './seeds/factures'
 import { rpcAchatsDemo, refusSuppressionAchats } from './seeds/achats'
-import { ligneSetTvaDemo, numeroCommandeDemo } from './seeds/tva'
+import { ligneSetTvaDemo, numeroCommandeDemo, venteSetTotauxDemo } from './seeds/tva'
 import { aujourdhuiParisISO } from '../types'
 import {
   DEFAULTS_GESTION, OBJETS_JUSTIFICATIFS_DEMO, TABLES_GESTION, filtreFermeGestion, gestionApresSuppression, gestionAvantEcriture,
@@ -477,6 +477,7 @@ class DemoQuery implements PromiseLike<Result> {
           const row: Row = { id: uuid(), created_at: new Date().toISOString(), ...DEFAULTS[t], ...v }
           if (t === 'plantings') calcPlanting(row)
           if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === row.id)) row.total = Math.round(row.tiges * row.prix_unitaire * 100) / 100
+          if (t === 'sales') venteSetTotauxDemo(d, row, true)  // trigger sales_set_total (014)
           // Migration 005 : season_id recopié du parent, line_total généré
           if (t === 'sale_lines' || t === 'order_lines') {
             if ('line_total' in v) return { data: null, error: { code: '428C9', message: 'cannot insert a non-DEFAULT value into column "line_total" (colonne générée)' } }
@@ -565,10 +566,14 @@ class DemoQuery implements PromiseLike<Result> {
             Object.assign(r, this.payload, { farm_id: r.farm_id })
           } else if (t === 'orders') {
             Object.assign(r, this.payload, { numero: r.numero })  // numéro figé (014)
+          } else if (t === 'sales') {
+            // Régime et catégorie par défaut figés à la création (014)
+            Object.assign(r, this.payload, { assujettie_tva: r.assujettie_tva, vat_rate_id: r.vat_rate_id, taux_tva_pb: r.taux_tva_pb })
           } else Object.assign(r, this.payload)
           coutsSetFarm(t, r)
           if (t === 'plantings') calcPlanting(r)
           if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === r.id)) r.total = Math.round(r.tiges * r.prix_unitaire * 100) / 100
+          if (t === 'sales') venteSetTotauxDemo(d, r, false)  // totaux posés par trigger (014)
           if (t === 'sale_lines' || t === 'order_lines') r.line_total = totalLigneDemo(r)
           if (t === 'sale_lines') recalculerVenteDemo(d, r.sale_id)
           if (t === 'culture_catalog') d.plantings.filter((p: Row) => p.culture_id === r.id).forEach(calcPlanting)

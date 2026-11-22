@@ -27,7 +27,7 @@ export function FacturerDialog({ vente, com, onClose, onEmise }: {
   useEffect(() => { if (vente) { setPro(estClientProfessionnel(client?.kind)); setDefaut('') } }, [vente, client?.kind])
 
   const lignes = useMemo(() => vente?.lignes ?? [], [vente])
-  const sansTaux = com.assujettie ? (lignes.length === 0 ? 1 : lignes.filter(l => l.taux_tva_pb === null || l.taux_tva_pb === undefined).length) : 0
+  const sansTaux = com.assujettie ? (lignes.length === 0 ? (vente?.assujettie_tva && vente.taux_tva_pb != null ? 0 : 1) : lignes.filter(l => l.taux_tva_pb === null || l.taux_tva_pb === undefined).length) : 0
   const tauxDefaut = com.taux.find(t => t.id === defaut)
   const parId = new Map(com.taux.map(t => [t.id, t]))
   const calc = essayerVentiler(lignes.map(l => {

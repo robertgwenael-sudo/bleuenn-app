@@ -4,6 +4,7 @@ import {
   depensesSansJustificatif, detecterSeparateur, empreinte, exportDepenses, extraireDateOcr, extraireFournisseurOcr,
   extraireMontantOcr, lireCsv, lireDateReleve, lireMontantReleve, mappageCompatible, moisGlissants, montantsDansLigne,
   nomFichierJustificatif, normaliserLibelle, piecesRapprochees, propositions, proposerMappage, recettesEncaissees,
+  caEtTvaParMois, ventesEncaisseNonCalculable,
   resteARapprocher, scoreRapprochement, soldeCompte, statutJustificatif, tresorerieParMois, ventesSansFacture,
   type Cible,
 } from './gestion'
@@ -228,6 +229,21 @@ describe('trésorerie et soldes', () => {
     const t = tresorerieParMois(r, [{ date: '2026-10-05', montant: 4290 }, { date: '2024-01-01', montant: 999 }], moisGlissants('2026-11-22'))
     expect(t.find(l => l.mois === '2026-10')).toEqual({ mois: '2026-10', encaisse: 8550, depense: 4290, resultat: 4260 })
     expect(t.find(l => l.mois === '2026-11')).toEqual({ mois: '2026-11', encaisse: 125000, depense: 0, resultat: 125000 })
+  })
+
+  it('vente sans facture : encaissé = TTC (014) ; TVA non calculable signalée, jamais 0 €', () => {
+    const ventes = [
+      { id: 'a', date: '2026-10-03', total: '65.00', total_tva: '11.50', total_ttc: '76.50', channel: 'Marché', client: null },
+      { id: 'b', date: '2026-10-04', total: 10, total_tva: null, total_ttc: null, channel: 'Marché', client: null },
+      { id: 'c', date: '2026-10-05', total: 20, total_tva: 0, total_ttc: 20, channel: 'Marché', client: null },
+    ]
+    const r = recettesEncaissees({ paiements: [], ventes, horsFacture: [] })
+    expect(r.map(x => [x.id, x.montant])).toEqual([['a', 7650], ['c', 2000]])
+    expect(ventesEncaisseNonCalculable(ventes).map(v => v.id)).toEqual(['b'])
+    const ca = caEtTvaParMois(ventes, ['2026-10', '2026-11'])
+    expect(ca.lignes[0]).toEqual({ mois: '2026-10', ht: 9500, tva: 1150 })
+    expect(ca.total).toEqual({ ht: 9500, tva: 1150 })
+    expect(ca.tvaNonCalculables).toBe(1)
   })
 
   it('solde : non calculable sans solde initial, jamais 0 €', () => {

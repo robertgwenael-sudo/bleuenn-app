@@ -235,6 +235,7 @@ export function paiementsContrepassables<P extends Pick<Payment, 'id' | 'amount'
 // Ventes à facturer
 // ------------------------------------------------------------
 export type VenteFacturable = Pick<Sale, 'id' | 'date' | 'total' | 'tiges' | 'prix_unitaire' | 'cultures_sold' | 'client_id' | 'client'>
+  & Partial<Pick<Sale, 'assujettie_tva' | 'vat_rate_id' | 'taux_tva_pb'>>
   & { season_id?: string; created_at?: string; lignes?: (Pick<SaleLine, 'id' | 'label' | 'unit' | 'quantity' | 'stems_per_unit' | 'unit_price' | 'culture_id' | 'line_total' | 'created_at'> & Pick<SaleLine, 'vat_rate_id' | 'taux_tva_pb'>)[] }
 
 /** Ventes couvertes par une facture non annulée (lien non libéré). */
@@ -371,7 +372,8 @@ export function lignesAFacturer(ventes: VenteFacturable[], tva?: {
         unit: ok ? 'tige' : 'autre', quantity: ok ? v.tiges : 1, stems_per_unit: 1,
         unit_price: ok ? eurosEnCentimes(v.prix_unitaire) : eurosEnCentimes(v.total),
         line_total: eurosEnCentimes(v.total),
-        ...figer(null, null),
+        // Vente sans lignes : catégorie par défaut figée à sa création (ferme assujettie, 014)
+        ...figer(v.assujettie_tva ? v.vat_rate_id : null, v.assujettie_tva ? v.taux_tva_pb : null),
         k: [v.date, cv, v.id, cv, libelle, ''],
       })
     }

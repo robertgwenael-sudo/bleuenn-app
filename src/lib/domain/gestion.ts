@@ -13,6 +13,7 @@ import { ajouterJours, ajouterMois, cleMois, dateCivile, ecartJours, estDateVali
 import { calculee, LIBELLES_CATEGORIES, montantCout, nonCalculable, type Grandeur } from './couts'
 import type { Colonne, Tableau } from './exports'
 import { enCentiemes, eurosEnCentimes, verifierCentimes } from './montants'
+import { encaisseVente } from './calculateur'
 import type {
   BankAccount, BankMatch, BankMatchKind, Centimes, Cost, CostCategory, DateISO, EurosNumeric, HorsFactureCategorie,
   InvoiceStatusRow, Payment, PaymentMode, Receipt, ReceiptPage,
@@ -463,14 +464,32 @@ export function ventesSansFacture<V extends { id: string }>(ventes: V[], facture
   return ventes.filter(v => !facturees.has(v.id))
 }
 
+/** Vente telle que la gestion la lit : `total` HT, `total_ttc` encaissé (014). */
+export interface VenteGestion {
+  id: string; date: DateISO; channel: string; client: string | null
+  /** HT (colonne historique). */
+  total: EurosNumeric
+  /** Encaissé TTC ; null = TVA non calculable ; absent = base antérieure à 014 (pas de TVA). */
+  total_ttc?: EurosNumeric | null
+  total_tva?: EurosNumeric | null
+}
+
+/** Ventes dont l'encaissé n'est pas calculable (TVA inconnue) : à signaler, jamais comptées pour 0 €. */
+export function ventesEncaisseNonCalculable<V extends Pick<VenteGestion, 'total' | 'total_ttc'>>(ventes: V[]): V[] {
+  return ventes.filter(v => encaisseVente(v) === null)
+}
+
 /**
  * Recettes encaissées : paiements de factures (à leur date ; contre-
  * passations et remboursements en négatif), ventes sans facture (date de
- * la vente) et opérations hors facture de type recette (date du mouvement).
+ * la vente, pour leur montant TTC : c'est ce que le client a payé) et
+ * opérations hors facture de type recette (date du mouvement). Une vente
+ * dont la TVA n'est pas calculable est écartée ici et signalée à part
+ * (`ventesEncaisseNonCalculable`).
  */
 export function recettesEncaissees(args: {
   paiements: (Pick<Payment, 'id' | 'date' | 'amount' | 'mode' | 'reference'> & { numero?: string | null; client?: string | null })[]
-  ventes: { id: string; date: DateISO; total: EurosNumeric; channel: string; client: string | null }[]
+  ventes: VenteGestion[]
   horsFacture: { id: string; date: DateISO; amount: EurosNumeric; categorie: HorsFactureCategorie | null; libelle: string | null; label: string }[]
 }): Recette[] {
   const out: Recette[] = []
@@ -479,8 +498,8 @@ export function recettesEncaissees(args: {
       piece: p.numero ?? null, libelle: [p.client, p.reference].filter(Boolean).join(' · ') || 'Paiement' })
   }
   for (const v of args.ventes) {
-    const m = eurosEnCentimes(v.total)
-    if (m === 0) continue
+    const m = encaisseVente(v)
+    if (m === null || m === 0) continue
     out.push({ source: 'vente', id: v.id, date: v.date, montant: m, mode: null, piece: null,
       libelle: [v.channel, v.client].filter(Boolean).join(' · ') })
   }
@@ -490,6 +509,31 @@ export function recettesEncaissees(args: {
       libelle: `${LIBELLES_HORS_FACTURE[h.categorie]} · ${h.libelle || h.label}` })
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+}
+
+export interface LigneCaTva { mois: string; ht: Centimes; tva: Centimes }
+
+/**
+ * Chiffre d'affaires HT et TVA collectée par mois de vente (toutes les
+ * ventes, facturées ou non). Le CA reste présenté HT ; la TVA est à part
+ * pour la comptable. Une vente à TVA non calculable compte dans le HT et
+ * dans `tvaNonCalculables`, pas dans la TVA (jamais 0 € silencieux).
+ */
+export function caEtTvaParMois(ventes: Pick<VenteGestion, 'date' | 'total' | 'total_tva'>[], mois: string[]): {
+  lignes: LigneCaTva[]; total: { ht: Centimes; tva: Centimes }; tvaNonCalculables: number
+} {
+  const idx = new Map(mois.map((m, i) => [m, i]))
+  const lignes = mois.map(m => ({ mois: m, ht: 0, tva: 0 }))
+  let tvaNonCalculables = 0
+  for (const v of ventes) {
+    const i = idx.get(cleMois(v.date))
+    if (i === undefined) continue
+    lignes[i].ht += eurosEnCentimes(v.total)
+    if (v.total_tva === null) tvaNonCalculables++
+    else if (v.total_tva !== undefined) lignes[i].tva += eurosEnCentimes(v.total_tva)
+  }
+  const total = lignes.reduce((t, l) => ({ ht: t.ht + l.ht, tva: t.tva + l.tva }), { ht: 0, tva: 0 })
+  return { lignes, total, tvaNonCalculables }
 }
 
 export interface LigneTresorerie { mois: string; encaisse: Centimes; depense: Centimes; resultat: Centimes }

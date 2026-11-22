@@ -98,6 +98,8 @@ rejet définitif visible. Les appels Supabase ne sont jamais mis en cache.
   de commande d'origine (`orders.numero`, BC2026-0001) ; « Livrer et facturer » émet la
   facture dans la même transaction que la livraison (`livrer_et_facturer`).
 - Achats : prix au centime ; réception saisie en cumul, dépenses créées sans doublon.
-- Gestion : vente sans facture = encaissée le jour même ; dépense datée à sa date.
+- Gestion : vente sans facture = encaissée le jour même pour son TTC (`sales.total_ttc`, aussi
+  utilisé par le rapprochement bancaire) ; CA présenté HT, TVA collectée à part ; dépense
+  datée à sa date. `sales.total` reste le HT ; `total_tva` / `total_ttc` à NULL = non calculable.
 - Rentabilité : frais généraux répartis au prorata surface × jours (ou CA) ; un seul
   taux horaire, vide = temps « non calculable » ; €/heure sur la marge hors temps.

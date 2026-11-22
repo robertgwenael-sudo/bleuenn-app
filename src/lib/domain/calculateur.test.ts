@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { proposerQuantites, totauxSaisie } from './calculateur'
+import { encaisseVente, proposerQuantites, totauxSaisie, totauxVente } from './calculateur'
 
 const DIX = 1000
 const VINGT = 2000
@@ -70,5 +70,25 @@ describe('budget → quantités', () => {
     expect(() => proposerQuantites({ budget: 100, base: 'ht', assujettie: false, articles: [] })).toThrow()
     expect(() => proposerQuantites({ budget: 100, base: 'ht', assujettie: false, articles: [{ cle: 'a', prix_ht: 0, taux_pb: null, poids: 1 }] })).toThrow(/Prix manquant/)
     expect(() => proposerQuantites({ budget: 100, base: 'ttc', assujettie: true, articles: [{ cle: 'a', prix_ht: 10, taux_pb: null, poids: 1 }] })).toThrow(/TVA/)
+  })
+})
+
+describe('totaux d’une vente (miroir de sales_set_total)', () => {
+  it('lignes : TVA par taux ; hors assujettissement : TVA 0', () => {
+    const lignes = [
+      { label: 'Dahlia', quantity: 10, stems_per_unit: 1, unit_price: 1.5, taux_tva_pb: DIX },
+      { label: 'Bouquet', quantity: 2, stems_per_unit: 15, unit_price: 25, taux_tva_pb: VINGT },
+    ]
+    expect(totauxVente({ assujettie_tva: true, tiges: 0, prix_unitaire: 0 }, lignes)).toEqual({ total_ht: 6500, total_tva: 1150, total_ttc: 7650 })
+    expect(totauxVente({ assujettie_tva: false, tiges: 0, prix_unitaire: 0 }, lignes)).toEqual({ total_ht: 6500, total_tva: 0, total_ttc: 6500 })
+  })
+  it('sans lignes : catégorie par défaut de la vente, sinon non calculable', () => {
+    expect(totauxVente({ assujettie_tva: true, taux_tva_pb: DIX, tiges: 10, prix_unitaire: 1 }, [])).toEqual({ total_ht: 1000, total_tva: 100, total_ttc: 1100 })
+    expect(totauxVente({ assujettie_tva: true, taux_tva_pb: null, tiges: 10, prix_unitaire: 1 }, [])).toEqual({ total_ht: 1000, total_tva: null, total_ttc: null })
+  })
+  it('encaissé : TTC, null si non calculable, total avant 014', () => {
+    expect(encaisseVente({ total: 10, total_ttc: '11.00' })).toBe(1100)
+    expect(encaisseVente({ total: 10, total_ttc: null })).toBeNull()
+    expect(encaisseVente({ total: 10 })).toBe(1000)
   })
 })

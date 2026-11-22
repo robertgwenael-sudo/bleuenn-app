@@ -12,6 +12,7 @@
 
 import { repartirEntier, verifierCentimes } from './montants'
 import { ventilerTva, essayerVentiler, tvaSurBase, type TotauxTva } from './tva'
+import { eurosEnCentimes, produitCentimes } from './montants'
 import { montantLigne, totauxLignes, type LigneCalcul, type TotauxLignes } from './ventes'
 import type { Centimes, PointsDeBase } from './types'
 
@@ -31,6 +32,41 @@ export function totauxSaisie(lignes: LigneCalculTva[], assujettie: boolean): Tot
   const base = totauxLignes(lignes)
   const r = essayerVentiler(lignes.map(l => ({ montant_ht: montantLigne(l), taux_pb: l.taux_pb ?? null, libelle: l.libelle_tva ?? null })), assujettie)
   return { ...base, tva: r.ok ? r.t : null, erreurTva: r.ok ? null : r.erreur }
+}
+
+// ------------------------------------------------------------
+// Totaux d'une vente enregistrée (miroir du trigger sales_set_total, 014)
+// ------------------------------------------------------------
+export interface TotauxVente {
+  total_ht: Centimes
+  /** null : TVA non calculable (ligne sans catégorie, ferme assujettie). */
+  total_tva: Centimes | null
+  /** Encaissé ; null si la TVA n'est pas calculable. */
+  total_ttc: Centimes | null
+}
+
+/**
+ * HT, TVA et TTC d'une vente : TVA par taux sur le total HT de chaque taux.
+ * Vente faite hors assujettissement : TVA 0. Vente sans lignes : catégorie
+ * par défaut figée sur la vente, sinon non calculable.
+ */
+export function totauxVente(
+  v: { assujettie_tva?: boolean | null; taux_tva_pb?: PointsDeBase | null; tiges: number; prix_unitaire: number | string; total?: number | string },
+  lignes: (LigneCalcul & { taux_tva_pb?: PointsDeBase | null })[],
+): TotauxVente {
+  const assujettie = !!v.assujettie_tva
+  const elements = lignes.length > 0
+    ? lignes.map(l => ({ montant_ht: montantLigne(l), taux_pb: l.taux_tva_pb ?? null }))
+    : [{ montant_ht: produitCentimes(v.tiges, v.prix_unitaire), taux_pb: v.taux_tva_pb ?? null }]
+  const r = essayerVentiler(elements, assujettie)
+  const ht = elements.reduce((s, e) => s + e.montant_ht, 0)
+  return r.ok ? { total_ht: ht, total_tva: r.t.total_tva, total_ttc: r.t.total_ttc } : { total_ht: ht, total_tva: null, total_ttc: null }
+}
+
+/** Encaissé d'une vente lue en base (total_ttc), null si non calculable. Repli sur `total` avant 014. */
+export function encaisseVente(v: { total: number | string; total_ttc?: number | string | null }): Centimes | null {
+  if (v.total_ttc === undefined) return eurosEnCentimes(v.total)
+  return v.total_ttc === null ? null : eurosEnCentimes(v.total_ttc)
 }
 
 // ------------------------------------------------------------

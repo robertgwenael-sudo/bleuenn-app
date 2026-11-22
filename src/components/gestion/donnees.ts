@@ -2,11 +2,11 @@
 // Grandeurs dérivées des données de gestion, calculées par le domaine
 // (src/lib/domain/gestion.ts), partagées par les onglets de l'écran.
 import { useMemo } from 'react'
-import { eurosEnCentimes, type BankAccount, type BankMatch, type BankTransaction, type DateISO } from '@/lib/domain'
+import { encaisseVente, eurosEnCentimes, type BankAccount, type BankMatch, type BankTransaction, type DateISO } from '@/lib/domain'
 import { depensesParCategorie } from '@/lib/domain/couts'
 import { ventesFacturees } from '@/lib/domain/factures'
 import {
-  aEncaisser, actif, depensesSansJustificatif, fluxDepenses, moisGlissants, piecesRapprochees, recettesEncaissees,
+  aEncaisser, actif, caEtTvaParMois, depensesSansJustificatif, ventesEncaisseNonCalculable, fluxDepenses, moisGlissants, piecesRapprochees, recettesEncaissees,
   resteARapprocher, soldeCompte, totalTresorerie, tresorerieParMois, type Cible, type Rapprochement, type Recette,
 } from '@/lib/domain/gestion'
 import type { useGestion } from '@/hooks/useGestion'
@@ -25,7 +25,8 @@ export function useDonneesGestion(g: G, aujourdhui: DateISO) {
 
     const recettes: Recette[] = recettesEncaissees({
       paiements: g.payments.map(p => ({ ...p, numero: facturesParId.get(p.invoice_id)?.numero ?? null, client: facturesParId.get(p.invoice_id)?.client_nom ?? null })),
-      ventes: ventesSF.map(v => ({ id: v.id, date: v.date, total: v.total, channel: v.channel, client: v.client })),
+      // Encaissé d'une vente sans facture : son TTC (014)
+      ventes: ventesSF.map(v => ({ id: v.id, date: v.date, total: v.total, total_ttc: v.total_ttc, total_tva: v.total_tva, channel: v.channel, client: v.client })),
       horsFacture: g.liensActifs.filter(l => l.kind === 'hors_facture').map(l => {
         const t = mouvementsParId.get(l.transaction_id)
         return { id: l.id, date: t?.date ?? l.created_at.slice(0, 10), amount: l.amount, categorie: l.categorie, libelle: l.libelle, label: t?.label ?? '' }
@@ -38,6 +39,9 @@ export function useDonneesGestion(g: G, aujourdhui: DateISO) {
     const tresorerie = tresorerieParMois(recettes, fluxDepenses(g.costs), mois)
     const total = totalTresorerie(tresorerie)
     const categories = depensesParCategorie(coutsFenetre)
+    // CA présenté HT, TVA collectée à part (toutes les ventes, par mois de vente)
+    const caTva = caEtTvaParMois(g.sales, mois)
+    const encaisseInconnu = ventesEncaisseNonCalculable(ventesSF)
 
     const mouvements: MouvementVu[] = g.mouvements.map(t => {
       const liens = g.liensParMouvement.get(t.id) ?? []
@@ -55,7 +59,11 @@ export function useDonneesGestion(g: G, aujourdhui: DateISO) {
         const f = facturesParId.get(p.invoice_id)
         return { type: 'paiement' as const, id: p.id, date: p.date, montant: eurosEnCentimes(p.amount), libelle: [f?.numero, f?.client_nom, p.reference].filter(Boolean).join(' ') }
       }),
-      ...ventesSF.map(v => ({ type: 'vente' as const, id: v.id, date: v.date, montant: eurosEnCentimes(v.total), libelle: [v.channel, v.client].filter(Boolean).join(' ') })),
+      // Une vente se rapproche de son encaissé TTC ; TVA non calculable : pas proposée
+      ...ventesSF.flatMap(v => {
+        const m = encaisseVente(v)
+        return m === null ? [] : [{ type: 'vente' as const, id: v.id, date: v.date, montant: m, libelle: [v.channel, v.client].filter(Boolean).join(' ') }]
+      }),
     ]
 
     /** Rapprochement actif d'une pièce : date du mouvement et compte. */
@@ -66,7 +74,7 @@ export function useDonneesGestion(g: G, aujourdhui: DateISO) {
     }
 
     return {
-      comptesParId, facturesParId, mouvementsParId, recettes, mois, tresorerie, total, categories,
+      comptesParId, facturesParId, mouvementsParId, recettes, mois, tresorerie, total, categories, caTva, encaisseInconnu,
       mouvements, nonRapproches, soldes, prises, cibles, rapprochementDe,
       aEncaisser: aEncaisser(g.factures),
       manquants: depensesSansJustificatif(g.costs, g.receipts),

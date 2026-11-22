@@ -45,8 +45,10 @@
 --    `total` reste le montant dû (TTC si assujettie), si bien que paiements,
 --    statut et gestion ne changent pas. invoice_lines : vat_rate_id,
 --    taux_tva_pb et libelle_tva figés. Un avoir reprend tout en négatif ;
---  * lignes de vente sans catégorie (ventes antérieures à 014, vente sans
---    lignes) : emettre_facture les refuse pour une ferme assujettie, sauf si
+--  * sales.total reste le HT ; total_ht / total_tva / total_ttc tenus par
+--    trigger (section C bis). La gestion et le rapprochement bancaire (012)
+--    lisent l'encaissé, total_ttc ;
+--  * lignes de vente sans catégorie (ventes antérieures à 014) : emettre_facture les refuse pour une ferme assujettie, sauf si
 --    l'appelant choisit explicitement la catégorie à leur appliquer
 --    (p_options.vat_rate_id). On ne devine pas ;
 --  * bons de commande : orders.numero (« BC2026-0007 »), attribué par trigger
@@ -163,6 +165,185 @@ create trigger trg_sale_line_tva before insert or update on public.sale_lines
   for each row execute function public.ligne_set_tva();
 create trigger trg_order_line_tva before insert or update on public.order_lines
   for each row execute function public.ligne_set_tva();
+
+-- ------------------------------------------------------------
+-- C bis. Ventes : HT, TVA et TTC tenus par trigger
+-- ------------------------------------------------------------
+-- `sales.total` RESTE LE HT (somme des lignes) : tous les écrans de CA,
+-- de rentabilité, d'export et emettre_facture le lisent comme tel. Le
+-- renommer casserait ces lectures sans gain ; on ajoute plutôt des colonnes
+-- explicites, tenues par le même trigger que `total` :
+--   total_ht  = total ;
+--   total_tva = TVA par taux sur le total HT de chaque taux (même arrondi que
+--               les factures), 0 si la vente a été faite hors assujettissement,
+--               NULL = « non calculable » (ligne sans catégorie) ;
+--   total_ttc = total_ht + total_tva : l'ENCAISSÉ d'une vente sans facture,
+--               lu par la gestion et le rapprochement bancaire.
+-- assujettie_tva : régime de la ferme figé à la création de la vente (la TVA
+-- est due selon le régime du jour de la vente) ; les ventes antérieures à 014
+-- sont reprises non assujetties (TVA 0, TTC = total) : c'est ce qui a été
+-- réellement encaissé, aucune TVA n'étant facturée jusqu'ici.
+-- Vente SANS LIGNES (ancienne saisie tiges × prix, encore possible) : par
+-- construction des « fleurs coupées » à la tige. Si la ferme est assujettie,
+-- elle reçoit à sa création la catégorie par défaut « non travaillée »
+-- active de la ferme (vat_rate_id et taux_tva_pb figés sur la vente) ; prix
+-- lu HT comme partout. Sans taux actif de cette catégorie : TVA non
+-- calculable (NULL), jamais 0 €. emettre_facture reprend cette catégorie.
+alter table public.sales add column assujettie_tva boolean not null default false;
+alter table public.sales add column vat_rate_id    uuid references public.farm_vat_rates(id) on delete set null;
+alter table public.sales add column taux_tva_pb    integer check (taux_tva_pb between 0 and 10000);
+alter table public.sales add column total_ht       numeric(12,2);
+alter table public.sales add column total_tva      numeric(12,2);
+alter table public.sales add column total_ttc      numeric(12,2);
+comment on column public.sales.total is 'Total HT (somme des lignes, ou tiges × prix). Voir total_ttc pour l''encaissé.';
+comment on column public.sales.total_ttc is 'Encaissé : total_ht + total_tva. NULL si la TVA n''est pas calculable.';
+
+create or replace function public.sales_set_total()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare v_n int; v_ht numeric; v_sans int; v_tva numeric; r public.farm_vat_rates%rowtype;
+begin
+  if tg_op = 'INSERT' then
+    select coalesce(b.assujettie_tva, false), se.farm_id into new.assujettie_tva, r.farm_id
+      from public.seasons se left join public.farm_billing b on b.farm_id = se.farm_id where se.id = new.season_id;
+    new.assujettie_tva := coalesce(new.assujettie_tva, false);
+    new.vat_rate_id := null; new.taux_tva_pb := null;
+    if new.assujettie_tva then
+      select * into r from public.farm_vat_rates
+       where farm_id = r.farm_id and categorie = 'non_travaillee' and actif order by ordre limit 1;
+      new.vat_rate_id := r.id; new.taux_tva_pb := r.taux_pb;
+    end if;
+  else
+    -- Régime et catégorie par défaut figés à la création
+    new.assujettie_tva := old.assujettie_tva;
+    new.vat_rate_id := old.vat_rate_id;
+    new.taux_tva_pb := old.taux_tva_pb;
+  end if;
+
+  select count(*), coalesce(sum(line_total), 0), count(*) filter (where taux_tva_pb is null)
+    into v_n, v_ht, v_sans from public.sale_lines where sale_id = new.id;
+  if v_n = 0 then
+    -- Vente sans lignes : comportement historique, total = tiges × prix
+    new.total := round(coalesce(new.tiges, 0)::numeric * coalesce(new.prix_unitaire, 0), 2);
+    v_ht := new.total;
+    if new.taux_tva_pb is null then v_sans := 1;
+    else v_sans := 0; v_tva := round(v_ht * new.taux_tva_pb / 10000.0, 2); end if;
+  else
+    new.total := v_ht;
+    select coalesce(sum(round(b * t / 10000.0, 2)), 0) into v_tva
+      from (select taux_tva_pb as t, sum(line_total) as b from public.sale_lines
+             where sale_id = new.id and taux_tva_pb is not null group by taux_tva_pb) x;
+  end if;
+  new.total_ht := v_ht;
+  new.total_tva := case when not new.assujettie_tva then 0 when v_sans > 0 then null else v_tva end;
+  new.total_ttc := new.total_ht + new.total_tva;  -- NULL si TVA non calculable
+  return new;
+end; $$;
+
+-- Reprise : ventes existantes, non assujetties (TVA 0, TTC = total)
+update public.sales set total = total;
+alter table public.sales alter column total_ht set not null;
+
+-- Lignes de vente : sale_recompute (005, après toute écriture de ligne) met à
+-- jour la vente, ce qui redéclenche sales_set_total : HT, TVA et TTC suivent.
+
+-- Gestion (012) : le rapprochement d'une vente compare au TTC encaissé.
+-- Seule la branche « vente » change ; creer_depense_liee et importer_releve
+-- ne lisent pas les ventes, aucune vue de 012 non plus.
+create or replace function public.gestion_set_farm()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare v_farm uuid; v_montant numeric; v_tx record; v_somme numeric; v_trouve boolean;
+begin
+  if tg_table_name = 'receipts' then
+    if tg_op = 'UPDATE' then
+      if new.farm_id is distinct from old.farm_id then raise exception 'Un justificatif ne change pas de ferme'; end if;
+      new.updated_at := now();
+    end if;
+    if new.cost_id is not null and not exists (select 1 from public.costs c where c.id = new.cost_id and c.farm_id = new.farm_id) then
+      raise exception 'Dépense % hors de la ferme', new.cost_id;
+    end if;
+    if new.payment_id is not null and not exists (select 1 from public.payments p where p.id = new.payment_id and p.farm_id = new.farm_id) then
+      raise exception 'Paiement % hors de la ferme', new.payment_id;
+    end if;
+    return new;
+  end if;
+
+  if tg_table_name = 'receipt_pages' then
+    select r.farm_id into v_farm from public.receipts r where r.id = new.receipt_id;
+    if v_farm is null then raise exception 'Justificatif % introuvable', new.receipt_id; end if;
+    new.farm_id := v_farm;
+    if tg_op = 'UPDATE' and (new.path is distinct from old.path or new.receipt_id is distinct from old.receipt_id) then
+      raise exception 'Une page de justificatif ne change ni de fichier ni de justificatif';
+    end if;
+    if new.path not like v_farm::text || '/' || new.receipt_id::text || '/%' or position('..' in new.path) > 0
+       or array_length(string_to_array(new.path, '/'), 1) <> 3 then
+      raise exception 'Chemin de justificatif invalide : %', new.path;
+    end if;
+    return new;
+  end if;
+
+  if tg_table_name = 'bank_accounts' then
+    if tg_op = 'UPDATE' and new.farm_id is distinct from old.farm_id then
+      raise exception 'Un compte ne change pas de ferme';
+    end if;
+    return new;
+  end if;
+
+  if tg_table_name = 'bank_imports' or tg_table_name = 'bank_transactions' then
+    select a.farm_id into v_farm from public.bank_accounts a where a.id = new.account_id;
+    if v_farm is null then raise exception 'Compte % introuvable', new.account_id; end if;
+    new.farm_id := v_farm;
+    -- PL/pgSQL n'évalue pas en court-circuit : new.import_id n'existe pas
+    -- sur bank_imports, d'où les if imbriqués.
+    if tg_table_name = 'bank_transactions' then
+      if new.import_id is not null
+         and not exists (select 1 from public.bank_imports i where i.id = new.import_id and i.account_id = new.account_id) then
+        raise exception 'Import % d''un autre compte', new.import_id;
+      end if;
+    end if;
+    return new;
+  end if;
+
+  if tg_table_name = 'bank_matches' then
+    -- Verrou du mouvement : deux rapprochements simultanés ne dépassent pas son montant
+    select t.id, t.farm_id, t.amount into v_tx from public.bank_transactions t where t.id = new.transaction_id for update;
+    if v_tx.id is null then raise exception 'Mouvement % introuvable', new.transaction_id; end if;
+    new.farm_id := v_tx.farm_id;
+    new.annule_le := null; new.annule_par := null;
+    if sign(new.amount) <> sign(v_tx.amount) then
+      raise exception 'Le rapprochement doit être de même sens que le mouvement';
+    end if;
+    select coalesce(sum(abs(m.amount)), 0) into v_somme from public.bank_matches m
+      where m.transaction_id = new.transaction_id and m.annule_le is null;
+    if v_somme + abs(new.amount) > abs(v_tx.amount) then
+      raise exception 'Rapprochement supérieur au reste du mouvement (reste % €)', abs(v_tx.amount) - v_somme;
+    end if;
+
+    if new.kind = 'depense' then
+      select c.amount into v_montant from public.costs c where c.id = new.cost_id and c.farm_id = v_tx.farm_id;
+      if v_montant is null then raise exception 'Dépense % hors de la ferme', new.cost_id; end if;
+      if v_tx.amount > 0 then raise exception 'Une dépense se rapproche d''un débit'; end if;
+    elsif new.kind = 'paiement' then
+      select p.amount into v_montant from public.payments p where p.id = new.payment_id and p.farm_id = v_tx.farm_id;
+      if v_montant is null then raise exception 'Paiement % hors de la ferme', new.payment_id; end if;
+      if sign(v_montant) <> sign(v_tx.amount) then raise exception 'Paiement et mouvement de sens contraires'; end if;
+    elsif new.kind = 'vente' then
+      -- 014 : une vente se rapproche de ce qui a été ENCAISSÉ, donc de son TTC
+      select s.total_ttc, true into v_montant, v_trouve from public.sales s join public.seasons se on se.id = s.season_id
+        where s.id = new.sale_id and se.farm_id = v_tx.farm_id;
+      if not coalesce(v_trouve, false) then raise exception 'Vente % hors de la ferme', new.sale_id; end if;
+      if v_montant is null then
+        raise exception 'Vente % : TVA non calculable (catégorie manquante), montant encaissé inconnu', new.sale_id;
+      end if;
+      if v_tx.amount < 0 then raise exception 'Une vente se rapproche d''un crédit'; end if;
+    end if;
+    if v_montant is not null and abs(new.amount) > abs(v_montant) then
+      raise exception 'Rapprochement (% €) supérieur au montant de la pièce (% €)', abs(new.amount), abs(v_montant);
+    end if;
+    return new;
+  end if;
+
+  raise exception 'gestion_set_farm : table % inattendue', tg_table_name;
+end; $$;
 
 -- ------------------------------------------------------------
 -- D. Numéro de bon de commande
@@ -347,7 +528,8 @@ returns jsonb language sql immutable set search_path = '' as $$
 $$;
 
 -- Lignes à facturer, avec leur catégorie de TVA : celle de la ligne (taux
--- recopié à la vente), sinon p_defaut (choisie à l'émission), sinon null.
+-- recopié à la vente ; pour une vente sans lignes, sa catégorie par défaut),
+-- sinon p_defaut (choisie à l'émission), sinon null.
 drop function public._lignes_a_facturer(uuid[]);
 create function public._lignes_a_facturer(p_sale_ids uuid[], p_defaut uuid)
 returns table (sale_id uuid, sale_date date, culture_id uuid, label text, unit text, quantity numeric,
@@ -374,7 +556,9 @@ language sql stable set search_path = '' as $$
            case when s.prix_unitaire = round(s.prix_unitaire, 2) and s.tiges > 0 then s.tiges else 1 end,
            1,
            case when s.prix_unitaire = round(s.prix_unitaire, 2) and s.tiges > 0 then s.prix_unitaire else s.total end,
-           null::uuid, null::integer
+           -- vente sans lignes : catégorie par défaut figée à sa création (ferme assujettie)
+           case when s.assujettie_tva and s.taux_tva_pb is not null then s.vat_rate_id end,
+           case when s.assujettie_tva and s.taux_tva_pb is not null then s.taux_tva_pb end
       from public.sales s
      where s.id = any(p_sale_ids)
        and not exists (select 1 from public.sale_lines l where l.sale_id = s.id)
@@ -674,6 +858,9 @@ grant execute on function public.livrer_et_facturer(uuid, jsonb, jsonb, jsonb) t
 -- -- down (à exécuter à la main, AVANT toute facture avec TVA : une facture
 -- -- émise doit être conservée ; recharger ensuite les fonctions de 007 et 010)
 -- drop function public.livrer_et_facturer(uuid, jsonb, jsonb, jsonb);
+-- -- recréer gestion_set_farm (012, section D) et sales_set_total (005)
+-- alter table public.sales drop column total_ttc, drop column total_tva, drop column total_ht,
+--   drop column taux_tva_pb, drop column vat_rate_id, drop column assujettie_tva;
 -- drop view public.invoices_status;            -- puis recréer celle de 010 (section G)
 -- drop function public._lignes_a_facturer(uuid[], uuid);
 -- -- recréer _lignes_a_facturer(uuid[]), emettre_facture, emettre_avoir,

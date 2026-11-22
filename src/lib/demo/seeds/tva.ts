@@ -1,4 +1,5 @@
 import { type DemoDb } from '../data'
+import { centimesEnEuros, totauxVente } from '../../domain'
 
 // ============================================================
 // TVA en mode démo (migration 014) : taux de la ferme, catégorie des
@@ -24,6 +25,27 @@ export function ligneSetTvaDemo(db: Db, row: Row, ancienne: Row | null): Err | n
   if (!r.actif) return { code: 'P0001', message: `Catégorie de TVA « ${r.libelle} » désactivée` }
   row.taux_tva_pb = r.taux_pb
   return null
+}
+
+/**
+ * Trigger sales_set_total (014) : régime et catégorie par défaut figés à la
+ * création, puis HT, TVA et TTC tirés des lignes (ou de tiges × prix).
+ */
+export function venteSetTotauxDemo(db: Db, v: Row, creation: boolean): void {
+  if (creation) {
+    const farm = fermeDeSaison(db, v.season_id)
+    v.assujettie_tva = !!(db.farm_billing ?? []).find(b => b.farm_id === farm)?.assujettie_tva
+    const r = v.assujettie_tva
+      ? (db.farm_vat_rates ?? []).filter(t => t.farm_id === farm && t.categorie === 'non_travaillee' && t.actif).sort((a, b) => a.ordre - b.ordre)[0]
+      : undefined
+    v.vat_rate_id = r?.id ?? null
+    v.taux_tva_pb = r?.taux_pb ?? null
+  }
+  const lignes = (db.sale_lines ?? []).filter(l => l.sale_id === v.id)
+  const t = totauxVente(v as any, lignes as any)
+  v.total_ht = centimesEnEuros(t.total_ht)
+  v.total_tva = t.total_tva === null ? null : centimesEnEuros(t.total_tva)
+  v.total_ttc = t.total_ttc === null ? null : centimesEnEuros(t.total_ttc)
 }
 
 /** Trigger order_set_numero : « BC2026-0007 », par ferme et par année. */
@@ -55,6 +77,14 @@ export function seed_tva(db: DemoDb & Record<string, any[]>): void {
   for (const l of [...x.sale_lines, ...x.order_lines]) {
     l.vat_rate_id = compose(l) ? TAUX_DEMO.travaillee : TAUX_DEMO.nonTravaillee
     l.taux_tva_pb = compose(l) ? 2000 : 1000
+  }
+  // Ventes : celles détaillées en lignes sont de l'ère « TVA » (régime figé
+  // assujetti) ; les ventes anciennes sans lignes sont reprises comme la
+  // migration le fait en base : non assujetties, TTC = total encaissé.
+  for (const v of x.sales) {
+    v.assujettie_tva = x.sale_lines.some(l => l.sale_id === v.id)
+    v.vat_rate_id = null; v.taux_tva_pb = null
+    venteSetTotauxDemo(x, v, false)
   }
   const commandes = [...x.orders].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
   for (const o of commandes) numeroCommandeDemo(x, o, Number(String(o.created_at).slice(0, 4)))
