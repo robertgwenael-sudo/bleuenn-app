@@ -3,7 +3,7 @@
 // Reproduit ce qu'utilisent useBleuenn.ts et les pages :
 //   auth.getUser / getSession / onAuthStateChange / signInWithPassword /
 //   signUp / resetPasswordForEmail / updateUser / signOut
-//   from(t).select/insert/update/delete + eq/neq/in/or/is/order/limit/single/maybeSingle
+//   from(t).select/insert/update/delete + eq/neq/in/or/is/gte/lte/order/limit/range/single/maybeSingle
 //   rpc('season_team' | 'join_season_by_token' | 'invite_by_email' | 'farm_team' | 'duplicate_season_plan')
 // ainsi que les triggers (calc_planting_dates, propagate_catalog_changes,
 // add_season_owner, colonne générée sales.total) et la vue plantings_full
@@ -226,6 +226,7 @@ class DemoQuery implements PromiseLike<Result> {
   private returning = false
   private mode: 'many' | 'single' | 'maybe' = 'many'
   private max: number | null = null
+  private skip = 0
 
   constructor(private table: string) {}
 
@@ -248,6 +249,10 @@ class DemoQuery implements PromiseLike<Result> {
   neq(col: string, v: any) { this.filters.push(r => r[col] !== v); return this }
   in(col: string, vs: any[]) { this.filters.push(r => vs.includes(r[col])); return this }
   is(col: string, v: any) { this.filters.push(r => (v === null ? r[col] == null : r[col] === v)); return this }
+  // Exports : bornes de dates (comparaison de chaînes AAAA-MM-JJ, comme le type date) et pagination
+  gte(col: string, v: any) { this.filters.push(r => r[col] != null && r[col] >= v); return this }
+  lte(col: string, v: any) { this.filters.push(r => r[col] != null && r[col] <= v); return this }
+  range(from: number, to: number) { this.skip = from; this.max = to - from + 1; return this }
   or(expr: string) { this.filters.push(parseOr(expr)); return this }
   order(col: string, opts?: { ascending?: boolean }) { this.orders.push({ col, asc: opts?.ascending !== false }); return this }
   limit(n: number) { this.max = n; return this }
@@ -286,7 +291,7 @@ class DemoQuery implements PromiseLike<Result> {
         return o.asc ? c : -c
       })
     }
-    if (this.max !== null) out = out.slice(0, this.max)
+    if (this.skip > 0 || this.max !== null) out = out.slice(this.skip, this.max === null ? undefined : this.skip + this.max)
     const data = clone(this.project(out))
     if (this.mode === 'single') {
       if (data.length !== 1) return { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } }
