@@ -172,7 +172,8 @@ function parseOr(expr: string): Filter {
 }
 
 class DemoQuery implements PromiseLike<Result> {
-  private op: 'select' | 'insert' | 'update' | 'delete' | null = null
+  private op: 'select' | 'insert' | 'update' | 'delete' | 'upsert' | null = null
+  private conflict: string[] = []
   private payload: any = null
   private filters: Filter[] = []
   private orders: { col: string; asc: boolean }[] = []
@@ -192,6 +193,12 @@ class DemoQuery implements PromiseLike<Result> {
   insert(v: Row | Row[]) { this.op = 'insert'; this.payload = v; return this }
   update(v: Row) { this.op = 'update'; this.payload = v; return this }
   delete() { this.op = 'delete'; return this }
+  /** upsert(v, { onConflict: 'a,b' }) : comme en SQL, une valeur null ne crée jamais de conflit. */
+  upsert(v: Row | Row[], opts?: { onConflict?: string }) {
+    this.op = 'upsert'; this.payload = v
+    this.conflict = (opts?.onConflict ?? 'id').split(',').map(c => c.trim()).filter(Boolean)
+    return this
+  }
   eq(col: string, v: any) { this.filters.push(r => r[col] === v); return this }
   neq(col: string, v: any) { this.filters.push(r => r[col] !== v); return this }
   in(col: string, vs: any[]) { this.filters.push(r => vs.includes(r[col])); return this }
@@ -266,6 +273,18 @@ class DemoQuery implements PromiseLike<Result> {
           if (t === 'seasons') d.team_members.push({ id: uuid(), season_id: row.id, user_id: row.user_id, role: 'owner', joined_at: new Date().toISOString() })
         }
         return this.returning ? this.finish(inserted) : { data: null, error: null }
+      }
+
+      if (this.op === 'upsert') {
+        const list: Row[] = Array.isArray(this.payload) ? this.payload : [this.payload]
+        const out: Row[] = []
+        for (const v of list) {
+          const hit = (d[t] as Row[]).find(r => this.conflict.every(c => v[c] != null && r[c] === v[c]))
+          if (hit) { Object.assign(hit, v); out.push(hit); continue }
+          const row: Row = { id: uuid(), created_at: new Date().toISOString(), ...DEFAULTS[t], ...v }
+          d[t].push(row); out.push(row)
+        }
+        return this.returning ? this.finish(out) : { data: null, error: null }
       }
 
       if (this.op === 'update') {
