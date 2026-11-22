@@ -9,14 +9,16 @@ export default function OnboardingModal({ ctx, onClose }: { ctx: any; onClose: (
   const [step, setStep] = useState(1)
   const [farmName, setFarmName] = useState('Bleuenn')
   const [ownerName, setOwnerName] = useState('')
-  const [seasonName, setSeasonName] = useState('Saison 1 — 2025')
-  const [year, setYear] = useState(2025)
+  const anneeCourante = Number((ctx.today || new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date())).slice(0, 4))
+  const [seasonName, setSeasonName] = useState(`Saison ${anneeCourante}`)
+  const [year, setYear] = useState(anneeCourante)
   const [goal, setGoal] = useState(15000)
   const [loading, setLoading] = useState(false)
 
   const handleFinish = async () => {
     setLoading(true)
     await ctx.updateProfile({ farm_name: farmName, owner_name: ownerName })
+    // La première saison crée la ferme (trigger season_set_farm), nommée comme le profil
     await ctx.createSeason(seasonName, year, goal)
     setLoading(false)
     onClose()
@@ -31,7 +33,9 @@ export default function OnboardingModal({ ctx, onClose }: { ctx: any; onClose: (
       </div>
       <h1 className="text-[2rem] leading-tight">{step === 1 ? 'Votre ferme' : 'Votre première saison'}</h1>
       <p className="mt-2 text-sm text-fg-muted">
-        {step === 1 ? 'Quelques informations pour personnaliser votre espace.' : 'Composez ensuite vos jardins et planches : le calendrier se calculera automatiquement à partir des dates de semis.'}
+        {step === 1
+          ? 'Votre ferme est permanente : ses jardins, ses planches et son équipe restent d’une saison à l’autre.'
+          : 'La saison sert au suivi (objectif de chiffre d’affaires, bilan). Composez ensuite vos jardins et planches : le calendrier se calculera à partir des dates de semis.'}
       </p>
 
       {step === 1 && (

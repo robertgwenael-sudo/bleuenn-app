@@ -1,13 +1,17 @@
 'use client'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowRight, CornerDownRight, Fence, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CornerDownRight, Fence, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { getPlantingStatus } from '@/lib/types'
 import type { PlantingFull, Garden, CultureCatalog } from '@/lib/types'
 import {
-  Button, Card, Dialog, EmptyState, Field, Input, PageHeader, Select, StatusBadge, cn, useConfirm,
+  Badge, Button, Card, Dialog, EmptyState, Field, Input, PageHeader, Select, StatusBadge, cn, useConfirm,
 } from '@/components/ui'
 import { AddPlantingForm, EditPlantingForm } from '@/components/plantings/PlantingForms'
+import {
+  AlerteConflits, LegendeFrise, OccupationFrise, calculables, conflitsPlanche, periodeSure,
+} from '@/components/plantings/Occupation'
+import { chevauche, fenetreMensuelle, formatJourMois, formatMois, phraseOccupation, surfaceOccupeeLe } from '@/lib/domain'
 import { useIntent } from '@/components/shell/ui-context'
 import { photos } from '@/lib/images'
 
@@ -243,11 +247,24 @@ export default function Gardens({ ctx }: { ctx: any }) {
   const [selectedPlanting, setSelectedPlanting] = useState<PlantingFull | null>(null)
 
   const gardens: Garden[] = ctx.gardens || []
-  const plantings: PlantingFull[] = ctx.plantings || []
+  // Toutes les plantations de la ferme, toutes saisons : la planche est permanente
+  const farmPlantings: PlantingFull[] = ctx.farmPlantings || ctx.plantings || []
+  const activeSeasonId: string | undefined = ctx.activeSeason?.id
+  const today: string = ctx.today
+  const fenetre = fenetreMensuelle(today, 12)
+  const anneeRef = Number(today.slice(0, 4))
   const totalM2 = gardens.reduce((s, g) => s + g.surface_m2, 0)
 
   const getPlanchePlantings = (plancheId: string) =>
-    plantings.filter(p => p.planche_id === plancheId)
+    farmPlantings.filter(p => p.planche_id === plancheId)
+
+  // Conflits de surface sur les 12 mois affichés, toutes planches
+  const conflitsParPlanche = new Map<string, ReturnType<typeof conflitsPlanche>>()
+  for (const g of gardens) for (const pl of (g.planches || [])) {
+    const c = conflitsPlanche(pl, getPlanchePlantings(pl.id), fenetre)
+    if (c.length) conflitsParPlanche.set(pl.id, c)
+  }
+  const nbPlanchesEnConflit = conflitsParPlanche.size
 
   useIntent('new-garden', () => setModal('garden'))
 
@@ -278,14 +295,30 @@ export default function Gardens({ ctx }: { ctx: any }) {
     <div>
       <PageHeader
         title="Jardins & planches"
-        description={`${gardens.length} jardin${gardens.length > 1 ? 's' : ''} — ${totalM2} m² de surface totale`}
+        description={`${gardens.length} jardin${gardens.length > 1 ? 's' : ''} — ${totalM2} m² · occupation lue par dates, toutes saisons confondues`}
         image={photos.champCoucherSoleil}
         actions={<Button onClick={() => setModal('garden')}><Plus className="h-4 w-4" />Nouveau jardin</Button>}
       />
 
+      {gardens.length > 0 && (
+        <div className="mb-5 flex flex-col gap-3 rounded-card border border-border bg-surface px-4 py-3 shadow-card lg:flex-row lg:items-center">
+          <p className="text-sm text-fg">
+            <span className="font-semibold">Frises de {formatMois(fenetre.debut)} à {formatMois(fenetre.fin)}</span>
+            <span className="text-fg-muted"> — les jardins et planches durent d’une saison à l’autre.</span>
+          </p>
+          <div className="lg:ml-auto"><LegendeFrise activeSeasonName={ctx.activeSeason?.name} /></div>
+        </div>
+      )}
+      {nbPlanchesEnConflit > 0 && (
+        <div role="alert" className="mb-5 flex items-start gap-2.5 rounded-card border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-fg">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden />
+          <p><strong className="text-danger">{nbPlanchesEnConflit} planche{nbPlanchesEnConflit > 1 ? 's' : ''} en conflit de surface</strong> sur les 12 prochains mois : la somme des cultures en place dépasse la surface de la planche. Le détail est indiqué sous chaque planche concernée.</p>
+        </div>
+      )}
+
       {gardens.length === 0 ? (
         <Card>
-          <EmptyState image={photos.champCoucherSoleil} title="Aucun jardin pour cette saison"
+          <EmptyState image={photos.champCoucherSoleil} title="Aucun jardin dans votre ferme"
             description="Un jardin regroupe des planches. Chaque planche reçoit une ou plusieurs cultures, en même temps ou en succession."
             action={<Button onClick={() => setModal('garden')}><Fence className="h-4 w-4" />Créer mon premier jardin</Button>} />
         </Card>
@@ -318,10 +351,19 @@ export default function Gardens({ ctx }: { ctx: any }) {
                 <ul className="flex-1 divide-y divide-border">
                   {planches.map((pl: any) => {
                     const plPlantings = getPlanchePlantings(pl.id)
-                    const plUsedM2 = plPlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
-                    const plPct = pl.surface_m2 > 0 ? (plUsedM2 / pl.surface_m2 * 100) : 0
-                    const sorted = [...plPlantings].sort((a, b) => a.date_semis.localeCompare(b.date_semis))
-                    const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+                    const calc = calculables(plPlantings)
+                    const conflits = conflitsParPlanche.get(pl.id) || []
+                    let phrase = 'Libre'
+                    try { phrase = phraseOccupation({ surface_m2: Number(pl.surface_m2) }, calc, today) } catch { phrase = 'Occupation non calculable (dates incomplètes)' }
+                    const occupeAujourdhui = surfaceOccupeeLe(calc, today)
+                    const plPct = pl.surface_m2 > 0 ? (occupeAujourdhui / pl.surface_m2 * 100) : 0
+                    // Liste : la saison active + ce qui occupe la planche dans la fenêtre, quelle que soit la saison
+                    const visibles = plPlantings.filter(p => {
+                      if (p.season_id === activeSeasonId) return true
+                      const per = periodeSure(p)
+                      return per ? chevauche(per, fenetre) : false
+                    })
+                    const sorted = [...visibles].sort((a, b) => a.date_semis.localeCompare(b.date_semis))
 
                     // Détecter les successions : une culture dont le semis démarre après la fin d'une précédente
                     const isSuccession = (p: PlantingFull, idx: number): PlantingFull | null => {
@@ -332,13 +374,15 @@ export default function Gardens({ ctx }: { ctx: any }) {
                       }
                       return null
                     }
+                    const editer = (p: PlantingFull) => { setSelectedPlanting(p); setModal('editPlanting') }
 
                     return (
-                      <li key={pl.id} className="px-4 py-3 sm:px-5">
+                      <li key={pl.id} className={cn('px-4 py-3 sm:px-5', conflits.length > 0 && 'bg-danger-soft/30')}>
                         <div className="flex items-center gap-2">
                           <EditableName value={pl.name} label="la planche" onSave={v => ctx.updatePlanche(pl.id, { name: v })} className="text-sm font-semibold text-fg" />
-                          <span className="num text-xs text-fg-subtle">{plUsedM2}/{pl.surface_m2} m²</span>
+                          <span className="num text-xs text-fg-subtle" title="Occupé aujourd’hui / surface de la planche">{Math.round(occupeAujourdhui * 100) / 100}/{pl.surface_m2} m²</span>
                           <UsageBar pct={plPct} className="ml-1 hidden w-16 sm:block" />
+                          {conflits.length > 0 && <Badge tone="red"><AlertTriangle className="h-3 w-3" aria-hidden />Conflit</Badge>}
                           <div className="ml-auto flex items-center gap-1">
                             <Button variant="secondary" size="sm" onClick={() => { setSelectedPlancheId(pl.id); setModal('planting') }}>
                               <Plus className="h-3.5 w-3.5" />Culture
@@ -348,12 +392,19 @@ export default function Gardens({ ctx }: { ctx: any }) {
                             </Button>
                           </div>
                         </div>
+                        <p className={cn('mt-1 text-xs', phrase === 'Libre' ? 'font-medium text-primary' : 'text-fg-muted')}>{phrase}</p>
+                        <AlerteConflits conflits={conflits} today={today} />
+                        <OccupationFrise plantings={plPlantings} planche={pl} fenetre={fenetre} today={today}
+                          activeSeasonId={activeSeasonId} conflits={conflits} onSelect={editer} />
                         {sorted.length > 0 && (
+                          <details className="group mt-2">
+                            <summary className="cursor-pointer list-none text-xs font-medium text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+                              <span className="inline-flex items-center gap-1"><ArrowRight className="h-3 w-3 transition group-open:rotate-90" aria-hidden />{sorted.length} plantation{sorted.length > 1 ? 's' : ''}</span>
+                            </summary>
                           <ul className="mt-2 space-y-1">
                             {sorted.map((p: PlantingFull, idx: number) => {
-                              const ds = new Date(p.date_semis + 'T00:00:00')
-                              const dp = new Date(p.date_plantation + 'T00:00:00')
                               const succession = isSuccession(p, idx)
+                              const autre = p.season_id !== activeSeasonId
                               return (
                                 <li key={p.id}>
                                   {succession && (
@@ -363,16 +414,18 @@ export default function Gardens({ ctx }: { ctx: any }) {
                                   )}
                                   <button
                                     type="button"
-                                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-transparent bg-surface-2/70 px-2.5 py-2 text-left text-xs transition hover:border-border hover:bg-surface-2"
-                                    onClick={() => { setSelectedPlanting(p); setModal('editPlanting') }}
+                                    className={cn('flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-2.5 py-2 text-left text-xs transition hover:border-border hover:bg-surface-2',
+                                      autre ? 'border-violet/30 bg-violet-soft/40' : 'border-transparent bg-surface-2/70')}
+                                    onClick={() => editer(p)}
                                     title="Cliquer pour modifier ou supprimer"
                                   >
                                     <span className="min-w-[7rem] text-sm font-medium text-fg">{p.culture_name}</span>
+                                    {autre && <Badge tone="violet">{p.season_name || 'Autre saison'}</Badge>}
                                     <span className="num text-fg-muted">{p.surface_m2} m²</span>
                                     <span className="num flex items-center gap-1 text-fg-muted">
-                                      <span title="Entrée cellule">Semis {fmtShort(ds)}</span>
+                                      <span title="Entrée cellule">Semis {formatJourMois(p.date_semis, anneeRef)}</span>
                                       <ArrowRight className="h-3 w-3 text-fg-subtle" aria-hidden />
-                                      <span title="Date plantation">Plant. {fmtShort(dp)}</span>
+                                      <span title="Fin de récolte : la planche se libère le lendemain">fin {formatJourMois(p.date_fin, anneeRef)}</span>
                                     </span>
                                     <span className="ml-auto"><StatusBadge status={getPlantingStatus(p)} /></span>
                                   </button>
@@ -380,6 +433,7 @@ export default function Gardens({ ctx }: { ctx: any }) {
                               )
                             })}
                           </ul>
+                          </details>
                         )}
                       </li>
                     )

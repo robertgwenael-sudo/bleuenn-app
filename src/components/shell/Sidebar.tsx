@@ -17,9 +17,9 @@ export function Sidebar({ active, onNav, collapsed, onToggle, ctx, onTeam }: {
       <div className={cn('flex h-topbar shrink-0 items-center', collapsed ? 'justify-center' : 'px-5')}>
         <Logo collapsed={collapsed} />
       </div>
-      {!collapsed && ctx.profile?.farm_name && (
+      {!collapsed && (ctx.farm?.name || ctx.profile?.farm_name) && (
         <div className="mx-3 mb-3 truncate rounded-lg border border-sidebar-border bg-surface px-3 py-2 text-xs text-fg-muted">
-          <span className="font-medium text-fg">{ctx.profile.farm_name}</span>
+          <span className="font-medium text-fg">{ctx.farm?.name || ctx.profile.farm_name}</span>
           {ctx.profile.owner_name ? <span> · {ctx.profile.owner_name}</span> : null}
         </div>
       )}
@@ -31,7 +31,7 @@ export function Sidebar({ active, onNav, collapsed, onToggle, ctx, onTeam }: {
           className={cn('flex items-center gap-2.5 rounded-lg text-sm text-sidebar-muted hover:bg-surface-2 hover:text-sidebar-fg',
             collapsed ? 'h-10 w-10 justify-center' : 'h-9 flex-1 px-3')}>
           <Users className="h-[18px] w-[18px]" aria-hidden />
-          {collapsed ? <span className="sr-only">Équipe</span> : <span>Équipe <span className="text-fg-subtle">· {(ctx.teamMembers || []).length}</span></span>}
+          {collapsed ? <span className="sr-only">Équipe</span> : <span>Équipe <span className="text-fg-subtle">· {(ctx.farmTeam?.length ? ctx.farmTeam : ctx.teamMembers || []).length}</span></span>}
         </button>
         <button type="button" onClick={onToggle}
           aria-label={collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'}

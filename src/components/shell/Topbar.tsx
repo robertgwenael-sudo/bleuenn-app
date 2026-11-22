@@ -6,8 +6,8 @@ import { UserMenu } from './UserMenu'
 import { useTheme } from './theme'
 import { LogoMark } from './Logo'
 
-export function Topbar({ section, ctx, onMenu, onPalette, onProfile, onTeam, onShortcuts }: {
-  section: string; ctx: any; onMenu: () => void; onPalette: () => void; onProfile: () => void; onTeam: () => void; onShortcuts: () => void
+export function Topbar({ section, ctx, onMenu, onPalette, onProfile, onTeam, onShortcuts, onDuplicate }: {
+  section: string; ctx: any; onMenu: () => void; onPalette: () => void; onProfile: () => void; onTeam: () => void; onShortcuts: () => void; onDuplicate?: () => void
 }) {
   const s = sectionById(section)
   const { resolved, toggle } = useTheme()
@@ -35,7 +35,7 @@ export function Topbar({ section, ctx, onMenu, onPalette, onProfile, onTeam, onS
           className="flex h-10 w-10 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 md:hidden">
           <Search className="h-5 w-5" />
         </button>
-        <SeasonSelect ctx={ctx} compact className="hidden w-40 sm:block" />
+        <SeasonSelect ctx={ctx} compact onDuplicate={onDuplicate} className="hidden w-48 sm:flex" />
         <button type="button" onClick={toggle} aria-label={resolved === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'}
           className="hidden h-9 w-9 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg sm:flex">
           {resolved === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}

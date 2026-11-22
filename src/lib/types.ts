@@ -18,6 +18,27 @@ export interface Season {
   is_active: boolean
   invite_token?: string
   invite_enabled?: boolean
+  /** Migration 006 : la saison appartient à une ferme permanente. */
+  farm_id: string
+}
+
+/** Ferme : unité permanente (jardins, planches, équipe). Migration 006. */
+export interface Farm {
+  id: string
+  name: string
+  created_by: string
+  created_at: string
+}
+
+/** Membre de la ferme, tel que renvoyé par la RPC `farm_team(p_farm_id)`. */
+export interface FarmMember {
+  id: string            // farm_members.id
+  farm_id: string
+  user_id: string
+  role: 'owner' | 'member'
+  joined_at: string
+  email?: string | null
+  owner_name?: string | null
 }
 
 export interface TeamMember {
@@ -54,7 +75,10 @@ export interface CultureCatalog {
 export interface Garden {
   id: string
   user_id: string
-  season_id: string
+  /** Migration 006 : le jardin appartient à la ferme, pas à une saison. */
+  farm_id: string
+  /** Renseigné pour compatibilité, facultatif depuis 006. */
+  season_id: string | null
   name: string
   surface_m2: number
   description: string | null
@@ -116,6 +140,10 @@ export interface PlantingFull extends Planting {
   garden_name: string
   garden_id: string
   garden_m2: number
+  // Migration 006 : ferme et saison exposées pour lire l'occupation par dates
+  farm_id: string
+  season_name: string
+  season_year: number
 }
 
 export interface Harvest {

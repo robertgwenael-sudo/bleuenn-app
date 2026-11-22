@@ -5,8 +5,8 @@ import { Logo } from './Logo'
 import { NavList } from './NavList'
 import { SeasonSelect } from './SeasonSelect'
 
-export function MobileDrawer({ open, onOpenChange, active, onNav, ctx }: {
-  open: boolean; onOpenChange: (o: boolean) => void; active: string; onNav: (id: string) => void; ctx: any
+export function MobileDrawer({ open, onOpenChange, active, onNav, ctx, onDuplicate }: {
+  open: boolean; onOpenChange: (o: boolean) => void; active: string; onNav: (id: string) => void; ctx: any; onDuplicate?: () => void
 }) {
   return (
     <RD.Root open={open} onOpenChange={onOpenChange}>
@@ -22,7 +22,7 @@ export function MobileDrawer({ open, onOpenChange, active, onNav, ctx }: {
             </RD.Close>
           </div>
           <div className="px-4 pb-3">
-            <SeasonSelect ctx={ctx} />
+            <SeasonSelect ctx={ctx} onDuplicate={onDuplicate ? () => { onOpenChange(false); setTimeout(onDuplicate, 150) } : undefined} />
           </div>
           <div className="flex-1 overflow-y-auto px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <NavList active={active} onNav={onNav} />

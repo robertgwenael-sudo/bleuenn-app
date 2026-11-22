@@ -4,7 +4,7 @@
 //   auth.getUser / getSession / onAuthStateChange / signInWithPassword /
 //   signUp / resetPasswordForEmail / updateUser / signOut
 //   from(t).select/insert/update/delete + eq/neq/in/or/is/order/limit/single/maybeSingle
-//   rpc('season_team' | 'join_season_by_token' | 'invite_by_email')
+//   rpc('season_team' | 'join_season_by_token' | 'invite_by_email' | 'farm_team' | 'duplicate_season_plan')
 // ainsi que les triggers (calc_planting_dates, propagate_catalog_changes,
 // add_season_owner, colonne générée sales.total) et la vue plantings_full
 // (migration 002), avec les mêmes formules.
@@ -167,6 +167,13 @@ function cascadeDelete(table: string, removed: Row[]) {
   if (table === 'gardens') drop('planches', r => ids.has(r.garden_id))
   if (table === 'planches') drop('plantings', r => ids.has(r.planche_id))
   if (table === 'plantings') drop('harvests', r => ids.has(r.planting_id))
+  // Migration 006, trg_farm_member_sync : quitter la ferme retire de toutes ses saisons
+  if (table === 'farm_members') {
+    for (const fm of removed) {
+      const sids = new Set(d.seasons.filter(s => s.farm_id === fm.farm_id).map(s => s.id))
+      drop('team_members', r => sids.has(r.season_id) && r.user_id === fm.user_id)
+    }
+  }
   if (table === 'seasons') {
     drop('gardens', r => ids.has(r.season_id)); drop('team_members', r => ids.has(r.season_id))
     drop('sales', r => ids.has(r.season_id)); drop('seed_orders', r => ids.has(r.season_id))
@@ -428,13 +435,63 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
       })
     return { data, error: null }
   }
+  // ─── Migration 006 : ferme ───────────────────────────────────────
+  const farmOf = (sid: string) => d.seasons.find(s => s.id === sid)?.farm_id as string | undefined
+  const fms = (): Row[] => (d as any).farm_members
+  // Miroir de farm_member_sync : un membre de la ferme est membre de toutes ses saisons
+  const addFarmMember = (farmId: string, userId: string, role = 'member') => {
+    if (fms().some(m => m.farm_id === farmId && m.user_id === userId)) return
+    const now = new Date().toISOString()
+    fms().push({ id: uuid(), farm_id: farmId, user_id: userId, role, joined_at: now })
+    for (const s of d.seasons.filter(x => x.farm_id === farmId)) {
+      if (!d.team_members.some(m => m.season_id === s.id && m.user_id === userId))
+        d.team_members.push({ id: uuid(), season_id: s.id, user_id: userId, role, joined_at: now })
+    }
+  }
+  if (fn === 'farm_team') {
+    const fid = args.p_farm_id
+    if (!fms().some(m => m.farm_id === fid && m.user_id === me.id)) return { data: [], error: null }
+    const data = fms()
+      .filter(m => m.farm_id === fid)
+      .sort((a, b) => a.joined_at.localeCompare(b.joined_at))
+      .map(m => {
+        const p = d.profiles.find(x => x.id === m.user_id)
+        return { id: m.id, farm_id: m.farm_id, user_id: m.user_id, role: m.role, joined_at: m.joined_at, email: p?.email ?? null, owner_name: p?.owner_name ?? null }
+      })
+    return { data, error: null }
+  }
+  if (fn === 'duplicate_season_plan') {
+    const src = d.seasons.find(s => s.id === args.p_source_season)
+    if (!src || !isOwner(src.id)) return { data: null, error: { code: 'P0001', message: 'Seul le propriétaire peut dupliquer un plan' } }
+    const shift = Number(args.p_shift_years ?? 1)
+    const now = new Date().toISOString()
+    const nid = uuid()
+    d.seasons.push({ id: nid, user_id: me.id, farm_id: src.farm_id, name: args.p_name, year: Number(args.p_year),
+      revenue_goal: src.revenue_goal, is_active: false, invite_token: uuid(), invite_enabled: false, created_at: now })
+    for (const m of fms().filter(x => x.farm_id === src.farm_id))
+      d.team_members.push({ id: uuid(), season_id: nid, user_id: m.user_id, role: m.role, joined_at: now })
+    // make_interval(years => n) : un 29 février devient un 28 février
+    const shiftDate = (ds: string) => {
+      const [y, mo, j] = ds.split('-').map(Number)
+      const ny = y + shift
+      const last = new Date(Date.UTC(ny, mo, 0)).getUTCDate()
+      return `${String(ny).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(Math.min(j, last)).padStart(2, '0')}`
+    }
+    for (const p of d.plantings.filter(x => x.season_id === src.id)) {
+      const row: Row = { ...p, id: uuid(), season_id: nid, date_semis: shiftDate(p.date_semis), created_at: now }
+      calcPlanting(row)
+      d.plantings.push(row)
+    }
+    return { data: nid, error: null }
+  }
   if (fn === 'join_season_by_token') {
     const s = d.seasons.find(x => x.invite_token === args.p_token && x.invite_enabled)
     if (!s) return { data: { error: 'Lien invalide ou désactivé' }, error: null }
     if (d.team_members.some(m => m.season_id === s.id && m.user_id === me.id)) {
       return { data: { ok: true, season_id: s.id, season_name: s.name, message: 'Déjà membre' }, error: null }
     }
-    d.team_members.push({ id: uuid(), season_id: s.id, user_id: me.id, role: 'member', joined_at: new Date().toISOString() })
+    if (s.farm_id) addFarmMember(s.farm_id, me.id)
+    else d.team_members.push({ id: uuid(), season_id: s.id, user_id: me.id, role: 'member', joined_at: new Date().toISOString() })
     return { data: { ok: true, season_id: s.id, season_name: s.name }, error: null }
   }
   if (fn === 'invite_by_email') {
@@ -446,7 +503,9 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
       if (d.team_members.some(m => m.season_id === sid && m.user_id === target.id)) {
         return { data: { status: 'already_member', message: 'Déjà membre de l’équipe' }, error: null }
       }
-      d.team_members.push({ id: uuid(), season_id: sid, user_id: target.id, role: 'member', joined_at: new Date().toISOString() })
+      const fid = farmOf(sid)
+      if (fid) addFarmMember(fid, target.id)
+      else d.team_members.push({ id: uuid(), season_id: sid, user_id: target.id, role: 'member', joined_at: new Date().toISOString() })
       return { data: { status: 'added', message: 'Membre ajouté directement' }, error: null }
     }
     if (!d.pending_invites.some(i => i.season_id === sid && i.email === email)) {
