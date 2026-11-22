@@ -152,7 +152,7 @@ export function situationFacture(
   const total = eurosEnCentimes(f.total)
   const paye = montantPaye(paiements)
   if (f.kind === 'avoir') return { total, paye, reste: 0, statut: 'avoir', joursRetard: null }
-  if (f.annulee_par) return { total, paye, reste: -paye, statut: 'annulee', joursRetard: null }
+  if (f.annulee_par) return { total, paye, reste: paye === 0 ? 0 : -paye, statut: 'annulee', joursRetard: null }
   const reste = total - paye
   if (paye >= total) return { total, paye, reste, statut: 'payee', joursRetard: null }
   if (f.date_echeance && ecartJours(f.date_echeance, aujourdhui) > 0) {
