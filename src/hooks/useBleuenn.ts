@@ -43,6 +43,12 @@ export function useBleuenn() {
     const { error } = await supabase.auth.signUp({ email, password })
     return error
   }
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    return error
+  }
   const signOut = async () => {
     await supabase.auth.signOut()
     setUser(null)
@@ -58,7 +64,8 @@ export function useBleuenn() {
     const [profRes, memberRes, catRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('team_members').select('season_id').eq('user_id', user.id),
-      supabase.from('culture_catalog').select('*').or(`user_id.is.null,user_id.eq.${user.id}`).order('name'),
+      // RLS : catalogue système + celui de toute l'équipe
+      supabase.from('culture_catalog').select('*').order('name'),
     ])
 
     setProfile(profRes.data)
@@ -118,13 +125,8 @@ export function useBleuenn() {
     const { data } = await supabase.from('seasons').insert({
       user_id: user.id, name, year, revenue_goal: goal, is_active: true
     }).select().single()
-    if (data) {
-      // Inscrire le créateur comme owner
-      await supabase.from('team_members').insert({
-        season_id: data.id, user_id: user.id, role: 'owner'
-      })
-      await loadAll()
-    }
+    // Le créateur est inscrit owner par le trigger trg_add_season_owner
+    if (data) await loadAll()
     return data
   }
 
@@ -288,17 +290,11 @@ export function useBleuenn() {
 
   // ─── Équipe ───────────────────────────
   const loadTeamMembers = async (seasonId: string) => {
-    const { data } = await supabase
-      .from('team_members')
-      .select('*, profiles(email, owner_name)')
-      .eq('season_id', seasonId)
-      .order('joined_at')
-    const members: TeamMember[] = (data || []).map((m: any) => ({
-      ...m,
-      email: m.profiles?.email,
-      owner_name: m.profiles?.owner_name,
-    }))
-    setTeamMembers(members)
+    // profiles n'est lisible que par son propriétaire : un join renverrait
+    // null pour les coéquipiers. season_team() n'expose que email et nom.
+    const { data, error } = await supabase.rpc('season_team', { p_season_id: seasonId })
+    if (error) console.error('season_team error:', error)
+    setTeamMembers((data || []) as TeamMember[])
   }
 
   const enableInviteLink = async () => {
@@ -381,7 +377,7 @@ export function useBleuenn() {
 
   return {
     user, profile, loading,
-    signIn, signUp, signOut, updateProfile,
+    signIn, signUp, signOut, resetPassword, updateProfile,
     seasons, activeSeason, switchSeason, createSeason,
     gardens, catalog, plantings, harvests, sales, seedOrders,
     createGarden, updateGarden, deleteGarden,

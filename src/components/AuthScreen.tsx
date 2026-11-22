@@ -1,11 +1,12 @@
 'use client'
 import { useState } from 'react'
 
-export default function AuthScreen({ signIn, signUp }: {
+export default function AuthScreen({ signIn, signUp, resetPassword }: {
   signIn: (e: string, p: string) => Promise<any>
   signUp: (e: string, p: string) => Promise<any>
+  resetPassword: (e: string) => Promise<any>
 }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -17,11 +18,18 @@ export default function AuthScreen({ signIn, signUp }: {
     setError('')
     setSuccess('')
     setLoading(true)
+    if (mode === 'forgot') {
+      const err = await resetPassword(email)
+      setLoading(false)
+      if (err) setError(err.message)
+      else setSuccess('Si un compte existe pour cette adresse, un lien de réinitialisation vient de partir. Ouvrez-le dans ce même navigateur.')
+      return
+    }
     const fn = mode === 'login' ? signIn : signUp
     const err = await fn(email, password)
     setLoading(false)
     if (err) setError(err.message)
-    else if (mode === 'register') setSuccess('Compte cree ! Verifiez vos emails.')
+    else if (mode === 'register') setSuccess('Compte créé ! Vérifiez vos emails.')
   }
 
   return (
@@ -56,7 +64,7 @@ export default function AuthScreen({ signIn, signUp }: {
         {/* Card */}
         <div className="bg-white/90 backdrop-blur-sm rounded-card p-10 shadow-card-lg border border-white/60">
           <h2 className="font-serif text-xl text-center text-brun mb-6">
-            {mode === 'login' ? 'Bienvenue' : 'Creer un compte'}
+            {mode === 'login' ? 'Bienvenue' : mode === 'register' ? 'Créer un compte' : 'Mot de passe oublié'}
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -65,17 +73,27 @@ export default function AuthScreen({ signIn, signUp }: {
               <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required
                 placeholder="marine@ferme.fr" />
             </div>
+            {mode !== 'forgot' && (
             <div>
-              <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Mot de passe</label>
+              <div className="flex items-baseline justify-between mb-1.5">
+                <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest">Mot de passe</label>
+                {mode === 'login' && (
+                  <button type="button" className="text-[0.7rem] text-pivoine hover:underline"
+                    onClick={() => { setMode('forgot'); setError(''); setSuccess('') }}>
+                    Mot de passe oublié ?
+                  </button>
+                )}
+              </div>
               <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
-                placeholder="6 caracteres minimum" />
+                placeholder="6 caractères minimum" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
             </div>
+            )}
 
             {error && <p className="text-rose-deep text-sm bg-rose-pale rounded-btn px-3 py-2">{error}</p>}
             {success && <p className="text-feuille text-sm bg-sage-pale rounded-btn px-3 py-2">{success}</p>}
 
             <button className="btn btn-sage w-full text-base py-3" disabled={loading}>
-              {loading ? '...' : mode === 'login' ? 'Se connecter' : 'Creer mon compte'}
+              {loading ? '...' : mode === 'login' ? 'Se connecter' : mode === 'register' ? 'Créer mon compte' : 'Recevoir le lien'}
             </button>
           </form>
 
@@ -87,7 +105,7 @@ export default function AuthScreen({ signIn, signUp }: {
             {mode === 'login' ? (
               <>Pas encore de compte ? <button className="text-pivoine font-bold hover:underline" onClick={() => setMode('register')}>S&apos;inscrire</button></>
             ) : (
-              <>Deja inscrit ? <button className="text-pivoine font-bold hover:underline" onClick={() => setMode('login')}>Se connecter</button></>
+              <>Déjà inscrit ? <button className="text-pivoine font-bold hover:underline" onClick={() => { setMode('login'); setError(''); setSuccess('') }}>Se connecter</button></>
             )}
           </p>
         </div>

@@ -60,7 +60,7 @@ export default function Home() {
 
   // Not logged in
   if (!ctx.user && !ctx.loading) {
-    return <AuthScreen signIn={ctx.signIn} signUp={ctx.signUp} />
+    return <AuthScreen signIn={ctx.signIn} signUp={ctx.signUp} resetPassword={ctx.resetPassword} />
   }
 
   // Loading
