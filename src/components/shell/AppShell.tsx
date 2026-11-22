@@ -10,6 +10,7 @@ import { ShortcutsDialog } from './ShortcutsDialog'
 import { ProfileDialog } from './ProfileDialog'
 import { DemoBanner } from './DemoBanner'
 import { DuplicatePlanDialog } from './DuplicatePlanDialog'
+import { FieldBackdrop } from './FieldBackdrop'
 import { SECTIONS } from './nav'
 import { UIProvider, useUI, type Intent } from './ui-context'
 import TeamPanel from '@/components/TeamPanel'
@@ -94,7 +95,8 @@ function Shell({ ctx, section, onNav, children, palette, setPalette, setShortcut
   const nav = (id: string) => { onNav(id); setDrawer(false) }
 
   return (
-    <div className="min-h-screen">
+    <div className="relative isolate min-h-screen">
+      <FieldBackdrop section={section} />
       <a href="#contenu" className="sr-only z-[100] rounded-md bg-surface px-3 py-2 text-sm font-medium text-fg shadow-pop focus:not-sr-only focus:fixed focus:left-3 focus:top-3">
         Aller au contenu
       </a>

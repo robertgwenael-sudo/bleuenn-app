@@ -162,3 +162,26 @@
 /* Recharts : focus clavier propre, pas de contour noir au clic */
 .recharts-wrapper *:focus { outline: none; }
 .recharts-surface:focus-visible { outline: 2px solid rgb(var(--ring)); }
+
+/* ─── Fond de champ pastel (FieldBackdrop) ─────────────────────── */
+.field-backdrop img {
+  filter: saturate(0.6) brightness(1.1) contrast(0.9) blur(1px);
+  opacity: 0.55;
+  transform: scale(1.04);
+}
+.field-veil {
+  background:
+    linear-gradient(180deg, rgb(var(--bg) / 0.9) 0%, rgb(var(--bg) / 0.72) 35%, rgb(var(--bg) / 0.4) 75%, rgb(var(--bg) / 0.2) 100%),
+    radial-gradient(120% 70% at 85% 100%, rgb(var(--accent) / 0.10), transparent 60%);
+}
+.dark .field-backdrop img,
+:root[data-theme="dark"] .field-backdrop img {
+  filter: saturate(0.45) brightness(0.65) contrast(0.9) blur(1.5px);
+  opacity: 0.4;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .field-backdrop { display: none; }
+}
+@media print {
+  .field-backdrop, .field-veil { display: none; }
+}
