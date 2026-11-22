@@ -463,7 +463,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
         </ul>
       )}
 
-      <p className="text-xs text-fg-subtle">Chaque plantation est rattachée à la saison de l'année de sa première récolte, modifiable. Le calendrier se calcule à partir de la date saisie.</p>
+      <p className="text-xs text-fg-subtle">Chaque plantation est rattachée à la saison de l’année de sa première récolte, modifiable. Le calendrier se calcule à partir de la date saisie.</p>
 
       <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onClose}>Annuler</Button>
