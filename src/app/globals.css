@@ -1,161 +1,164 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Lato:wght@300;400;700;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-
+/* ─────────────────────────────────────────────────────────────
+   Design tokens Bleuenn — triplets RGB consommés par tailwind.config.js
+   Clair : lin chaud, vert feuillage, rose pivoine.
+   Sombre : sous-bois, mêmes teintes éclaircies (contrastes AA vérifiés).
+   ───────────────────────────────────────────────────────────── */
 @layer base {
+  :root {
+    color-scheme: light;
+    --bg: 248 246 241;
+    --surface: 255 255 255;
+    --surface-2: 244 241 234;
+    --surface-3: 235 231 222;
+    --border: 229 224 213;
+    --border-strong: 208 201 187;
+    --fg: 31 36 30;
+    --fg-muted: 87 92 82;
+    --fg-subtle: 107 110 100;
+    --primary: 46 101 56;
+    --primary-hover: 38 85 47;
+    --primary-fg: 255 255 255;
+    --primary-soft: 231 240 228;
+    --accent: 166 66 104;
+    --accent-fg: 255 255 255;
+    --accent-soft: 250 235 240;
+    --warning: 146 92 8;
+    --warning-soft: 251 242 219;
+    --danger: 180 35 45;
+    --danger-soft: 253 236 236;
+    --info: 52 88 170;
+    --info-soft: 233 239 252;
+    --violet: 103 78 176;
+    --violet-soft: 240 236 250;
+    --sidebar: 252 251 248;
+    --sidebar-fg: 31 36 30;
+    --sidebar-muted: 92 97 87;
+    --sidebar-active: 231 240 228;
+    --sidebar-border: 232 227 217;
+    --ring: 46 101 56;
+    --shadow: 40 36 28;
+    --phase-cellule: 240 208 120;
+    --phase-champ: 226 160 92;
+    --phase-recolte: 128 182 112;
+    /* Palette graphique validée (dataviz, --pairs all) */
+    --chart-1: 47 125 58;
+    --chart-2: 91 111 208;
+    --chart-3: 208 86 127;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --bg: 19 21 18;
+    --surface: 28 30 27;
+    --surface-2: 35 38 34;
+    --surface-3: 45 48 43;
+    --border: 50 54 48;
+    --border-strong: 72 77 69;
+    --fg: 236 236 229;
+    --fg-muted: 182 184 173;
+    --fg-subtle: 150 153 142;
+    --primary: 132 196 132;
+    --primary-hover: 152 210 150;
+    --primary-fg: 14 30 16;
+    --primary-soft: 34 52 35;
+    --accent: 232 140 172;
+    --accent-fg: 40 14 24;
+    --accent-soft: 58 32 42;
+    --warning: 232 182 92;
+    --warning-soft: 55 44 22;
+    --danger: 244 128 128;
+    --danger-soft: 62 28 28;
+    --info: 140 170 240;
+    --info-soft: 30 40 64;
+    --violet: 176 160 240;
+    --violet-soft: 42 36 66;
+    --sidebar: 23 25 22;
+    --sidebar-fg: 236 236 229;
+    --sidebar-muted: 168 171 160;
+    --sidebar-active: 38 56 39;
+    --sidebar-border: 42 46 40;
+    --ring: 132 196 132;
+    --shadow: 0 0 0;
+    --phase-cellule: 196 160 70;
+    --phase-champ: 190 122 62;
+    --phase-recolte: 96 150 84;
+    --chart-1: 63 154 75;
+    --chart-2: 127 134 224;
+    --chart-3: 216 90 135;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
-    @apply font-sans text-brun bg-lin antialiased;
-    font-feature-settings: 'kern' 1, 'liga' 1;
+    @apply bg-background font-sans text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
   }
   h1, h2, h3, h4 {
-    @apply font-serif text-brun;
+    @apply font-serif text-fg;
     font-weight: 500;
+    letter-spacing: -0.01em;
   }
   ::selection {
-    background: #d4a0a055;
+    background: rgb(var(--accent) / 0.22);
+  }
+  /* Focus visible partout, discret à la souris */
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 2px;
+  }
+  input[type='number']::-webkit-inner-spin-button { opacity: 0.6; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
 @layer components {
-
-  /* ─── Badges ──────────────────────── */
-  .badge {
-    @apply inline-block px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest;
+  /* Champ de saisie commun (Input, Select, Textarea) */
+  .field-control {
+    @apply block w-full rounded-btn border border-border bg-surface px-3 text-sm text-fg shadow-xs
+      transition-colors placeholder:text-fg-subtle
+      hover:border-border-strong
+      focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20
+      disabled:cursor-not-allowed disabled:opacity-60;
+    min-height: 2.5rem;
   }
-  .badge-rr { @apply bg-sage-pale text-sage-dark; }
-  .badge-mp { @apply bg-or-light/40 text-or-dark; }
-  .badge-ru { @apply bg-lavande-pale text-lavande; }
-  .badge-semer { @apply bg-rose-pale text-rose-deep; }
-  .badge-germination { @apply bg-or-light/30 text-or-dark; }
-  .badge-plante { @apply bg-sage-pale text-sage-dark; }
-  .badge-recolte { @apply bg-pivoine-light/40 text-pivoine-dark; }
-  .badge-termine { @apply bg-lin-dark text-terre; }
-
-  /* ─── Cards ───────────────────────── */
-  .card {
-    @apply bg-white rounded-card p-5 shadow-card
-      border border-lin-dark/60
-      transition-all duration-300 ease-out;
-  }
-  .card:hover {
-    @apply shadow-card-lg -translate-y-0.5;
+  .field-control[aria-invalid='true'] {
+    @apply border-danger focus:border-danger focus:ring-danger/20;
   }
 
-  /* ─── Boutons ─────────────────────── */
-  .btn {
-    @apply px-5 py-2.5 rounded-btn font-sans text-sm font-bold
-      transition-all duration-200 cursor-pointer border-none
-      tracking-wide;
+  /* Tableaux de données */
+  .data-table { @apply w-full border-separate border-spacing-0 text-sm; }
+  .data-table thead th {
+    @apply sticky top-0 z-10 whitespace-nowrap border-b border-border bg-surface-2 px-3 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-fg-muted;
   }
-  .btn-sage {
-    @apply bg-feuille text-white;
-    background: linear-gradient(135deg, #6a8a62 0%, #8aaa80 100%);
-  }
-  .btn-sage:hover {
-    @apply shadow-md;
-    background: linear-gradient(135deg, #5e7a58 0%, #7a9a72 100%);
-    transform: translateY(-1px);
-  }
-  .btn-rose {
-    @apply text-white;
-    background: linear-gradient(135deg, #cc909a 0%, #d4a8a8 100%);
-  }
-  .btn-rose:hover {
-    background: linear-gradient(135deg, #c08088 0%, #c89898 100%);
-    transform: translateY(-1px);
-  }
-  .btn-blush { @apply bg-rose text-brun hover:bg-rose-dark hover:text-white; }
-  .btn-outline {
-    @apply bg-transparent border-2 border-sage/40 text-sage-dark;
-  }
-  .btn-outline:hover {
-    @apply bg-sage text-white border-sage;
-  }
-  .btn-danger {
-    @apply bg-rose-pale text-rose-deep border border-rose/30;
-  }
-  .btn-danger:hover {
-    @apply bg-rose-light text-rose-deep;
-  }
-  .btn-sm { @apply px-3 py-1.5 text-xs; }
+  .data-table tbody td { @apply whitespace-nowrap border-b border-border/70 px-3 py-2.5 align-middle; }
+  .data-table tbody tr:last-child td { @apply border-b-0; }
+  .data-table tbody tr { @apply transition-colors; }
+  .data-table tbody tr:hover td { @apply bg-surface-2; }
+  .data-table tfoot td { @apply sticky bottom-0 border-t border-border bg-surface-2 px-3 py-2.5 font-semibold; }
 
-  /* ─── Inputs ──────────────────────── */
-  .input {
-    @apply w-full px-4 py-2.5 border border-lin-dark rounded-btn
-      font-sans text-sm bg-white text-brun
-      shadow-inner-soft
-      focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage-pale
-      placeholder:text-terre-light/50
-      transition-all duration-200;
-  }
+  /* Grille dense (Vérification, Calendrier) */
+  .grid-table { @apply border-separate border-spacing-0 text-xs; }
+  .grid-table th, .grid-table td { @apply whitespace-nowrap; }
 
-  /* ─── Tables ──────────────────────── */
-  .table-header {
-    @apply bg-feuille/5 text-brun px-3.5 py-3 text-left font-bold text-[0.68rem] uppercase tracking-widest
-      border-b-2 border-sage/20;
-  }
-  .table-cell {
-    @apply px-3.5 py-2.5 border-b border-lin-dark text-sm;
-  }
-
-  /* ─── Calendrier : couleurs pastel ── */
-  .cal-cellule { background-color: #f5d98e; }   /* jaune pastel */
-  .cal-champ   { background-color: #e8b06d; }   /* orange pastel */
-  .cal-recolte { background-color: #9dc08b; }   /* vert pastel */
-
-  /* Tableau de vérification (style Excel) */
-  .thv {
-    @apply px-2 py-2 text-center text-[0.6rem] font-bold uppercase tracking-wider whitespace-nowrap;
-  }
-  .tdv {
-    @apply px-2 py-1.5 whitespace-nowrap;
-  }
+  .num { font-variant-numeric: tabular-nums; }
 }
 
-/* ─── Scrollbar champêtre ──────────── */
-::-webkit-scrollbar { width: 7px; height: 7px; }
+/* Barres de défilement fines */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--border-strong)) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: #c9a96e55;
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #c9a96e99;
-}
+::-webkit-scrollbar-thumb { background: rgb(var(--border-strong)); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
 
-/* ─── Animations ───────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes fadeInSoft {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes slideInLeft {
-  from { opacity: 0; transform: translateX(-16px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.animate-fade-in { animation: fadeIn 0.35s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
-.animate-fade-soft { animation: fadeInSoft 0.5s ease forwards; }
-.animate-slide-left { animation: slideInLeft 0.3s ease forwards; }
-
-/* ─── Déco florale subtile ─────────── */
-.floral-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #c9a96e;
-  font-size: 0.7rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-.floral-divider::before,
-.floral-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #c9a96e44, transparent);
-}
+/* Recharts : focus clavier propre, pas de contour noir au clic */
+.recharts-wrapper *:focus { outline: none; }
+.recharts-surface:focus-visible { outline: 2px solid rgb(var(--ring)); }

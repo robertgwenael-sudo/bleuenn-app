@@ -1,43 +1,68 @@
 /** @type {import('tailwindcss').Config} */
+
+// Les couleurs sémantiques pointent vers des variables CSS (triplets RGB)
+// définies dans src/app/globals.css, en clair et en sombre. On garde la
+// syntaxe <alpha-value> pour pouvoir écrire bg-primary/10, border-border/60…
+const v = name => `rgb(var(--${name}) / <alpha-value>)`
+
 module.exports = {
+  darkMode: 'class',
   content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
   theme: {
     extend: {
       colors: {
-        // Verts doux champêtres
-        sage: { DEFAULT: '#8a9e7a', light: '#a8bda0', pale: '#eef3eb', dark: '#62785a' },
-        feuille: { DEFAULT: '#5e7a58', dark: '#3f5a3a', light: '#7a9a72' },
-        // Roses floraux doux
-        rose: { DEFAULT: '#d4a8a8', light: '#f0d9d9', pale: '#faf2f2', dark: '#c08888', deep: '#a06868' },
-        pivoine: { DEFAULT: '#cc909a', light: '#e8c0c8', dark: '#a86878' },
-        // Neutres chauds
-        lin: { DEFAULT: '#f7f3ed', dark: '#ece5db', light: '#fbf9f6' },
-        ivoire: { DEFAULT: '#fefcf8', dark: '#f5f0e6' },
-        terre: { DEFAULT: '#9a8872', light: '#b8a894', dark: '#7a6850' },
-        brun: { DEFAULT: '#5a5048', dark: '#3a3230', light: '#7a706a' },
-        // Accents
-        or: { DEFAULT: '#d4b87a', light: '#e8d8a8', dark: '#b89850' },
-        lavande: { DEFAULT: '#a898c8', light: '#cec4e0', pale: '#f0ecf5' },
-        // Anciennes couleurs (backward compat)
-        cream: { DEFAULT: '#fbf8f4', dark: '#ece5db' },
-        blush: { DEFAULT: '#d4a8a8', light: '#f0d9d9', dark: '#c08888' },
+        background: v('bg'),
+        surface: { DEFAULT: v('surface'), 2: v('surface-2'), 3: v('surface-3') },
+        border: { DEFAULT: v('border'), strong: v('border-strong') },
+        fg: { DEFAULT: v('fg'), muted: v('fg-muted'), subtle: v('fg-subtle') },
+        primary: { DEFAULT: v('primary'), fg: v('primary-fg'), soft: v('primary-soft'), hover: v('primary-hover') },
+        accent: { DEFAULT: v('accent'), fg: v('accent-fg'), soft: v('accent-soft') },
+        warning: { DEFAULT: v('warning'), soft: v('warning-soft') },
+        danger: { DEFAULT: v('danger'), soft: v('danger-soft') },
+        info: { DEFAULT: v('info'), soft: v('info-soft') },
+        violet: { DEFAULT: v('violet'), soft: v('violet-soft') },
+        sidebar: { DEFAULT: v('sidebar'), fg: v('sidebar-fg'), muted: v('sidebar-muted'), active: v('sidebar-active'), border: v('sidebar-border') },
+        ring: v('ring'),
+        // Phases du calendrier de culture
+        phase: { cellule: v('phase-cellule'), champ: v('phase-champ'), recolte: v('phase-recolte') },
+        chart: { 1: v('chart-1'), 2: v('chart-2'), 3: v('chart-3') },
       },
       fontFamily: {
-        serif: ['Cormorant Garamond', 'Georgia', 'serif'],
-        sans: ['Lato', 'system-ui', 'sans-serif'],
+        serif: ['var(--font-serif)', 'Georgia', 'serif'],
+        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        '2xs': ['0.6875rem', { lineHeight: '1rem' }],
+      },
+      spacing: {
+        sidebar: '15.5rem',
+        'sidebar-collapsed': '4.25rem',
+        topbar: '3.75rem',
+        bottomnav: '4rem',
       },
       borderRadius: {
-        card: '14px',
-        btn: '10px',
+        card: '0.875rem',
+        btn: '0.625rem',
       },
       boxShadow: {
-        card: '0 2px 16px rgba(75,63,53,0.06)',
-        'card-lg': '0 6px 32px rgba(75,63,53,0.10)',
-        'card-glow': '0 4px 24px rgba(197,125,138,0.12)',
-        'inner-soft': 'inset 0 1px 3px rgba(75,63,53,0.06)',
+        xs: '0 1px 2px rgb(var(--shadow) / 0.06)',
+        card: '0 1px 2px rgb(var(--shadow) / 0.05), 0 2px 12px -4px rgb(var(--shadow) / 0.08)',
+        pop: '0 12px 40px -8px rgb(var(--shadow) / 0.22), 0 2px 6px rgb(var(--shadow) / 0.08)',
       },
-      backgroundImage: {
-        'floral-pattern': "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M30 30c0-5.5 4.5-10 10-10s10 4.5 10 10-4.5 10-10 10-10-4.5-10-10zm-20 0c0-5.5 4.5-10 10-10s10 4.5 10 10-4.5 10-10 10-10-4.5-10-10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
+      keyframes: {
+        'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        'fade-out': { from: { opacity: '1' }, to: { opacity: '0' } },
+        'dialog-in': { from: { opacity: '0', transform: 'translate(-50%, -48%) scale(0.97)' }, to: { opacity: '1', transform: 'translate(-50%, -50%) scale(1)' } },
+        'sheet-in': { from: { transform: 'translateY(100%)' }, to: { transform: 'translateY(0)' } },
+        'drawer-in': { from: { transform: 'translateX(-100%)' }, to: { transform: 'translateX(0)' } },
+        shimmer: { '100%': { transform: 'translateX(100%)' } },
+      },
+      animation: {
+        'fade-in': 'fade-in 160ms ease-out',
+        'fade-out': 'fade-out 120ms ease-in',
+        'dialog-in': 'dialog-in 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'sheet-in': 'sheet-in 240ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'drawer-in': 'drawer-in 220ms cubic-bezier(0.16, 1, 0.3, 1)',
       },
     },
   },
