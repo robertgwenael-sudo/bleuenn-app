@@ -259,7 +259,10 @@ export default function Recoltes({ ctx }: { ctx: any }) {
                 { value: 'recolte', label: 'Récolte', icon: <Scissors className="h-4 w-4" aria-hidden /> },
                 { value: 'perte', label: 'Perte', icon: <TrendingDown className="h-4 w-4" aria-hidden /> },
               ]} />
-            <form onSubmit={submit} className="space-y-4">
+            {/* noValidate : le pas du stepper (10 tiges, 5 pour une perte) n'est qu'un
+                raccourci des boutons −/+. Sans lui, le navigateur refusait « 25 tiges »
+                (« valeurs valides : 20 et 30 »). La validation est faite par `submit`. */}
+            <form onSubmit={submit} noValidate className="space-y-4">
               <Field label="Culture / planche" error={tried && !plantingId ? (estPerte ? 'Choisissez la culture concernée.' : 'Choisissez la culture récoltée.') : undefined}>
                 <Select ref={selectRef} className="h-12 text-base sm:h-11 sm:text-sm" value={plantingId} onChange={e => setPlantingId(e.target.value)}>
                   <option value="">— Choisir —</option>

@@ -87,13 +87,16 @@ export async function stockageIndexedDB(idb: IDBFactory, nomBase: string): Promi
   const db = await ouvrir(idb, nomBase)
   const tx = async <T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
     const t = db.transaction(STORE, mode)
-    const r = await promesse(f(t.objectStore(STORE)))
-    // Attendre la validation de la transaction : la saisie est alors sur le disque.
-    await new Promise<void>((ok, ko) => {
+    // Écouteurs posés avant toute attente : la fin de transaction ne doit
+    // pas pouvoir survenir avant qu'on l'écoute.
+    const fini = new Promise<void>((ok, ko) => {
       t.oncomplete = () => ok()
       t.onerror = () => ko(t.error)
       t.onabort = () => ko(t.error ?? new Error('transaction annulée'))
     })
+    const req = promesse(f(t.objectStore(STORE)))
+    // Attendre la validation de la transaction : la saisie est alors sur le disque.
+    const [r] = await Promise.all([req, fini])
     return r
   }
   return {
