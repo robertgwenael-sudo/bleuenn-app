@@ -9,6 +9,7 @@ import { CommandPalette } from './CommandPalette'
 import { ShortcutsDialog } from './ShortcutsDialog'
 import { ProfileDialog } from './ProfileDialog'
 import { DemoBanner } from './DemoBanner'
+import { DuplicatePlanDialog } from './DuplicatePlanDialog'
 import { SECTIONS } from './nav'
 import { UIProvider, useUI, type Intent } from './ui-context'
 import TeamPanel from '@/components/TeamPanel'
@@ -30,9 +31,10 @@ function isTyping(el: EventTarget | null) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable
 }
 
-function Shell({ ctx, section, onNav, children, palette, setPalette, setShortcuts, setTeam }: {
+function Shell({ ctx, section, onNav, children, palette, setPalette, setShortcuts, setTeam, setDuplicate }: {
   ctx: any; section: string; onNav: (id: string) => void; children: React.ReactNode
   palette: boolean; setPalette: (o: boolean) => void; setShortcuts: (o: boolean) => void; setTeam: (o: boolean) => void
+  setDuplicate: (o: boolean) => void
 }) {
   const ui = useUI()
   const reduce = useReducedMotion()
@@ -97,12 +99,13 @@ function Shell({ ctx, section, onNav, children, palette, setPalette, setShortcut
         Aller au contenu
       </a>
       <Sidebar active={section} onNav={nav} collapsed={collapsed} onToggle={toggleCollapsed} ctx={ctx} onTeam={() => setTeam(true)} />
-      <MobileDrawer open={drawer} onOpenChange={setDrawer} active={section} onNav={nav} ctx={ctx} />
+      <MobileDrawer open={drawer} onOpenChange={setDrawer} active={section} onNav={nav} ctx={ctx} onDuplicate={() => setDuplicate(true)} />
 
       <div className={cn('flex min-h-screen min-w-0 flex-col transition-[padding] duration-200', collapsed ? 'lg:pl-sidebar-collapsed' : 'lg:pl-sidebar')}>
         <DemoBanner />
         <Topbar section={section} ctx={ctx} onMenu={() => setDrawer(true)} onPalette={() => setPalette(true)}
-          onProfile={() => setProfile(true)} onTeam={() => setTeam(true)} onShortcuts={() => setShortcuts(true)} />
+          onProfile={() => setProfile(true)} onTeam={() => setTeam(true)} onShortcuts={() => setShortcuts(true)}
+          onDuplicate={() => setDuplicate(true)} />
         <main id="contenu" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-[1440px] flex-1 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-5 outline-none sm:px-6 sm:pt-7 lg:px-8 lg:pb-12">
           <motion.div
             key={section}
@@ -117,7 +120,7 @@ function Shell({ ctx, section, onNav, children, palette, setPalette, setShortcut
 
       <BottomNav active={section} onNav={nav} onMore={() => setDrawer(true)} />
       <CommandPalette open={palette} onOpenChange={setPalette} onNav={onNav} onIntent={goIntent}
-        onTeam={() => setTeam(true)} onShortcuts={() => setShortcuts(true)} ctx={ctx} />
+        onTeam={() => setTeam(true)} onShortcuts={() => setShortcuts(true)} onDuplicate={() => setDuplicate(true)} ctx={ctx} />
       <ProfileDialog open={profile} onOpenChange={setProfile} ctx={ctx} />
     </div>
   )
@@ -127,13 +130,15 @@ export function AppShell({ ctx, section, onNav, children }: { ctx: any; section:
   const [palette, setPalette] = useState(false)
   const [shortcuts, setShortcuts] = useState(false)
   const [team, setTeam] = useState(false)
+  const [duplicate, setDuplicate] = useState(false)
   return (
     <UIProvider openTeam={() => setTeam(true)} openPalette={() => setPalette(true)} openShortcuts={() => setShortcuts(true)}>
-      <Shell ctx={ctx} section={section} onNav={onNav} palette={palette} setPalette={setPalette} setShortcuts={setShortcuts} setTeam={setTeam}>
+      <Shell ctx={ctx} section={section} onNav={onNav} palette={palette} setPalette={setPalette} setShortcuts={setShortcuts} setTeam={setTeam} setDuplicate={setDuplicate}>
         {children}
       </Shell>
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       <TeamPanel ctx={ctx} open={team} onOpenChange={setTeam} />
+      {ctx.isOwner && <DuplicatePlanDialog ctx={ctx} open={duplicate} onOpenChange={setDuplicate} />}
     </UIProvider>
   )
 }

@@ -2,9 +2,63 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowRight, CalendarCheck, Check, Trash2 } from 'lucide-react'
-import { getOverlappingM2 } from '@/lib/types'
 import type { PlantingFull, CultureCatalog } from '@/lib/types'
 import { Badge, Button, Field, Input, SearchInput, TypeBadge, TYPE_LABEL, cn, useConfirm } from '@/components/ui'
+import {
+  ajouterJours, conflitsSiAjout, estDateValide, formatJourMois, libreAPartirDu, periodeOccupation,
+  segmentsOccupation, dureeJours, type PlantingOccupation,
+} from '@/lib/domain'
+import { AvertissementSaisie, calculables } from './Occupation'
+
+// ─── Vérification d'occupation (toutes saisons, par dates) ──────────
+// Le calcul vient du domaine (`conflitsSiAjout`, `libreAPartirDu`) et porte
+// sur TOUTES les plantations de la planche, quelle que soit leur saison.
+// Un conflit avertit mais n'empêche jamais d'enregistrer.
+type Cycle = { jc: number; jch: number; jr: number; semisDirect: boolean }
+
+function datesProjet(dateSemis: string, c: Cycle) {
+  const plantation = ajouterJours(dateSemis, c.jc)
+  const recolte = ajouterJours(plantation, c.jch)
+  const fin = ajouterJours(recolte, c.jr)
+  return { plantation, recolte, fin }
+}
+
+function verifierOccupation(ctx: any, plancheId: string, projet: {
+  id: string; dateSemis: string; surface: number; cycle: Cycle | null; cultureName: string
+}) {
+  let plancheM2 = 0, plancheName = ''
+  for (const g of (ctx.gardens || [])) {
+    for (const pl of (g.planches || [])) {
+      if (pl.id === plancheId) { plancheM2 = Number(pl.surface_m2); plancheName = `${g.name} · ${pl.name}` }
+    }
+  }
+  const source: PlantingFull[] = ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
+  const voisines = calculables(source.filter(p => p.planche_id === plancheId))
+  const autres = voisines.filter(p => p.id !== projet.id)
+  const out = { plancheM2, plancheName, voisines, autres, conflits: [] as ReturnType<typeof conflitsSiAjout>,
+    picAutres: 0, libre: null as string | null, semisSuggere: null as string | null, dates: null as ReturnType<typeof datesProjet> | null }
+  if (!projet.cycle || !estDateValide(projet.dateSemis)) return out
+  const dates = datesProjet(projet.dateSemis, projet.cycle)
+  out.dates = dates
+  const p: PlantingOccupation = {
+    id: projet.id, surface_m2: projet.surface, date_semis: projet.dateSemis, date_plantation: dates.plantation,
+    date_fin: dates.fin, semis_direct: projet.cycle.semisDirect, culture_name: projet.cultureName,
+    season_name: ctx.activeSeason?.name, season_year: ctx.activeSeason?.year,
+  }
+  const periode = periodeOccupation(p)
+  out.picAutres = segmentsOccupation(autres, periode).reduce((m, s) => Math.max(m, s.surface_occupee), 0)
+  if (projet.surface > 0) {
+    out.conflits = conflitsSiAjout({ surface_m2: plancheM2 }, autres, p)
+    if (out.conflits.length) {
+      out.libre = libreAPartirDu({ surface_m2: plancheM2 }, autres, projet.surface, periode.debut, dureeJours(periode))
+      out.semisSuggere = out.libre ? (projet.cycle.semisDirect ? out.libre : ajouterJours(out.libre, -projet.cycle.jc)) : null
+    }
+  }
+  return out
+}
+
+const PROJET_ID = 'projet:nouvelle-plantation'
+const fmtM2 = (x: number) => String(Math.round(x * 100) / 100).replace('.', ',')
 
 // ─── Aperçu des dates calculées ─────────────────────
 function DatesPreview({ title, plantation, recolte, fin }: { title: string; plantation: string; recolte: string; fin: string }) {
@@ -30,19 +84,21 @@ function DatesPreview({ title, plantation, recolte, fin }: { title: string; plan
   )
 }
 
-function SurfaceGauge({ used, total, available }: { used: number; total: number; available: number }) {
-  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0
-  const high = total > 0 && used / total > 0.9
+function SurfaceGauge({ pic, total, periodeConnue }: { pic: number; total: number; periodeConnue: boolean }) {
+  const pct = total > 0 ? Math.min(100, (pic / total) * 100) : 0
+  const libre = Math.max(0, total - pic)
   return (
     <div className="rounded-xl border border-border bg-surface-2/60 p-3.5">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
-        <span className="font-semibold text-fg">Surface de la planche</span>
+        <span className="font-semibold text-fg">{periodeConnue ? 'Surface de la planche sur la période' : 'Surface de la planche'}</span>
         <span className="num text-fg-muted">
-          {used} / {total} m² utilisés · <strong className={available > 0 ? 'text-primary' : 'text-danger'}>{available} m² disponibles</strong>
+          {periodeConnue
+            ? <>{fmtM2(pic)} / {fmtM2(total)} m² pris par les autres cultures au plus chargé · <strong className={libre > 0 ? 'text-primary' : 'text-danger'}>{fmtM2(libre)} m² libres</strong></>
+            : <>{fmtM2(total)} m² — choisissez une culture et une date de semis</>}
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-surface-3">
-        <div className={cn('h-full rounded-full transition-all', high ? 'bg-danger' : 'bg-primary')} style={{ width: `${pct}%` }} />
+        <div className={cn('h-full rounded-full transition-all', libre <= 0 ? 'bg-danger' : 'bg-primary')} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
@@ -57,45 +113,25 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
   const [notes, setNotes] = useState(planting.planting_notes ?? planting.notes ?? '')
   const [loading, setLoading] = useState(false)
 
-  // Surface disponible (calcul temporel, en excluant la culture en cours)
-  const allPlantings: PlantingFull[] = ctx.plantings || []
-  const samePlanchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id)
-
-  let plancheM2 = 0
-  for (const g of (ctx.gardens || [])) {
-    for (const pl of (g.planches || [])) {
-      if (pl.id === planting.planche_id) { plancheM2 = pl.surface_m2; break }
-    }
-  }
-
-  // Preview dates
   const jc = planting.jours_cellule || 0
   const jch = planting.jours_champ || 0
   const jr = planting.jours_recolte || 21
-  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
-  if (dateSemis) {
-    const ds = new Date(dateSemis + 'T00:00:00')
-    const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
-    const dr = new Date(dp); dr.setDate(dr.getDate() + jch)
-    const df = new Date(dr); df.setDate(df.getDate() + jr)
-    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFinDate = df.toISOString().slice(0, 10)
-  }
-
-  // Calcul temporel : seules les cultures qui chevauchent comptent
-  const usedM2 = dateSemis ? getOverlappingM2(samePlanchePlantings, dateSemis, previewFinDate || planting.date_fin, planting.id) : 0
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
+  const today: string = ctx.today
+  const v = verifierOccupation(ctx, planting.planche_id, {
+    id: planting.id, dateSemis, surface: surfaceM2, cultureName: planting.culture_name,
+    cycle: { jc, jch, jr, semisDirect: !!planting.semis_direct },
+  })
+  const anneeRef = Number((today || dateSemis || '2000').slice(0, 4))
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    if (!dateSemis || isOverCapacity || surfaceM2 <= 0) return
+    if (!dateSemis || surfaceM2 <= 0) return
     setLoading(true)
     await ctx.updatePlanting(planting.id, { date_semis: dateSemis, surface_m2: surfaceM2, notes: notes || null })
     setLoading(false)
-    toast.success(`${planting.culture_name} mis à jour`, { description: `Semis le ${new Date(dateSemis + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}` })
+    toast.success(`${planting.culture_name} mis à jour`, {
+      description: v.conflits.length ? 'Attention : la planche est en conflit de surface sur cette période.' : `Semis le ${formatJourMois(dateSemis, anneeRef)}`,
+    })
     onClose()
   }
 
@@ -118,6 +154,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border border-border bg-surface-2/60 p-3.5 text-xs sm:grid-cols-3">
         <div className="col-span-2 sm:col-span-1"><dt className="text-fg-subtle">Type</dt><dd className="mt-0.5 flex items-center gap-1.5 font-medium text-fg"><TypeBadge type={planting.culture_type} />{TYPE_LABEL[planting.culture_type]}</dd></div>
         <div><dt className="text-fg-subtle">Emplacement</dt><dd className="mt-0.5 font-medium text-fg">{planting.garden_name} · {planting.planche_name}</dd></div>
+        {planting.season_name && <div><dt className="text-fg-subtle">Saison</dt><dd className="mt-0.5 font-medium text-fg">{planting.season_name}</dd></div>}
         <div><dt className="text-fg-subtle">Cycle (cellule / champ / récolte)</dt><dd className="num mt-0.5 font-medium text-fg">{jc} / {jch} / {jr} j</dd></div>
         <div><dt className="text-fg-subtle">Plants</dt><dd className="num mt-0.5 font-medium text-fg">{planting.plants_count}</dd></div>
         <div><dt className="text-fg-subtle">Tiges nettes</dt><dd className="num mt-0.5 font-medium text-fg">{planting.tiges_estimees}</dd></div>
@@ -128,14 +165,16 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
           <Input type="date" className="h-11" value={dateSemis} onChange={e => setDateSemis(e.target.value)} required />
         </Field>
         <Field label="Surface allouée (m²)"
-          error={isOverCapacity ? `Capacité dépassée : ${availableM2} m² disponibles au maximum.` : undefined}
-          hint={!isOverCapacity && surfaceM2 > 0 ? `Il restera ${(availableM2 - surfaceM2).toFixed(1)} m² disponibles.` : undefined}>
-          <Input type="number" inputMode="decimal" className="h-11" min={0.5} max={plancheM2} step={0.5}
+          hint={v.dates && surfaceM2 > 0 && !v.conflits.length ? `Il restera ${fmtM2(Math.max(0, v.plancheM2 - v.picAutres - surfaceM2))} m² libres au plus chargé.` : undefined}>
+          <Input type="number" inputMode="decimal" className="h-11" min={0.5} step={0.5}
             value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)} />
         </Field>
       </div>
 
-      {previewPlantation && <DatesPreview title="Dates recalculées" plantation={previewPlantation} recolte={previewRecolte} fin={previewFin} />}
+      <AvertissementSaisie projetId={planting.id} conflits={v.conflits} plancheM2={v.plancheM2} surface={surfaceM2} libre={v.libre}
+        semisSuggere={v.semisSuggere} dateSemis={dateSemis} onUseDate={setDateSemis} today={today} />
+
+      {v.dates && <DatesPreview title="Dates recalculées" plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={formatJourMois(v.dates.recolte, anneeRef)} fin={formatJourMois(v.dates.fin, anneeRef)} />}
 
       <Field label="Notes">
         <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes optionnelles…" />
@@ -146,7 +185,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
           <Trash2 className="h-4 w-4" />Supprimer de la planche
         </Button>
         <Button variant="secondary" onClick={onClose}>Annuler</Button>
-        <Button type="submit" loading={loading} disabled={!dateSemis || isOverCapacity || surfaceM2 <= 0}>Enregistrer</Button>
+        <Button type="submit" loading={loading} disabled={!dateSemis || surfaceM2 <= 0}>{v.conflits.length ? 'Enregistrer malgré le conflit' : 'Enregistrer'}</Button>
       </div>
     </form>
   )
@@ -168,56 +207,32 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
     c.name.toLowerCase().includes(search.toLowerCase())
   ).sort((a, b) => a.name.localeCompare(b.name))
 
-  // Calcul de la surface disponible sur la planche (temporel)
-  const allPlantings: PlantingFull[] = ctx.plantings || []
-  const planchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === plancheId)
-
-  // Trouver la planche dans les jardins
-  let plancheM2 = 0
-  let plancheName = ''
-  for (const g of (ctx.gardens || [])) {
-    for (const pl of (g.planches || [])) {
-      if (pl.id === plancheId) { plancheM2 = pl.surface_m2; plancheName = `${g.name} · ${pl.name}`; break }
-    }
-  }
-
-  // Preview des dates calculées
-  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
-  if (selected && dateSemis) {
-    const ds = new Date(dateSemis + 'T00:00:00')
-    const dp = new Date(ds); dp.setDate(dp.getDate() + (selected.jours_cellule || 0))
-    const dr = new Date(dp); dr.setDate(dr.getDate() + selected.jours_champ)
-    const df = new Date(dr); df.setDate(df.getDate() + selected.jours_recolte)
-    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFinDate = df.toISOString().slice(0, 10)
-  }
-
-  // Calcul temporel : seules les cultures qui chevauchent la période comptent
-  const usedM2 = (dateSemis && previewFinDate)
-    ? getOverlappingM2(planchePlantings, dateSemis, previewFinDate)
-    : planchePlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
+  const today: string = ctx.today
+  const v = verifierOccupation(ctx, plancheId, {
+    id: PROJET_ID, dateSemis, surface: surfaceM2, cultureName: selected?.name || '',
+    cycle: selected ? { jc: selected.jours_cellule || 0, jch: selected.jours_champ, jr: selected.jours_recolte ?? 21, semisDirect: !!selected.semis_direct } : null,
+  })
+  const anneeRef = Number((today || dateSemis || '2000').slice(0, 4))
+  const enPlace = v.voisines.filter(p => !today || p.date_fin >= today)
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    if (!cultureId || !dateSemis || isOverCapacity || surfaceM2 <= 0) return
+    if (!cultureId || !dateSemis || surfaceM2 <= 0) return
     setLoading(true)
     await ctx.createPlanting(plancheId, cultureId, dateSemis, surfaceM2)
     setLoading(false)
-    toast.success(`${selected?.name} planté`, { description: plancheName })
+    toast.success(`${selected?.name} planté`, {
+      description: v.conflits.length ? `${v.plancheName} — en conflit de surface sur la période` : v.plancheName,
+    })
     onClose()
   }
 
   return (
     <form onSubmit={submit} className="space-y-5">
-      <SurfaceGauge used={usedM2} total={plancheM2} available={availableM2} />
-      {planchePlantings.length > 0 && (
+      <SurfaceGauge pic={v.picAutres} total={v.plancheM2} periodeConnue={!!v.dates} />
+      {enPlace.length > 0 && (
         <p className="-mt-3 text-xs text-fg-muted">
-          En place : {planchePlantings.map((p: PlantingFull) => `${p.culture_name} (${p.surface_m2} m²)`).join(', ')}
-          {(!dateSemis || !previewFinDate) && <span className="text-fg-subtle"> — choisissez une culture et une date de semis pour le calcul sur la période.</span>}
+          Prévu ou en place sur la planche (toutes saisons) : {enPlace.map(p => `${p.culture_name}${p.season_id !== ctx.activeSeason?.id && p.season_name ? ` (${p.season_name})` : ''} ${fmtM2(Number(p.surface_m2))} m², jusqu’au ${formatJourMois(p.date_fin, anneeRef)}`).join(' · ')}
         </p>
       )}
 
@@ -254,22 +269,24 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Date de semis" hint="Le calendrier se calcule automatiquement à partir de cette date.">
+        <Field label="Date de semis" hint={`Le calendrier se calcule à partir de cette date. Plantation rattachée à ${ctx.activeSeason?.name || 'la saison active'}.`}>
           <Input type="date" className="h-11" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
         </Field>
         <Field label="Surface allouée (m²)"
-          error={isOverCapacity ? `Capacité dépassée : seulement ${availableM2} m² disponibles sur cette planche.` : undefined}
-          hint={!isOverCapacity && surfaceM2 > 0 ? `Il restera ${(availableM2 - surfaceM2).toFixed(1)} m² disponibles après cette culture.` : undefined}>
-          <Input type="number" inputMode="decimal" className="h-11" min={0.5} max={plancheM2} step={0.5}
+          hint={v.dates && surfaceM2 > 0 && !v.conflits.length ? `Il restera ${fmtM2(Math.max(0, v.plancheM2 - v.picAutres - surfaceM2))} m² libres au plus chargé.` : undefined}>
+          <Input type="number" inputMode="decimal" className="h-11" min={0.5} step={0.5}
             value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)} />
         </Field>
       </div>
 
-      {previewPlantation && <DatesPreview title="Dates calculées automatiquement" plantation={previewPlantation} recolte={previewRecolte} fin={previewFin} />}
+      <AvertissementSaisie projetId={PROJET_ID} conflits={v.conflits} plancheM2={v.plancheM2} surface={surfaceM2} libre={v.libre}
+        semisSuggere={v.semisSuggere} dateSemis={dateSemis} onUseDate={setDateSemis} today={today} />
+
+      {v.dates && <DatesPreview title="Dates calculées automatiquement" plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={formatJourMois(v.dates.recolte, anneeRef)} fin={formatJourMois(v.dates.fin, anneeRef)} />}
 
       <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onClose}>Annuler</Button>
-        <Button type="submit" loading={loading} disabled={!cultureId || !dateSemis || isOverCapacity || surfaceM2 <= 0}>Planter</Button>
+        <Button type="submit" loading={loading} disabled={!cultureId || !dateSemis || surfaceM2 <= 0}>{v.conflits.length ? 'Planter malgré le conflit' : 'Planter'}</Button>
       </div>
     </form>
   )

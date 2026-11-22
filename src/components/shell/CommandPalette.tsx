@@ -1,7 +1,7 @@
 'use client'
 import { Command } from 'cmdk'
 import {
-  BookOpen, CalendarDays, Fence, Keyboard, LogOut, Monitor, Moon, Plus, Scissors, Store, Sun, Users,
+  BookOpen, CalendarDays, CopyPlus, Fence, Keyboard, LogOut, Monitor, Moon, Plus, Scissors, Store, Sun, Users,
 } from 'lucide-react'
 import { SECTIONS } from './nav'
 import { useTheme } from './theme'
@@ -18,13 +18,14 @@ function Shortcut({ keys }: { keys: string[] }) {
   )
 }
 
-export function CommandPalette({ open, onOpenChange, onNav, onIntent, onTeam, onShortcuts, ctx }: {
+export function CommandPalette({ open, onOpenChange, onNav, onIntent, onTeam, onShortcuts, onDuplicate, ctx }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   onNav: (id: string) => void
   onIntent: (section: string, intent: Intent) => void
   onTeam: () => void
   onShortcuts: () => void
+  onDuplicate?: () => void
   ctx: any
 }) {
   const { setTheme } = useTheme()
@@ -67,8 +68,13 @@ export function CommandPalette({ open, onOpenChange, onNav, onIntent, onTeam, on
             </Command.Item>
           ))}
           <Command.Item value="Gérer l'équipe inviter membre" className={itemCls} onSelect={() => run(onTeam)}>
-            <Users />Gérer l’équipe
+            <Users />Gérer l’équipe de la ferme
           </Command.Item>
+          {onDuplicate && ctx.isOwner && ctx.activeSeason && (
+            <Command.Item value="Reprendre ce plan l'année suivante dupliquer saison copier plan" className={itemCls} onSelect={() => run(onDuplicate)}>
+              <CopyPlus />Reprendre le plan de {ctx.activeSeason.name} l’année suivante
+            </Command.Item>
+          )}
         </Command.Group>
 
         <Command.Group heading="Aller à" className={groupCls}>

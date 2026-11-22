@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Check, Clock, Copy, Link2, Mail, RefreshCw, UserMinus, X } from 'lucide-react'
-import type { TeamMember } from '@/lib/types'
+import type { FarmMember } from '@/lib/types'
 import { Dialog, Button, Input, Badge, useConfirm } from '@/components/ui'
 import { initials } from '@/components/shell/UserMenu'
 
@@ -12,7 +12,11 @@ interface PendingInvite {
   created_at: string
 }
 
-/** Gestion de l'équipe de la saison (dialogue piloté par le shell). */
+/**
+ * Équipe de la FERME (dialogue piloté par le shell). Depuis la migration 006,
+ * on est membre d'une ferme, donc de toutes ses saisons : inviter ou retirer
+ * quelqu'un vaut pour la ferme entière.
+ */
 export default function TeamPanel({ ctx, open, onOpenChange }: { ctx: any; open: boolean; onOpenChange: (o: boolean) => void }) {
   const confirm = useConfirm()
   const [copied, setCopied] = useState(false)
@@ -24,9 +28,13 @@ export default function TeamPanel({ ctx, open, onOpenChange }: { ctx: any; open:
   const [inviteLoading, setInviteLoading] = useState(false)
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([])
 
-  const members: TeamMember[] = ctx.teamMembers || []
+  // farm_team() ; repli sur l'équipe de la saison si la ferme n'est pas chargée
+  const members: FarmMember[] = ctx.farmTeam?.length ? ctx.farmTeam : (ctx.teamMembers || [])
   const isOwner: boolean = ctx.isOwner
   const season = ctx.activeSeason
+  const farmName: string = ctx.farm?.name || ctx.profile?.farm_name || 'la ferme'
+  const meId: string | undefined = ctx.user?.id
+  const farmSeasons: string[] = (ctx.seasons || []).filter((s: any) => !season?.farm_id || s.farm_id === season.farm_id).map((s: any) => s.name)
 
   const inviteLink = season?.invite_token
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${season.invite_token}`
@@ -96,22 +104,31 @@ export default function TeamPanel({ ctx, open, onOpenChange }: { ctx: any; open:
     toast('Invitation annulée', { description: invite.email })
   }
 
-  const handleRemove = async (member: TeamMember) => {
-    if (member.role === 'owner') return
+  const handleRemove = async (member: FarmMember) => {
+    // Un owner ne se retire jamais lui-même ; les owners ne se retirent pas d'ici
+    if (member.role === 'owner' || member.user_id === meId) return
+    const qui = member.email || member.owner_name || 'Ce membre'
     const ok = await confirm({
-      title: 'Retirer ce membre ?',
-      description: `${member.email || member.owner_name || 'Ce membre'} n’aura plus accès à la saison « ${season?.name} ».`,
-      confirmLabel: 'Retirer',
+      title: `Retirer ${qui} de la ferme ?`,
+      description: (
+        <span className="block space-y-2">
+          <span className="block"><strong className="text-fg">{qui}</strong>{member.owner_name && member.email ? ` (${member.owner_name})` : ''} perdra immédiatement l’accès à <strong className="text-fg">toute la ferme « {farmName} »</strong>, pas seulement à {season?.name || 'la saison affichée'}.</span>
+          <span className="block">Cela comprend toutes les saisons{farmSeasons.length ? ` (${farmSeasons.join(', ')})` : ''}, les jardins, les planches, les plantations, les récoltes et les ventes.</span>
+          <span className="block">Rien n’est supprimé : pour lui rendre l’accès, il faudra l’inviter à nouveau.</span>
+        </span>
+      ),
+      confirmLabel: `Retirer ${member.email || 'ce membre'}`,
       destructive: true,
     })
     if (ok) {
-      await ctx.removeMember(member.id)
-      toast.success('Membre retiré de l’équipe')
+      const done = await ctx.removeMember(member.id)
+      if (done !== false) toast.success(`${qui} n’a plus accès à la ferme`)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={o => (o ? onOpenChange(true) : close())} title="Équipe" description={season?.name} size="md"
+    <Dialog open={open} onOpenChange={o => (o ? onOpenChange(true) : close())} title="Équipe de la ferme"
+      description={<>{farmName} — chaque membre a accès à toutes les saisons, jardins et planches de la ferme.</>} size="md"
       footer={<Button variant="secondary" onClick={close}>Fermer</Button>}>
       <div className="space-y-6">
         {/* Liste des membres */}
@@ -127,14 +144,14 @@ export default function TeamPanel({ ctx, open, onOpenChange }: { ctx: any; open:
                     {initials(m.owner_name, m.email)}
                   </div>
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-fg">{m.owner_name || 'Sans nom'}</div>
+                    <div className="truncate text-sm font-medium text-fg">{m.owner_name || 'Sans nom'}{m.user_id === meId && <span className="font-normal text-fg-subtle"> · vous</span>}</div>
                     <div className="truncate text-xs text-fg-muted">{m.email}</div>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <Badge tone={m.role === 'owner' ? 'green' : 'neutral'}>{m.role === 'owner' ? 'Propriétaire' : 'Membre'}</Badge>
-                  {isOwner && m.role !== 'owner' && (
-                    <Button variant="danger-ghost" size="icon-sm" onClick={() => handleRemove(m)} aria-label={`Retirer ${m.email || m.owner_name || 'ce membre'} de l’équipe`}>
+                  {isOwner && m.role !== 'owner' && m.user_id !== meId && (
+                    <Button variant="danger-ghost" size="icon-sm" onClick={() => handleRemove(m)} aria-label={`Retirer ${m.email || m.owner_name || 'ce membre'} de la ferme`} title="Retirer de la ferme">
                       <UserMinus className="h-4 w-4" />
                     </Button>
                   )}
@@ -147,7 +164,8 @@ export default function TeamPanel({ ctx, open, onOpenChange }: { ctx: any; open:
         {/* Invitation par email (owner only) */}
         {isOwner && (
           <section>
-            <h3 className="mb-2 font-sans text-xs font-semibold uppercase tracking-wider text-fg-subtle">Inviter par e-mail</h3>
+            <h3 className="mb-1 font-sans text-xs font-semibold uppercase tracking-wider text-fg-subtle">Inviter par e-mail</h3>
+            <p className="mb-2 text-xs text-fg-muted">La personne invitée rejoint la ferme entière, avec toutes ses saisons.</p>
             <form className="flex flex-col gap-2 sm:flex-row" onSubmit={e => { e.preventDefault(); handleInviteByEmail() }}>
               <div className="relative flex-1">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" aria-hidden />
@@ -202,7 +220,7 @@ export default function TeamPanel({ ctx, open, onOpenChange }: { ctx: any; open:
             <h3 className="mb-2 font-sans text-xs font-semibold uppercase tracking-wider text-fg-subtle">Lien de partage</h3>
             {!season?.invite_enabled ? (
               <div className="rounded-xl border border-dashed border-border-strong p-4">
-                <p className="mb-3 text-sm text-fg-muted">Activez le lien pour inviter par URL.</p>
+                <p className="mb-3 text-sm text-fg-muted">Activez le lien pour inviter par URL. Il donne accès à toute la ferme.</p>
                 <Button variant="secondary" size="sm" onClick={handleEnableLink} loading={loading}>
                   <Link2 className="h-4 w-4" />Activer le lien de partage
                 </Button>
