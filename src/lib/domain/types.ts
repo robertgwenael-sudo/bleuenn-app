@@ -517,3 +517,92 @@ export interface InvoiceStatusRow {
   statut: InvoiceStatut
   jours_de_retard: number | null
 }
+
+// ------------------------------------------------------------
+// Fournisseurs et bons de commande (011)
+// ------------------------------------------------------------
+/** Contrainte `suppliers.kind` (011), dans l'ordre d'affichage. */
+export const SUPPLIER_KINDS = ['semencier', 'pepiniere', 'bulbes', 'fournitures', 'emballage', 'autre'] as const
+export type SupplierKind = (typeof SUPPLIER_KINDS)[number]
+
+export interface Supplier {
+  id: string
+  farm_id: string
+  name: string
+  kind: SupplierKind
+  contact_name: string | null
+  email: string | null
+  phone: string | null
+  website: string | null
+  address: string | null
+  customer_number: string | null
+  /** Minimum de commande hors port, en euros ; null = non renseigné. */
+  min_order_amount: EurosNumeric | null
+  /** Franco de port hors port, en euros ; null = non renseigné. */
+  free_shipping_threshold: EurosNumeric | null
+  lead_time_days: number | null
+  organic_certified: boolean
+  notes: string | null
+  archived_at: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** Contrainte `purchase_orders.status` (011), dans l'ordre du cycle. */
+export const PURCHASE_ORDER_STATUSES = ['brouillon', 'envoye', 'confirme', 'recu_partiel', 'recu', 'annule'] as const
+export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number]
+
+export interface PurchaseOrder {
+  id: string
+  farm_id: string
+  season_id: string
+  supplier_id: string
+  number_year: number | null
+  number_seq: number | null
+  /** Colonne générée « BC-2026-001 », null tant que le bon n'est pas envoyé. */
+  number: string | null
+  status: PurchaseOrderStatus
+  order_date: DateISO | null
+  expected_date: DateISO | null
+  received_date: DateISO | null
+  shipping_amount: EurosNumeric
+  shipping_expensed: boolean
+  notes: string | null
+  sent_at: string | null
+  cancelled_at: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** Contrainte `purchase_order_lines.unit` (011). */
+export const PURCHASE_UNITS = ['sachet', 'graines', 'grammes', 'plants', 'bulbes', 'tubercules', 'godets', 'unite'] as const
+export type PurchaseUnit = (typeof PURCHASE_UNITS)[number]
+
+export interface PurchaseOrderLine {
+  id: string
+  purchase_order_id: string
+  farm_id: string
+  culture_id: string | null
+  variety: string | null
+  label: string
+  supplier_ref: string | null
+  unit: PurchaseUnit
+  /** numeric(12,2) > 0 */
+  quantity: EurosNumeric
+  /** Cumul reçu, écrit seulement par receptionner_bon(). */
+  quantity_received: EurosNumeric
+  /** Euros ; null = prix à saisir (le bon ne peut pas partir). */
+  unit_price: EurosNumeric | null
+  /** Colonne générée round(quantity × unit_price, 2), null sans prix. */
+  line_total?: EurosNumeric | null
+  organic: boolean
+  seed_order_id: string | null
+  sort_order: number
+  created_at: string
+}
+
+/** Dépense (008) avec le lien vers le bon ajouté en 011. */
+export interface CostAchat extends Cost {
+  purchase_order_id?: string | null
+  purchase_order_line_id?: string | null
+}
