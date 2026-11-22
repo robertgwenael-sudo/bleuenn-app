@@ -9,16 +9,17 @@ test('par plantation : chaîne m² → plants → + 30 % → graines, totaux par
   await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: '2026' })
 
   const tableau = page.getByRole('region', { name: 'Production par plantation' })
-  // Statice, 5 m², 5 rangs, 20 cm, 1 graine par motte, 3 tiges, 0,50 € :
-  // 125 plants, 163 avec pertes, 163 graines, 375 tiges, 263 nettes, 131 €
-  const statice = tableau.getByTestId('ligne-semis-table').filter({ hasText: 'Statice' })
+  // Statice semée le 01/03/2026, 5 m², 5 rangs, 20 cm, 1 graine par motte, 3 tiges, 0,50 € :
+  // 125 plants, 163 avec pertes, 163 graines, 375 tiges, 263 nettes, 131 €.
+  // (La saison 2026 a une 2e Statice, semée en février 2027 : seed 016.)
+  const statice = tableau.getByTestId('ligne-semis-table').filter({ hasText: 'Statice' }).filter({ hasText: '01/03' })
   await expect(statice).toHaveCount(1)
   for (const v of ['125', '163', '375', '263', '131 €']) await expect(statice).toContainText(v)
 
   // Graines par motte vides dans la charte : jamais 0, la raison est affichée
   await expect(tableau.getByTestId('ligne-semis-table').filter({ hasText: 'Amarante' })).toContainText('donnée manquante : graines par motte')
-  // Plant acheté : pas de graines
-  await expect(tableau.getByTestId('ligne-semis-table').filter({ hasText: 'Chrysanthème' })).toContainText('plant acheté')
+  // Plant acheté : pas de graines (Chrysanthème du 05/05/2026 ; un 2e est prévu en 2027)
+  await expect(tableau.getByTestId('ligne-semis-table').filter({ hasText: 'Chrysanthème' }).filter({ hasText: '05/05' })).toContainText('plant acheté')
 
   await expect(tableau.getByText('Total Parcelle du Verger')).toBeVisible()
   await expect(tableau.getByText('Total général')).toBeVisible()
@@ -79,14 +80,14 @@ test('pépinière : capacité en plaques entières, chiffre du tableur en info, 
   // Formulaire de semis : alerte non bloquante, l'enregistrement passe
   await page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('link', { name: 'Jardins & planches', exact: true }).click()
   await page.getByRole('button', { name: 'Culture', exact: true }).first().click()
-  const dlg = page.getByRole('dialog', { name: 'Ajouter une culture' })
+  const dlg = page.getByRole('dialog', { name: 'Ajouter des cultures' })
   await dlg.getByRole('searchbox', { name: 'Filtrer les cultures' }).fill('Statice')
-  await dlg.getByText('Statice', { exact: true }).click()
-  await dlg.getByLabel('Date de semis').fill('2026-07-01')
-  await dlg.getByLabel('Surface allouée (m²)').fill('2')
+  await dlg.getByRole('checkbox', { name: 'Statice', exact: true }).check()
+  await dlg.getByLabel('Date de semis : Statice').fill('2026-07-01')
+  await dlg.getByLabel('Surface (m²) : Statice').fill('2')
   // 2 m² de statice = 65 mottes = 1 plaque : tient sur la table vide en juillet
   await expect(dlg.getByTestId('alerte-semis-pepiniere')).toHaveCount(0)
-  await dlg.getByLabel('Surface allouée (m²)').fill('10')
+  await dlg.getByLabel('Surface (m²) : Statice').fill('10')
   // 10 m² = 325 mottes = 4 plaques pour 1 : alerte et propositions, sans blocage
   const alerte = dlg.getByTestId('alerte-semis-pepiniere')
   await expect(alerte).toContainText('Dépasse la capacité des tables')
@@ -109,7 +110,8 @@ test('semis : graines exactes par semis, plants achetés distingués', async ({ 
   await connexion(page, 'semis')
   const t = page.getByRole('region', { name: 'Plantations' })
   await expect(t.getByRole('columnheader', { name: /Graines à semer/ })).toBeVisible()
-  const statice = t.getByTestId('semis-ligne').filter({ hasText: 'Statice' })
+  // Statice du 01/03/2026 (la 2e, semée en février 2027, vient du seed 016)
+  const statice = t.getByTestId('semis-ligne').filter({ hasText: 'Statice' }).filter({ hasText: '01/03' })
   await expect(statice).toContainText('163')
-  await expect(t.getByTestId('semis-ligne').filter({ hasText: 'Chrysanthème' })).toContainText('Plant acheté')
+  await expect(t.getByTestId('semis-ligne').filter({ hasText: 'Chrysanthème' }).filter({ hasText: '05/05' })).toContainText('Plant acheté')
 })
