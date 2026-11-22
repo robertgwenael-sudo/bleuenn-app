@@ -77,14 +77,14 @@ test('préparer 2027 depuis l’accueil : créer, rattacher, reprendre', async (
 
   const liste = dlg.getByRole('list', { name: 'Plantations à rattacher à 2027' })
   const cases = liste.getByRole('checkbox')
-  await expect(cases).toHaveCount(22) // bulbes de novembre, semis d'hiver et de 2027…
+  await expect(cases).toHaveCount(23) // bulbes de novembre, semis d'hiver et de 2027…
   await expect(liste.getByRole('checkbox', { name: /^Rattacher Tulipe/ })).toBeChecked()
   await cases.first().uncheck()
-  await dlg.getByRole('button', { name: 'Rattacher 21 plantations à 2027' }).click()
-  await expect(toast(page, '21 plantations rattachées à 2027')).toBeVisible()
+  await dlg.getByRole('button', { name: 'Rattacher 22 plantations à 2027' }).click()
+  await expect(toast(page, '22 plantations rattachées à 2027')).toBeVisible()
 
   const etape3 = dlg.getByRole('region', { name: /Étape 3/ })
-  await expect(etape3).toContainText('1 vivace en place')
+  await expect(etape3).toContainText('2 vivaces en place') // pivoine (016) et rudbeckia sans floraison (013)
   await etape3.getByRole('button', { name: /^Reprendre \d+ plantations?$/ }).click()
   await expect(toast(page, /plantations? reprises? dans 2027/)).toBeVisible()
 
@@ -95,12 +95,12 @@ test('préparer 2027 depuis l’accueil : créer, rattacher, reprendre', async (
 test('nouvelle plantation : saison proposée = année de la première récolte, modifiable', async ({ page }) => {
   await connexion(page, 'jardins')
   await page.getByRole('button', { name: 'Culture', exact: true }).first().click()
-  const dlg = page.getByRole('dialog', { name: 'Ajouter une culture' })
-  await dlg.getByRole('option', { name: /Tulipe/ }).click()
-  await dlg.getByLabel('Date de semis').fill('2026-11-01')
+  const dlg = page.getByRole('dialog', { name: 'Ajouter des cultures' })
+  await dlg.getByRole('checkbox', { name: 'Tulipe', exact: true }).check()
+  await dlg.getByLabel('Date de semis : Tulipe', { exact: true }).fill('2026-11-01')
   // Pas encore de saison 2027 : repli sur la saison active, dit à l'écran
   await expect(dlg.getByText('Première récolte en 2027, mais la ferme n\'a pas encore de saison 2027 : rattachée à 2026. Créez la saison 2027 pour l\'y ranger.')).toBeVisible()
-  await dlg.getByLabel('Date de semis').fill('2026-03-01')
+  await dlg.getByLabel('Date de semis : Tulipe', { exact: true }).fill('2026-03-01')
   await expect(dlg.getByText('Première récolte en 2026 : rattachée à 2026.')).toBeVisible()
   await expect(dlg.getByRole('combobox', { name: 'Saison de la plantation' }).locator('option:checked')).toHaveText('2026')
   await dlg.getByRole('button', { name: /^Planter/ }).click()
