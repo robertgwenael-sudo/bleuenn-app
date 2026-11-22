@@ -1,7 +1,12 @@
 'use client'
 import { useState } from 'react'
+import { CalendarRange, Coins, Flower, TrendingUp } from 'lucide-react'
 import { getWeekNumber } from '@/lib/types'
 import type { PlantingFull } from '@/lib/types'
+import { Card, CardContent, CardHeader, EmptyState, PageHeader, Select, Stat, Tabs, TypeBadge, cn } from '@/components/ui'
+import { WeeklyBarChart } from '@/components/charts/WeeklyBarChart'
+import { WeeklyAreaChart } from '@/components/charts/WeeklyAreaChart'
+import { photos } from '@/lib/images'
 
 // Répartition des tiges et du CA par semaine de récolte pour un planting
 function distributeByWeek(p: PlantingFull): { week: number; tiges: number; ca: number }[] {
@@ -30,9 +35,14 @@ interface WeekRow {
   totalCA: number
 }
 
+const eur = (v: number) => `${Math.round(v).toLocaleString('fr-FR')} €`
+// Pastille de type (identité) : mêmes teintes que la palette graphique validée
+const typeDot: Record<string, string> = { RR: 'bg-chart-1', MP: 'bg-chart-2', RU: 'bg-chart-3' }
+
 export default function Analytique({ ctx }: { ctx: any }) {
   const [filterGarden, setFilterGarden] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [view, setView] = useState<'semaine' | 'culture'>('semaine')
   const plantings: PlantingFull[] = ctx.plantings || []
 
   let data = plantings
@@ -74,9 +84,8 @@ export default function Analytique({ ctx }: { ctx: any }) {
   // Toutes les cultures distinctes
   const allCultureNames = [...new Set(data.map(p => p.culture_name))].sort()
 
-  // Données pour le graphe SVG
+  // Échelle des mini-barres du tableau croisé
   const maxCA = Math.max(...weeks.map(w => w.totalCA), 1)
-  const maxTiges = Math.max(...weeks.map(w => w.totalTiges), 1)
 
   // Matrice complète : pour chaque culture, CA par semaine
   const cultureWeeklyCA: Record<string, number[]> = {}
@@ -95,210 +104,124 @@ export default function Analytique({ ctx }: { ctx: any }) {
   // Cumul progressif du CA
   let cumulCA = 0
   const cumulData = weeks.map(w => { cumulCA += w.totalCA; return cumulCA })
+  const chartData = weeks.map((w, i) => ({ week: w.week, ca: Math.round(w.totalCA * 100) / 100, cumul: Math.round(cumulData[i]) }))
 
-  // Chart dimensions
-  const chartW = 920, chartH = 280
-  const padL = 60, padR = 15, padT = 20, padB = 30
-  const innerW = chartW - padL - padR
-  const innerH = chartH - padT - padB
-  const x = (i: number) => padL + (i / 51) * innerW
-  const yCA = (v: number) => padT + innerH - (v / maxCA) * innerH
-  const maxCumul = Math.max(...cumulData, 1)
-  const yCumul = (v: number) => padT + innerH - (v / maxCumul) * innerH
-
-  // Couleurs par type
-  const typeColor: Record<string, string> = {
-    'RR': '#8a9e7a', 'MP': '#c9a96e', 'RU': '#9b7cb8'
-  }
+  const stickyCol = 'sticky left-0 z-[1] bg-surface'
 
   return (
     <div>
-      <h2 className="font-serif text-3xl mb-1">Analytique</h2>
-      <p className="text-terre text-sm mb-5">Prévisionnel de chiffre d'affaires par semaine de récolte</p>
-
-      {/* Filtres */}
-      <div className="flex gap-3 flex-wrap mb-5">
-        <select className="input !w-auto" value={filterGarden} onChange={e => setFilterGarden(e.target.value)}>
-          <option value="">Tous les jardins</option>
-          {(ctx.gardens || []).map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
-        </select>
-        <select className="input !w-auto" value={filterType} onChange={e => setFilterType(e.target.value)}>
-          <option value="">Tous les types</option>
-          <option value="RR">RR</option><option value="MP">MP</option><option value="RU">RU</option>
-        </select>
-      </div>
+      <PageHeader title="Analytique" description="Prévisionnel de chiffre d’affaires par semaine de récolte" image={photos.champCoquelicots}
+        actions={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Select aria-label="Jardin" value={filterGarden} onChange={e => setFilterGarden(e.target.value)} wrapperClassName="sm:w-48">
+              <option value="">Tous les jardins</option>
+              {(ctx.gardens || []).map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </Select>
+            <Select aria-label="Type" value={filterType} onChange={e => setFilterType(e.target.value)} wrapperClassName="sm:w-36">
+              <option value="">Tous les types</option>
+              <option value="RR">RR</option><option value="MP">MP</option><option value="RU">RU</option>
+            </Select>
+          </div>
+        } />
 
       {/* Cartes résumé */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        <div className="card !p-4 text-center">
-          <div className="text-2xl font-bold text-feuille">{grandTotalCA.toLocaleString('fr-FR', { maximumFractionDigits: 0 })}€</div>
-          <div className="text-[0.65rem] text-terre mt-1">CA prévisionnel total</div>
-        </div>
-        <div className="card !p-4 text-center">
-          <div className="text-2xl font-bold text-brun">{grandTotalTiges.toLocaleString('fr-FR')}</div>
-          <div className="text-[0.65rem] text-terre mt-1">Tiges à vendre</div>
-        </div>
-        <div className="card !p-4 text-center">
-          <div className="text-2xl font-bold text-sage">{activeWeeks.length}</div>
-          <div className="text-[0.65rem] text-terre mt-1">Semaines de vente</div>
-        </div>
-        <div className="card !p-4 text-center">
-          <div className="text-2xl font-bold text-or-dark">
-            {activeWeeks.length > 0 ? Math.round(grandTotalCA / activeWeeks.length).toLocaleString('fr-FR') : 0}€
-          </div>
-          <div className="text-[0.65rem] text-terre mt-1">CA moyen / semaine</div>
-        </div>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <Stat label="CA prévisionnel total" value={`${grandTotalCA.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`} icon={<Coins />} />
+        <Stat label="Tiges à vendre" value={grandTotalTiges.toLocaleString('fr-FR')} icon={<Flower />} />
+        <Stat label="Semaines de vente" value={activeWeeks.length} icon={<CalendarRange />} />
+        <Stat label="CA moyen / semaine" icon={<TrendingUp />}
+          value={`${activeWeeks.length > 0 ? Math.round(grandTotalCA / activeWeeks.length).toLocaleString('fr-FR') : 0} €`} />
       </div>
 
-      {/* Graphe CA par semaine + cumul */}
-      {activeWeeks.length > 0 && (
-        <div className="card !p-4 mb-6">
-          <h3 className="font-serif text-lg mb-3">CA prévisionnel par semaine</h3>
-          <div className="overflow-x-auto">
-            <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full max-w-[920px]" style={{ minWidth: '600px' }}>
-              {/* Grille Y - CA barres */}
-              {[0, 0.25, 0.5, 0.75, 1].map(p => {
-                const v = Math.round(maxCA * p)
-                return (
-                  <g key={v}>
-                    <line x1={padL} y1={yCA(v)} x2={chartW - padR} y2={yCA(v)} stroke="#e0dcd4" strokeWidth={0.5} />
-                    <text x={padL - 6} y={yCA(v) + 3} textAnchor="end" className="text-[0.5rem]" fill="#8a7e6b">{v}€</text>
-                  </g>
-                )
-              })}
-
-              {/* Barres CA par semaine */}
-              {weeks.map((w, i) => {
-                if (w.totalCA === 0) return null
-                const barW = Math.max(4, (innerW / 52) * 0.7)
-                const barH = (w.totalCA / maxCA) * innerH
-                return (
-                  <rect
-                    key={w.week}
-                    x={x(i) - barW / 2}
-                    y={padT + innerH - barH}
-                    width={barW}
-                    height={barH}
-                    rx={2}
-                    fill="#8a9e7a"
-                    opacity={0.6}
-                  />
-                )
-              })}
-
-              {/* Ligne cumul */}
-              <path
-                d={cumulData.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${yCumul(v)}`).join(' ')}
-                fill="none"
-                stroke="#c77d8a"
-                strokeWidth={2}
-                strokeDasharray="6 3"
-              />
-
-              {/* Axe X */}
-              {weeks.filter(w => w.week % 4 === 1).map(w => (
-                <text key={w.week} x={x(w.week - 1)} y={chartH - 8} textAnchor="middle" className="text-[0.5rem]" fill="#8a7e6b">
-                  S{w.week}
-                </text>
-              ))}
-
-              {/* Légende */}
-              <rect x={chartW / 2 - 140} y={2} width={10} height={10} rx={2} fill="#8a9e7a" opacity={0.6} />
-              <text x={chartW / 2 - 126} y={11} className="text-[0.5rem]" fill="#8a7e6b">CA hebdo</text>
-              <line x1={chartW / 2 - 10} y1={7} x2={chartW / 2 + 30} y2={7} stroke="#c77d8a" strokeWidth={2} strokeDasharray="6 3" />
-              <text x={chartW / 2 + 34} y={11} className="text-[0.5rem]" fill="#8a7e6b">CA cumulé</text>
-            </svg>
+      {activeWeeks.length === 0 ? (
+        <Card>
+          <EmptyState image={photos.champCoquelicots} title="Aucune donnée de récolte prévue"
+            description="Les ventes prévisionnelles se calculent automatiquement à partir de vos plantations." />
+        </Card>
+      ) : (
+        <>
+          {/* Deux graphiques séparés plutôt qu'un double axe */}
+          <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card>
+              <CardHeader title="CA prévisionnel par semaine" description="Somme des cultures en récolte chaque semaine" />
+              <CardContent>
+                <WeeklyBarChart data={chartData} dataKey="ca" label="CA hebdo" format={eur} ariaLabel="Chiffre d’affaires prévisionnel par semaine" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader title="CA cumulé" description={`Atteint ${eur(grandTotalCA)} en fin de saison`} />
+              <CardContent>
+                <WeeklyAreaChart data={chartData} series={[{ key: 'cumul', label: 'CA cumulé', color: 'c1' }]} format={eur} height={260}
+                  ariaLabel="Chiffre d’affaires prévisionnel cumulé par semaine" />
+              </CardContent>
+            </Card>
           </div>
-        </div>
-      )}
 
-      {/* Tableau détaillé par semaine */}
-      <div className="card !p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr>
-                <th className="table-header text-left sticky left-0 bg-white z-10 min-w-[60px]">Sem.</th>
-                <th className="table-header text-left min-w-[250px]">Cultures récoltées</th>
-                <th className="table-header text-right min-w-[80px]">Tiges</th>
-                <th className="table-header text-right min-w-[90px]">CA prévu</th>
-                <th className="table-header text-right min-w-[90px]">CA cumulé</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                let cumul = 0
-                return weeks.map(w => {
-                  if (w.totalTiges === 0) return null
-                  cumul += w.totalCA
-                  return (
-                    <tr key={w.week} className="hover:bg-cream/50">
-                      <td className="table-cell !py-2 font-bold text-brun sticky left-0 bg-white z-10">
-                        S{w.week}
-                      </td>
-                      <td className="table-cell !py-2">
-                        <div className="flex flex-wrap gap-1">
-                          {w.cultures.sort((a, b) => b.ca - a.ca).map(c => (
-                            <span key={c.name} className="inline-flex items-center gap-1 bg-cream rounded-full px-2 py-0.5">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeColor[c.type] || '#888' }} />
-                              <span className="font-medium">{c.name}</span>
-                              <span className="text-terre/70">{c.tiges}t</span>
-                              <span className="text-sage font-semibold">{Math.round(c.ca)}€</span>
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="table-cell !py-2 text-right font-semibold text-brun">
-                        {w.totalTiges.toLocaleString('fr-FR')}
-                      </td>
-                      <td className="table-cell !py-2 text-right font-bold text-feuille">
-                        {Math.round(w.totalCA).toLocaleString('fr-FR')}€
-                      </td>
-                      <td className="table-cell !py-2 text-right text-terre">
-                        {Math.round(cumul).toLocaleString('fr-FR')}€
-                      </td>
-                    </tr>
-                  )
-                })
-              })()}
-            </tbody>
-            {activeWeeks.length > 0 && (
-              <tfoot>
-                <tr className="bg-cream/60">
-                  <td className="px-3.5 py-3 font-bold text-[0.68rem] uppercase tracking-widest text-brun border-t-2 border-sage/20 sticky left-0 bg-cream/60 z-10">
-                    Total
-                  </td>
-                  <td className="px-3.5 py-3 border-t-2 border-sage/20 text-[0.65rem] text-terre">
-                    {allCultureNames.length} variétés sur {activeWeeks.length} semaines
-                  </td>
-                  <td className="px-3.5 py-3 text-right font-bold text-brun border-t-2 border-sage/20">
-                    {grandTotalTiges.toLocaleString('fr-FR')}
-                  </td>
-                  <td className="px-3.5 py-3 text-right font-bold text-feuille border-t-2 border-sage/20 text-sm">
-                    {grandTotalCA.toLocaleString('fr-FR', { maximumFractionDigits: 0 })}€
-                  </td>
-                  <td className="px-3.5 py-3 border-t-2 border-sage/20" />
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      </div>
+          <Tabs label="Détail" value={view} onChange={setView} className="mb-4"
+            options={[{ value: 'semaine', label: 'Par semaine' }, { value: 'culture', label: 'Par culture et par semaine' }]} />
 
-      {/* Tableau croisé : culture × semaine */}
-      {allCultureNames.length > 0 && (
-        <div className="mt-6">
-          <h3 className="font-serif text-xl mb-3">Détail CA par culture et par semaine</h3>
-          <div className="card !p-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+          {view === 'semaine' && (
+            <div role="tabpanel" className="relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-card border border-border bg-surface shadow-card">
+              <table className="data-table">
                 <thead>
                   <tr>
-                    <th className="table-header text-left min-w-[140px] sticky left-0 bg-white z-10">Culture</th>
-                    <th className="table-header text-right min-w-[70px]">Total</th>
-                    {activeWeeks.map(w => (
-                      <th key={w.week} className="table-header text-center !px-1.5 min-w-[50px]">S{w.week}</th>
-                    ))}
+                    <th className="sticky left-0 z-[11] w-16">Sem.</th>
+                    <th className="min-w-[280px]">Cultures récoltées</th>
+                    <th className="!text-right">Tiges</th>
+                    <th className="!text-right">CA prévu</th>
+                    <th className="!text-right">CA cumulé</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    let cumul = 0
+                    return weeks.map(w => {
+                      if (w.totalTiges === 0) return null
+                      cumul += w.totalCA
+                      return (
+                        <tr key={w.week}>
+                          <td className={cn(stickyCol, 'num font-semibold')}>S{w.week}</td>
+                          <td className="!whitespace-normal">
+                            <div className="flex flex-wrap gap-1">
+                              {w.cultures.sort((a, b) => b.ca - a.ca).map(c => (
+                                <span key={c.name} className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2 py-0.5 text-xs">
+                                  <span className={cn('h-1.5 w-1.5 rounded-full', typeDot[c.type] || 'bg-fg-subtle')} aria-hidden />
+                                  <span className="font-medium text-fg">{c.name}</span>
+                                  <span className="num text-fg-subtle">{c.tiges} t.</span>
+                                  <span className="num font-semibold text-fg">{Math.round(c.ca)} €</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="num text-right font-medium">{w.totalTiges.toLocaleString('fr-FR')}</td>
+                          <td className="num text-right font-semibold">{Math.round(w.totalCA).toLocaleString('fr-FR')} €</td>
+                          <td className="num text-right text-fg-muted">{Math.round(cumul).toLocaleString('fr-FR')} €</td>
+                        </tr>
+                      )
+                    })
+                  })()}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td className="sticky left-0 z-[11] text-2xs uppercase tracking-wider">Total</td>
+                    <td className="text-xs font-normal text-fg-muted">{allCultureNames.length} variétés sur {activeWeeks.length} semaines</td>
+                    <td className="num text-right">{grandTotalTiges.toLocaleString('fr-FR')}</td>
+                    <td className="num text-right">{grandTotalCA.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {view === 'culture' && allCultureNames.length > 0 && (
+            <div role="tabpanel" className="relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-card border border-border bg-surface shadow-card">
+              <table className="data-table text-xs">
+                <thead>
+                  <tr>
+                    <th className="sticky left-0 z-[11] min-w-[190px]">Culture</th>
+                    <th className="!text-right">Total</th>
+                    {activeWeeks.map(w => <th key={w.week} className="!px-1.5 !text-center">S{w.week}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -308,34 +231,26 @@ export default function Analytique({ ctx }: { ctx: any }) {
                     if (total === 0) return null
                     const cType = data.find(p => p.culture_name === name)?.culture_type || ''
                     return (
-                      <tr key={name} className="hover:bg-cream/50">
-                        <td className="table-cell !py-1.5 sticky left-0 bg-white z-10">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: typeColor[cType] || '#888' }} />
-                            <strong>{name}</strong>
-                            <span className={`badge text-[0.5rem] ${cType === 'RR' ? 'badge-rr' : cType === 'MP' ? 'badge-mp' : 'badge-ru'}`}>{cType}</span>
+                      <tr key={name}>
+                        <td className={stickyCol}>
+                          <div className="flex items-center gap-2">
+                            <span className="truncate font-medium text-fg">{name}</span>
+                            <TypeBadge type={cType} className="ml-auto" />
                           </div>
                         </td>
-                        <td className="table-cell !py-1.5 text-right font-bold text-feuille">
-                          {Math.round(total)}€
-                        </td>
+                        <td className="num text-right font-semibold">{Math.round(total)} €</td>
                         {activeWeeks.map(w => {
                           const v = cultureData[w.week - 1]
                           const pct = maxCA > 0 ? v / maxCA : 0
                           return (
-                            <td key={w.week} className="table-cell !py-1.5 text-center !px-1">
+                            <td key={w.week} className="!px-1 text-center">
                               {v > 0 ? (
                                 <div className="flex flex-col items-center">
-                                  <span className="text-[0.55rem] font-semibold text-brun">{Math.round(v)}€</span>
-                                  <div className="w-[16px] mt-0.5 rounded-sm" style={{
-                                    height: `${Math.max(2, pct * 14)}px`,
-                                    backgroundColor: typeColor[cType] || '#888',
-                                    opacity: 0.5
-                                  }} />
+                                  <span className="num text-[0.65rem] font-medium text-fg">{Math.round(v)} €</span>
+                                  <div className={cn('mt-0.5 w-4 rounded-sm opacity-70', typeDot[cType] || 'bg-fg-subtle')}
+                                    style={{ height: `${Math.max(2, pct * 14)}px` }} />
                                 </div>
-                              ) : (
-                                <span className="text-terre/20">·</span>
-                              )}
+                              ) : <span className="text-fg-subtle/50">·</span>}
                             </td>
                           )
                         })}
@@ -344,31 +259,16 @@ export default function Analytique({ ctx }: { ctx: any }) {
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-cream/60">
-                    <td className="px-3.5 py-2 font-bold text-[0.6rem] uppercase tracking-widest text-brun border-t-2 border-sage/20 sticky left-0 bg-cream/60 z-10">
-                      Total / semaine
-                    </td>
-                    <td className="px-3.5 py-2 text-right font-bold text-feuille border-t-2 border-sage/20">
-                      {Math.round(grandTotalCA)}€
-                    </td>
-                    {activeWeeks.map(w => (
-                      <td key={w.week} className="text-center px-1 py-2 border-t-2 border-sage/20 text-[0.6rem] font-bold text-feuille">
-                        {Math.round(w.totalCA)}€
-                      </td>
-                    ))}
+                  <tr>
+                    <td className="sticky left-0 z-[11] text-2xs uppercase tracking-wider">Total / semaine</td>
+                    <td className="num text-right">{Math.round(grandTotalCA)} €</td>
+                    {activeWeeks.map(w => <td key={w.week} className="num !px-1 text-center text-[0.65rem]">{Math.round(w.totalCA)} €</td>)}
                   </tr>
                 </tfoot>
               </table>
             </div>
-          </div>
-        </div>
-      )}
-
-      {activeWeeks.length === 0 && (
-        <div className="card text-center py-12 text-terre">
-          <p>Aucune donnée de récolte prévue.</p>
-          <p className="text-xs mt-2">Les ventes prévisionnelles se calculent automatiquement à partir de vos plantations.</p>
-        </div>
+          )}
+        </>
       )}
     </div>
   )

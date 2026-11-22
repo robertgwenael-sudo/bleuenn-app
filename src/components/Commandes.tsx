@@ -1,7 +1,23 @@
 'use client'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { PackageCheck, PackageOpen, Sprout } from 'lucide-react'
 import type { SeedOrder, PlantingFull } from '@/lib/types'
+import { Badge, Card, EmptyState, PageHeader, SearchInput, Stat, TableContainer } from '@/components/ui'
+import { photos } from '@/lib/images'
+
+function OrderStatus({ ordered, needed }: { ordered: number; needed: number }) {
+  return ordered >= needed && needed > 0
+    ? <Badge tone="green" dot>Complet</Badge>
+    : ordered > 0
+      ? <Badge tone="amber" dot>Partiel</Badge>
+      : <Badge tone="rose" dot>À commander</Badge>
+}
+
+const checkbox = 'h-5 w-5 cursor-pointer rounded border-border-strong accent-[rgb(var(--primary))]'
 
 export default function Commandes({ ctx }: { ctx: any }) {
+  const [search, setSearch] = useState('')
   const orders: SeedOrder[] = ctx.seedOrders || []
   const plantings: PlantingFull[] = ctx.plantings || []
 
@@ -31,94 +47,123 @@ export default function Commandes({ ctx }: { ctx: any }) {
     ctx.upsertSeedOrder(cultureName, updates)
   }
 
+  // Retour visuel uniquement quand la valeur a vraiment changé
+  const onBlurSave = (name: string, field: 'graines_ordered' | 'supplier', before: string | number, e: React.FocusEvent<HTMLInputElement>) => {
+    handleUpdate(name, field, e.target.value)
+    if (String(before) !== e.target.value) toast.success(`${name} : commande mise à jour`)
+  }
+
+  const visible = allCultures.filter(n => n.toLowerCase().includes(search.trim().toLowerCase()) ||
+    (getOrder(n)?.supplier || '').toLowerCase().includes(search.trim().toLowerCase()))
+
   return (
     <div>
-      <h2 className="font-serif text-3xl mb-1">Commandes de graines</h2>
-      <p className="text-terre text-sm mb-7">Calculé automatiquement depuis vos plantations</p>
+      <PageHeader title="Commandes de graines" description="Calculées automatiquement depuis vos plantations" image={photos.semisGodets} />
 
-      {/* Stats */}
-      <div className="flex gap-3 flex-wrap mb-7">
-        <div className="bg-white px-5 py-2 rounded-full text-sm shadow-card">
-          Total nécessaire : <strong className="text-sage">{totalNeeded.toLocaleString('fr-FR')}</strong> graines
-        </div>
-        <div className="bg-white px-5 py-2 rounded-full text-sm shadow-card">
-          Commandées : <strong className="text-sage">{totalOrdered.toLocaleString('fr-FR')}</strong>
-        </div>
-        <div className="bg-white px-5 py-2 rounded-full text-sm shadow-card">
-          Reçues : <strong className="text-sage">{received} / {orders.length}</strong>
-        </div>
+      <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-4">
+        <Stat label="Total nécessaire" value={totalNeeded.toLocaleString('fr-FR')} sub="graines" icon={<Sprout />} />
+        <Stat label="Commandées" value={totalOrdered.toLocaleString('fr-FR')} sub="graines" icon={<PackageOpen />} />
+        <Stat label="Reçues" value={`${received} / ${orders.length}`} sub="commandes" icon={<PackageCheck />} />
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr>
-              {['Culture', 'Graines nécessaires', 'Commandées', 'Fournisseur', 'Bio', 'Statut', 'Reçu'].map(h => (
-                <th key={h} className="table-header">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {allCultures.map(name => {
+      {allCultures.length === 0 ? (
+        <Card>
+          <EmptyState image={photos.semisGodets} title="Aucun besoin en graines"
+            description="Les commandes se rempliront automatiquement quand vous ajouterez des cultures." />
+        </Card>
+      ) : (
+        <>
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <SearchInput value={search} onChange={setSearch} placeholder="Culture ou fournisseur…" className="sm:w-72" label="Rechercher une commande" />
+            <p className="text-xs text-fg-subtle sm:ml-auto">Les champs s’enregistrent quand vous les quittez.</p>
+          </div>
+
+          {/* Mobile : cartes éditables */}
+          <ul className="space-y-2 md:hidden">
+            {visible.map(name => {
               const needed = needsByCulture[name] || getOrder(name)?.graines_needed || 0
               const order = getOrder(name)
               const ordered = order?.graines_ordered || 0
               return (
-                <tr key={name} className="hover:bg-cream transition">
-                  <td className="table-cell font-semibold">{name}</td>
-                  <td className="table-cell">{needed.toLocaleString('fr-FR')}</td>
-                  <td className="table-cell">
-                    <input
-                      type="number"
-                      className="input !w-20 !py-1 !px-2 text-sm"
-                      defaultValue={ordered}
-                      min={0}
-                      onBlur={e => handleUpdate(name, 'graines_ordered', e.target.value)}
-                    />
-                  </td>
-                  <td className="table-cell">
-                    <input
-                      type="text"
-                      className="input !w-32 !py-1 !px-2 text-sm"
-                      defaultValue={order?.supplier || ''}
-                      placeholder="Fournisseur"
-                      onBlur={e => handleUpdate(name, 'supplier', e.target.value)}
-                    />
-                  </td>
-                  <td className="table-cell">
-                    <input
-                      type="checkbox"
-                      checked={order?.bio || false}
-                      onChange={e => handleUpdate(name, 'bio', e.target.checked)}
-                      className="accent-sage w-4 h-4"
-                    />
-                  </td>
-                  <td className="table-cell">
-                    {ordered >= needed && needed > 0
-                      ? <span className="badge badge-rr">Complet</span>
-                      : ordered > 0
-                        ? <span className="badge badge-mp">Partiel</span>
-                        : <span className="badge badge-ru">À commander</span>}
-                  </td>
-                  <td className="table-cell">
-                    <input
-                      type="checkbox"
-                      checked={order?.received || false}
-                      onChange={e => handleUpdate(name, 'received', e.target.checked)}
-                      className="accent-sage w-4 h-4"
-                    />
-                  </td>
-                </tr>
+                <li key={name} className="rounded-xl border border-border bg-surface p-3.5 shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-fg">{name}</p>
+                      <p className="num text-xs text-fg-muted">{needed.toLocaleString('fr-FR')} graines nécessaires</p>
+                    </div>
+                    <OrderStatus ordered={ordered} needed={needed} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <label className="text-xs text-fg-muted">Commandées
+                      <input type="number" inputMode="numeric" className="field-control mt-1 h-11" defaultValue={ordered} min={0}
+                        onBlur={e => onBlurSave(name, 'graines_ordered', ordered, e)} />
+                    </label>
+                    <label className="text-xs text-fg-muted">Fournisseur
+                      <input type="text" className="field-control mt-1 h-11" defaultValue={order?.supplier || ''} placeholder="Fournisseur"
+                        onBlur={e => onBlurSave(name, 'supplier', order?.supplier || '', e)} />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex gap-5 text-sm text-fg">
+                    <label className="flex items-center gap-2"><input type="checkbox" className={checkbox} checked={order?.bio || false}
+                      onChange={e => handleUpdate(name, 'bio', e.target.checked)} />Bio</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" className={checkbox} checked={order?.received || false}
+                      onChange={e => handleUpdate(name, 'received', e.target.checked)} />Reçu</label>
+                  </div>
+                </li>
               )
             })}
-            {allCultures.length === 0 && (
-              <tr><td colSpan={7} className="table-cell text-center text-terre py-8">
-                Les commandes se rempliront automatiquement quand vous ajouterez des cultures.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </ul>
+
+          <TableContainer className="hidden md:block" label="Commandes de graines">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Culture</th>
+                  <th className="!text-right">Graines nécessaires</th>
+                  <th>Commandées</th>
+                  <th>Fournisseur</th>
+                  <th className="!text-center">Bio</th>
+                  <th>Statut</th>
+                  <th className="!text-center">Reçu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map(name => {
+                  const needed = needsByCulture[name] || getOrder(name)?.graines_needed || 0
+                  const order = getOrder(name)
+                  const ordered = order?.graines_ordered || 0
+                  return (
+                    <tr key={name}>
+                      <td className="font-medium">{name}</td>
+                      <td className="num text-right">{needed.toLocaleString('fr-FR')}</td>
+                      <td>
+                        <input type="number" aria-label={`Graines commandées — ${name}`} className="field-control !min-h-0 h-8 w-24 text-right"
+                          defaultValue={ordered} min={0} onBlur={e => onBlurSave(name, 'graines_ordered', ordered, e)} />
+                      </td>
+                      <td>
+                        <input type="text" aria-label={`Fournisseur — ${name}`} className="field-control !min-h-0 h-8 w-44"
+                          defaultValue={order?.supplier || ''} placeholder="Fournisseur" onBlur={e => onBlurSave(name, 'supplier', order?.supplier || '', e)} />
+                      </td>
+                      <td className="text-center">
+                        <input type="checkbox" aria-label={`Bio — ${name}`} className={checkbox} checked={order?.bio || false}
+                          onChange={e => handleUpdate(name, 'bio', e.target.checked)} />
+                      </td>
+                      <td><OrderStatus ordered={ordered} needed={needed} /></td>
+                      <td className="text-center">
+                        <input type="checkbox" aria-label={`Reçu — ${name}`} className={checkbox} checked={order?.received || false}
+                          onChange={e => handleUpdate(name, 'received', e.target.checked)} />
+                      </td>
+                    </tr>
+                  )
+                })}
+                {visible.length === 0 && (
+                  <tr><td colSpan={7} className="py-10 text-center text-fg-muted">Aucune culture ne correspond à « {search} ».</td></tr>
+                )}
+              </tbody>
+            </table>
+          </TableContainer>
+        </>
+      )}
     </div>
   )
 }

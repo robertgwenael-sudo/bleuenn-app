@@ -1,13 +1,21 @@
 'use client'
 import { useState, useMemo } from 'react'
+import { toast } from 'sonner'
+import { ChevronRight, Plus, Star, Trash2 } from 'lucide-react'
 import type { CultureCatalog } from '@/lib/types'
-import Modal from '@/components/Modal'
+import {
+  Badge, Button, Card, Dialog, EmptyState, Field, Input, PageHeader, SearchInput, Segmented, Select, SortHeader,
+  TableContainer, TypeBadge, useConfirm,
+} from '@/components/ui'
+import { useIntent } from '@/components/shell/ui-context'
+import { photos } from '@/lib/images'
 
 type SortKey = 'name' | 'type' | 'jours_cellule' | 'jours_champ' | 'jours_recolte' | 'rendement_plant' | 'prix_tige' | 'espacement_cm'
 type SortDir = 'asc' | 'desc'
 
 // ─── Formulaire ajout / édition ──────────────
 function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null; ctx: any; onClose: () => void }) {
+  const confirm = useConfirm()
   const isEdit = !!culture
   const [name, setName] = useState(culture?.name || '')
   const [type, setType] = useState<'RR' | 'MP' | 'RU'>(culture?.type || 'RR')
@@ -27,7 +35,8 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
   const [notes, setNotes] = useState(culture?.notes || '')
   const [loading, setLoading] = useState(false)
 
-  const submit = async () => {
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
     if (!name) return
     setLoading(true)
     const data = {
@@ -46,8 +55,10 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
     }
     if (isEdit && culture) {
       await ctx.updateCulture(culture.id, data)
+      toast.success(`${name} mis à jour`, { description: 'Les dates des plantations concernées sont recalculées.' })
     } else {
       await ctx.addCulture(data)
+      toast.success(`${name} ajouté au catalogue`)
     }
     setLoading(false)
     onClose()
@@ -55,126 +66,108 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
 
   const handleDelete = async () => {
     if (!culture) return
-    if (confirm(`Supprimer "${culture.name}" du catalogue ? Cette action est irreversible.`)) {
+    const ok = await confirm({
+      title: `Supprimer « ${culture.name} » ?`,
+      description: 'La culture sera retirée du catalogue. Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    })
+    if (ok) {
       await ctx.deleteCulture(culture.id)
+      toast.success(`${culture.name} supprimé du catalogue`)
       onClose()
     }
   }
 
   // Calcul du cycle total
   const cycleTotal = joursCellule + joursChamp + joursRecolte
+  const num = (v: number, set: (n: number) => void, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <Input type="number" inputMode="decimal" value={v} onChange={e => set(+e.target.value)} {...props} />
+  )
 
   return (
-    <div className="space-y-4">
-      <h3 className="font-serif text-xl">{isEdit ? `Modifier — ${culture?.name}` : 'Nouvelle culture'}</h3>
-
+    <form onSubmit={submit} className="space-y-5">
       {/* Cycle preview */}
-      <div className="bg-lin rounded-btn p-3 text-xs text-terre">
-        Cycle total : <strong className="text-brun">{cycleTotal} jours</strong> ({joursCellule}j cellule + {joursChamp}j champ + {joursRecolte}j recolte)
+      <div className="rounded-xl border border-border bg-surface-2/60 p-3.5">
+        <p className="text-xs text-fg-muted">Cycle total : <strong className="num text-fg">{cycleTotal} jours</strong></p>
+        <div className="mt-2 flex h-2.5 gap-[2px] overflow-hidden rounded-full" aria-hidden>
+          {cycleTotal > 0 && <>
+            <div className="bg-phase-cellule" style={{ width: `${joursCellule / cycleTotal * 100}%` }} />
+            <div className="bg-phase-champ" style={{ width: `${joursChamp / cycleTotal * 100}%` }} />
+            <div className="bg-phase-recolte" style={{ width: `${joursRecolte / cycleTotal * 100}%` }} />
+          </>}
+        </div>
+        <p className="num mt-1.5 text-xs text-fg-subtle">{joursCellule} j cellule + {joursChamp} j champ + {joursRecolte} j récolte</p>
       </div>
 
-      {/* Nom + Type */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="col-span-2">
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Nom</label>
-          <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Cosmos" />
-        </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Type</label>
-          <select className="input" value={type} onChange={e => setType(e.target.value as any)}>
-            <option value="RR">RR — Repetitive</option>
+        <Field label="Nom" className="col-span-3 sm:col-span-2" error={!name && loading ? 'Requis' : undefined}>
+          <Input value={name} onChange={e => setName(e.target.value)} placeholder="Cosmos" autoFocus={!isEdit} />
+        </Field>
+        <Field label="Type" className="col-span-3 sm:col-span-1">
+          <Select value={type} onChange={e => setType(e.target.value as any)}>
+            <option value="RR">RR — Répétitive</option>
             <option value="MP">MP — Moyen</option>
             <option value="RU">RU — Unique</option>
-          </select>
-        </div>
+          </Select>
+        </Field>
       </div>
 
-      {/* Jours */}
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">J. cellule</label>
-          <input className="input" type="number" min={0} value={joursCellule} onChange={e => setJoursCellule(+e.target.value)} />
+      <fieldset>
+        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Cycle (jours)</legend>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Cellule">{num(joursCellule, setJoursCellule, { min: 0 })}</Field>
+          <Field label="Champ">{num(joursChamp, setJoursChamp, { min: 1 })}</Field>
+          <Field label="Récolte">{num(joursRecolte, setJoursRecolte, { min: 1 })}</Field>
         </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">J. champ</label>
-          <input className="input" type="number" min={1} value={joursChamp} onChange={e => setJoursChamp(+e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">J. recolte</label>
-          <input className="input" type="number" min={1} value={joursRecolte} onChange={e => setJoursRecolte(+e.target.value)} />
-        </div>
-      </div>
+      </fieldset>
 
-      {/* Rendement + Prix */}
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Rendement/plant</label>
-          <input className="input" type="number" min={0} step={0.5} value={rendement} onChange={e => setRendement(+e.target.value)} />
+      <fieldset>
+        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Production</legend>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Rendement/plant">{num(rendement, setRendement, { min: 0, step: 0.5 })}</Field>
+          <Field label="Prix/tige (€)">{num(prix, setPrix, { min: 0, step: 0.05 })}</Field>
+          <Field label="Temp. germ. (°C)">{num(tempGerm, setTempGerm)}</Field>
+          <Field label="Espacement (cm)">{num(espacement, setEspacement, { min: 5 })}</Field>
+          <Field label="Rangs/planche">{num(rangs, setRangs, { min: 1 })}</Field>
+          <Field label="Graines/plant">{num(graines, setGraines, { min: 1 })}</Field>
         </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Prix/tige (€)</label>
-          <input className="input" type="number" min={0} step={0.05} value={prix} onChange={e => setPrix(+e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Temp. germ. (°C)</label>
-          <input className="input" type="number" value={tempGerm} onChange={e => setTempGerm(+e.target.value)} />
-        </div>
-      </div>
+      </fieldset>
 
-      {/* Espacement + Rangs + Graines */}
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Espacement (cm)</label>
-          <input className="input" type="number" min={5} value={espacement} onChange={e => setEspacement(+e.target.value)} />
+      <fieldset>
+        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Conduite</legend>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { label: 'Pincer', val: pincer, set: setPincer },
+            { label: 'Filet', val: filet, set: setFilet },
+            { label: 'Couvre-sol', val: couvreSol, set: setCouvreSol },
+            { label: 'Semis direct', val: semisDirect, set: setSemisDirect },
+          ].map(cb => (
+            <label key={cb.label} className="flex h-11 cursor-pointer select-none items-center gap-2.5 rounded-lg border border-border px-3 text-sm text-fg has-[:checked]:border-primary has-[:checked]:bg-primary-soft">
+              <input type="checkbox" checked={cb.val} onChange={e => cb.set(e.target.checked)}
+                className="h-4 w-4 accent-[rgb(var(--primary))]" />
+              {cb.label}
+            </label>
+          ))}
         </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Rangs/planche</label>
-          <input className="input" type="number" min={1} value={rangs} onChange={e => setRangs(+e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Graines/plant</label>
-          <input className="input" type="number" min={1} value={graines} onChange={e => setGraines(+e.target.value)} />
-        </div>
-      </div>
+      </fieldset>
 
-      {/* Checkboxes */}
-      <div className="flex flex-wrap gap-4 py-1">
-        {[
-          { label: 'Pincer', val: pincer, set: setPincer },
-          { label: 'Filet', val: filet, set: setFilet },
-          { label: 'Couvre-sol', val: couvreSol, set: setCouvreSol },
-          { label: 'Semis direct', val: semisDirect, set: setSemisDirect },
-        ].map(cb => (
-          <label key={cb.label} className="flex items-center gap-2 text-xs cursor-pointer select-none">
-            <input type="checkbox" checked={cb.val} onChange={e => cb.set(e.target.checked)}
-              className="w-4 h-4 rounded border-lin-dark text-sage focus:ring-sage-pale" />
-            {cb.label}
-          </label>
-        ))}
-      </div>
-
-      {/* Notes */}
-      <div>
-        <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Notes</label>
-        <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Conseils, particularites..." />
-      </div>
-
-      <div className="flex gap-3 pt-2">
-        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !name}>
-          {loading ? '...' : isEdit ? 'Enregistrer' : 'Ajouter'}
-        </button>
-      </div>
+      <Field label="Notes">
+        <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Conseils, particularités…" />
+      </Field>
 
       {isEdit && culture && !culture.user_id && (
-        <p className="text-[0.65rem] text-terre text-center">Culture systeme — les modifications s&apos;appliqueront a votre compte uniquement.</p>
+        <p className="flex items-center gap-1.5 text-xs text-fg-muted"><Star className="h-3.5 w-3.5 text-warning" aria-hidden />Culture système — les modifications s’appliqueront à votre compte uniquement.</p>
       )}
-      {isEdit && culture?.user_id && (
-        <button className="btn btn-danger w-full text-xs mt-1" onClick={handleDelete}>
-          Supprimer cette culture
-        </button>
-      )}
-    </div>
+
+      <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center">
+        {isEdit && culture?.user_id && (
+          <Button variant="danger-ghost" onClick={handleDelete} className="sm:mr-auto"><Trash2 className="h-4 w-4" />Supprimer cette culture</Button>
+        )}
+        <Button variant="secondary" onClick={onClose} className={isEdit && culture?.user_id ? '' : 'sm:ml-auto'}>Annuler</Button>
+        <Button type="submit" loading={loading} disabled={!name}>{isEdit ? 'Enregistrer' : 'Ajouter'}</Button>
+      </div>
+    </form>
   )
 }
 
@@ -187,6 +180,8 @@ export default function Catalogue({ ctx }: { ctx: any }) {
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [modal, setModal] = useState<'add' | 'edit' | null>(null)
   const [editCulture, setEditCulture] = useState<CultureCatalog | null>(null)
+
+  useIntent('new-culture', () => { setEditCulture(null); setModal('add') })
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -216,139 +211,121 @@ export default function Catalogue({ ctx }: { ctx: any }) {
     return result
   }, [catalog, search, filterType, sortKey, sortDir])
 
-  const SortIcon = ({ k }: { k: SortKey }) => {
-    if (sortKey !== k) return <span className="text-terre/30 ml-0.5">&#x25B4;&#x25BE;</span>
-    return <span className="text-pivoine ml-0.5">{sortDir === 'asc' ? '&#x25B4;' : '&#x25BE;'}</span>
-  }
-
-  const ThSort = ({ k, children, className = '' }: { k: SortKey; children: React.ReactNode; className?: string }) => (
-    <th className={`table-header cursor-pointer select-none hover:bg-sage-pale/50 transition ${className}`}
-      onClick={() => toggleSort(k)}>
-      <span className="flex items-center gap-0.5">{children}<SortIcon k={k} /></span>
-    </th>
+  const th = (k: SortKey, label: string, center = true) => (
+    <SortHeader key={k} label={label} active={sortKey === k} dir={sortDir} onClick={() => toggleSort(k)} className={center ? '!text-center' : ''} />
   )
-
-  const typeColors: Record<string, string> = {
-    RR: 'badge-rr', MP: 'badge-mp', RU: 'badge-ru'
-  }
+  const open = (c: CultureCatalog) => { setEditCulture(c); setModal('edit') }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h2 className="font-serif text-4xl mb-1 font-medium">Catalogue des cultures</h2>
-          <p className="text-terre text-sm">{catalog.length} varietes — le referentiel technique de votre ferme</p>
-        </div>
-        <button className="btn btn-sage" onClick={() => { setEditCulture(null); setModal('add') }}>+ Nouvelle culture</button>
-      </div>
+      <PageHeader
+        title="Catalogue des cultures"
+        description={`${catalog.length} variétés — le référentiel technique de votre ferme`}
+        image={photos.bouquetTulipes}
+        actions={<Button onClick={() => { setEditCulture(null); setModal('add') }}><Plus className="h-4 w-4" />Nouvelle culture</Button>}
+      />
 
       {/* Barre recherche + filtres */}
-      <div className="flex flex-wrap gap-3 my-5">
-        <div className="relative flex-1 min-w-[240px]">
-          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-terre/40 text-sm">&#x1F50D;</span>
-          <input
-            className="input !pl-10"
-            placeholder="Rechercher une culture, un type, une note..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          {search && (
-            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-terre/40 hover:text-brun text-sm"
-              onClick={() => setSearch('')}>&#x2715;</button>
-          )}
-        </div>
-        <div className="flex gap-1.5">
-          {(['', 'RR', 'MP', 'RU'] as const).map(t => (
-            <button key={t}
-              className={`btn btn-sm ${filterType === t ? 'btn-sage' : 'btn-outline'}`}
-              onClick={() => setFilterType(t)}
-            >
-              {t || 'Tous'}
-            </button>
-          ))}
-        </div>
-        <div className="text-xs text-terre self-center">
-          {filtered.length} resultat{filtered.length > 1 ? 's' : ''}
-        </div>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <SearchInput value={search} onChange={setSearch} placeholder="Rechercher une culture, un type, une note…" className="sm:w-80" label="Rechercher dans le catalogue" />
+        <Segmented label="Filtrer par type" value={filterType} onChange={setFilterType} size="sm" className="sm:w-auto"
+          options={[{ value: '', label: 'Tous' }, { value: 'RR', label: 'RR' }, { value: 'MP', label: 'MP' }, { value: 'RU', label: 'RU' }]} />
+        <span className="num text-xs text-fg-subtle sm:ml-auto">{filtered.length} résultat{filtered.length > 1 ? 's' : ''}</span>
       </div>
 
-      {/* Tableau */}
-      <div className="overflow-x-auto rounded-card border border-lin-dark/60">
-        <table className="w-full min-w-[1100px]">
-          <thead>
-            <tr>
-              <ThSort k="name" className="!text-left min-w-[160px]">Culture</ThSort>
-              <ThSort k="type">Type</ThSort>
-              <ThSort k="jours_cellule">J. cellule</ThSort>
-              <ThSort k="jours_champ">J. champ</ThSort>
-              <ThSort k="jours_recolte">J. recolte</ThSort>
-              <th className="table-header text-center">Cycle total</th>
-              <ThSort k="rendement_plant">Rend./plant</ThSort>
-              <ThSort k="prix_tige">Prix/tige</ThSort>
-              <ThSort k="espacement_cm">Espac. (cm)</ThSort>
-              <th className="table-header text-center">Rangs</th>
-              <th className="table-header text-center">Options</th>
-              <th className="table-header !text-left">Notes</th>
-              <th className="table-header w-10" />
-            </tr>
-          </thead>
-          <tbody>
+      {filtered.length === 0 ? (
+        <Card>
+          <EmptyState image={photos.bouquetTulipes}
+            title={search ? 'Aucune culture trouvée' : 'Catalogue vide'}
+            description={search ? `Aucune culture ne correspond à « ${search} ».` : 'Ajoutez vos variétés pour calculer automatiquement les dates et rendements.'}
+            action={<Button onClick={() => { setEditCulture(null); setModal('add') }}><Plus className="h-4 w-4" />Nouvelle culture</Button>} />
+        </Card>
+      ) : (
+        <>
+          {/* Mobile : liste */}
+          <ul className="divide-y divide-border overflow-hidden rounded-card border border-border bg-surface shadow-card md:hidden">
             {filtered.map(c => (
-              <tr key={c.id}
-                className="border-b border-lin-dark/40 hover:bg-rose-pale/20 cursor-pointer transition-colors"
-                onClick={() => { setEditCulture(c); setModal('edit') }}
-              >
-                <td className="table-cell !text-left font-semibold text-brun">
-                  {c.name}
-                  {!c.user_id && <span className="text-[0.55rem] text-or ml-1.5 font-normal" title="Culture systeme">&#x2605;</span>}
-                </td>
-                <td className="table-cell text-center">
-                  <span className={`badge text-[0.55rem] ${typeColors[c.type]}`}>{c.type}</span>
-                </td>
-                <td className="table-cell text-center font-mono text-sm">{c.jours_cellule || '—'}</td>
-                <td className="table-cell text-center font-mono text-sm">{c.jours_champ}</td>
-                <td className="table-cell text-center font-mono text-sm">{c.jours_recolte}</td>
-                <td className="table-cell text-center font-mono text-sm font-bold text-pivoine">
-                  {(c.jours_cellule || 0) + c.jours_champ + c.jours_recolte}j
-                </td>
-                <td className="table-cell text-center">{c.rendement_plant}</td>
-                <td className="table-cell text-center font-semibold text-sage-dark">{c.prix_tige.toFixed(2)}€</td>
-                <td className="table-cell text-center">{c.espacement_cm}</td>
-                <td className="table-cell text-center">{c.rangs_par_planche}</td>
-                <td className="table-cell text-center">
-                  <div className="flex justify-center gap-1 flex-wrap">
-                    {c.pincer && <span className="badge badge-mp text-[0.5rem] !px-1.5 !py-0">Pincer</span>}
-                    {c.filet && <span className="badge badge-ru text-[0.5rem] !px-1.5 !py-0">Filet</span>}
-                    {c.couvre_sol && <span className="badge badge-rr text-[0.5rem] !px-1.5 !py-0">C-sol</span>}
-                    {c.semis_direct && <span className="badge badge-semer text-[0.5rem] !px-1.5 !py-0">Direct</span>}
+              <li key={c.id}>
+                <button type="button" onClick={() => open(c)} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-surface-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 truncate font-medium text-fg">
+                      {c.name}{!c.user_id && <Star className="h-3 w-3 shrink-0 fill-current text-warning" aria-label="Culture système" />}
+                    </p>
+                    <p className="num truncate text-xs text-fg-muted">
+                      {(c.jours_cellule || 0) + c.jours_champ + c.jours_recolte} j · {c.rendement_plant} tiges/plant · {c.prix_tige.toFixed(2)} €
+                    </p>
                   </div>
-                </td>
-                <td className="table-cell !text-left text-xs text-terre max-w-[200px] truncate" title={c.notes || ''}>
-                  {c.notes || '—'}
-                </td>
-                <td className="table-cell text-center">
-                  <span className="text-terre/40 text-xs">&#x270E;</span>
-                </td>
-              </tr>
+                  <TypeBadge type={c.type} />
+                  <ChevronRight className="h-4 w-4 text-fg-subtle" aria-hidden />
+                </button>
+              </li>
             ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={13} className="table-cell text-center text-terre py-10">
-                  {search ? `Aucune culture ne correspond a "${search}"` : 'Aucune culture dans le catalogue.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </ul>
 
-      {/* Modals */}
-      <Modal open={modal === 'add'} onClose={() => setModal(null)}>
+          {/* Bureau : tableau triable */}
+          <TableContainer className="hidden md:block" label="Catalogue des cultures">
+            <table className="data-table min-w-[1100px]">
+              <thead>
+                <tr>
+                  {th('name', 'Culture', false)}
+                  {th('type', 'Type')}
+                  {th('jours_cellule', 'J. cellule')}
+                  {th('jours_champ', 'J. champ')}
+                  {th('jours_recolte', 'J. récolte')}
+                  <th className="!text-center">Cycle</th>
+                  {th('rendement_plant', 'Rend./plant')}
+                  {th('prix_tige', 'Prix/tige')}
+                  {th('espacement_cm', 'Espac. (cm)')}
+                  <th className="!text-center">Rangs</th>
+                  <th className="!text-center">Options</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(c => (
+                  <tr key={c.id} className="cursor-pointer" onClick={() => open(c)}>
+                    <td className="font-medium">
+                      <button type="button" onClick={e => { e.stopPropagation(); open(c) }} className="inline-flex items-center gap-1.5 rounded text-left hover:underline">
+                        {c.name}
+                        {!c.user_id && <Star className="h-3 w-3 fill-current text-warning" aria-label="Culture système" />}
+                      </button>
+                    </td>
+                    <td className="text-center"><TypeBadge type={c.type} /></td>
+                    <td className="num text-center">{c.jours_cellule || '—'}</td>
+                    <td className="num text-center">{c.jours_champ}</td>
+                    <td className="num text-center">{c.jours_recolte}</td>
+                    <td className="num text-center font-semibold">{(c.jours_cellule || 0) + c.jours_champ + c.jours_recolte} j</td>
+                    <td className="num text-center">{c.rendement_plant}</td>
+                    <td className="num text-center font-medium">{c.prix_tige.toFixed(2)} €</td>
+                    <td className="num text-center">{c.espacement_cm}</td>
+                    <td className="num text-center">{c.rangs_par_planche}</td>
+                    <td>
+                      <div className="flex justify-center gap-1">
+                        {c.pincer && <Badge tone="amber">Pincer</Badge>}
+                        {c.filet && <Badge tone="violet">Filet</Badge>}
+                        {c.couvre_sol && <Badge tone="green">Couvre-sol</Badge>}
+                        {c.semis_direct && <Badge tone="rose">Direct</Badge>}
+                      </div>
+                    </td>
+                    <td className="max-w-[220px] truncate text-xs text-fg-muted" title={c.notes || ''}>{c.notes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableContainer>
+        </>
+      )}
+
+      {/* Modales */}
+      <Dialog open={modal === 'add'} onOpenChange={o => !o && setModal(null)} size="lg" title="Nouvelle culture"
+        description="Ajoutée à votre catalogue, disponible pour toutes vos planches.">
         <CultureForm culture={null} ctx={ctx} onClose={() => setModal(null)} />
-      </Modal>
-      <Modal open={modal === 'edit'} onClose={() => setModal(null)}>
-        {editCulture && <CultureForm culture={editCulture} ctx={ctx} onClose={() => setModal(null)} />}
-      </Modal>
+      </Dialog>
+      <Dialog open={modal === 'edit'} onOpenChange={o => !o && setModal(null)} size="lg"
+        title={editCulture ? `Modifier — ${editCulture.name}` : 'Modifier'}>
+        {editCulture && <CultureForm key={editCulture.id} culture={editCulture} ctx={ctx} onClose={() => setModal(null)} />}
+      </Dialog>
     </div>
   )
 }
+

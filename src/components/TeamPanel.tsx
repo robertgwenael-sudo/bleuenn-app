@@ -1,7 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
+import { Check, Clock, Copy, Link2, Mail, RefreshCw, UserMinus, X } from 'lucide-react'
 import type { TeamMember } from '@/lib/types'
-import Modal from '@/components/Modal'
+import { Dialog, Button, Input, Badge, useConfirm } from '@/components/ui'
+import { initials } from '@/components/shell/UserMenu'
 
 interface PendingInvite {
   id: string
@@ -9,8 +12,9 @@ interface PendingInvite {
   created_at: string
 }
 
-export default function TeamPanel({ ctx }: { ctx: any }) {
-  const [showModal, setShowModal] = useState(false)
+/** Gestion de l'équipe de la saison (dialogue piloté par le shell). */
+export default function TeamPanel({ ctx, open, onOpenChange }: { ctx: any; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const confirm = useConfirm()
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -30,19 +34,24 @@ export default function TeamPanel({ ctx }: { ctx: any }) {
 
   // Charger les invitations en attente quand la modale s'ouvre
   useEffect(() => {
-    if (showModal && isOwner) {
+    if (open && isOwner) {
       ctx.getPendingInvites().then((data: PendingInvite[]) => setPendingInvites(data))
     }
-  }, [showModal, isOwner, members.length])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isOwner, members.length])
+
+  const close = () => { onOpenChange(false); setInviteStatus(null) }
 
   const handleEnableLink = async () => {
     setLoading(true)
     await ctx.enableInviteLink()
     setLoading(false)
+    toast.success('Lien de partage activé')
   }
 
   const handleDisableLink = async () => {
     await ctx.disableInviteLink()
+    toast('Lien de partage désactivé')
   }
 
   const handleRegenerate = async () => {
@@ -50,11 +59,13 @@ export default function TeamPanel({ ctx }: { ctx: any }) {
     await ctx.regenerateInviteToken()
     setCopied(false)
     setLoading(false)
+    toast.success('Nouveau lien généré', { description: 'L’ancien lien ne fonctionne plus.' })
   }
 
   const copyLink = () => {
     navigator.clipboard.writeText(inviteLink)
     setCopied(true)
+    toast.success('Lien copié dans le presse-papiers')
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -67,6 +78,7 @@ export default function TeamPanel({ ctx }: { ctx: any }) {
       setInviteStatus({ type: 'error', msg: result.error })
     } else if (result?.status === 'added') {
       setInviteStatus({ type: 'success', msg: `${inviteEmail} ajouté(e) à l'équipe !` })
+      toast.success(`${inviteEmail} ajouté(e) à l’équipe`)
       setInviteEmail('')
     } else if (result?.status === 'already_member') {
       setInviteStatus({ type: 'error', msg: 'Déjà membre de l\'équipe.' })
@@ -81,160 +93,140 @@ export default function TeamPanel({ ctx }: { ctx: any }) {
   const handleCancelInvite = async (invite: PendingInvite) => {
     await ctx.cancelInvite(invite.id)
     setPendingInvites(prev => prev.filter(i => i.id !== invite.id))
+    toast('Invitation annulée', { description: invite.email })
   }
 
   const handleRemove = async (member: TeamMember) => {
     if (member.role === 'owner') return
-    if (confirm(`Retirer ${member.email || member.owner_name || 'ce membre'} de l'équipe ?`)) {
+    const ok = await confirm({
+      title: 'Retirer ce membre ?',
+      description: `${member.email || member.owner_name || 'Ce membre'} n’aura plus accès à la saison « ${season?.name} ».`,
+      confirmLabel: 'Retirer',
+      destructive: true,
+    })
+    if (ok) {
       await ctx.removeMember(member.id)
+      toast.success('Membre retiré de l’équipe')
     }
   }
 
   return (
-    <>
-      <button
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-terre hover:bg-sage-pale/50 transition text-left"
-        onClick={() => setShowModal(true)}
-      >
-        <span className="text-base">👥</span>
-        <span>Équipe ({members.length})</span>
-      </button>
-
-      <Modal open={showModal} onClose={() => { setShowModal(false); setInviteStatus(null) }}>
-        <div className="space-y-5">
-          <h3 className="font-serif text-xl">Équipe — {season?.name}</h3>
-
-          {/* Liste des membres */}
-          <div>
-            <p className="text-xs font-semibold text-brun mb-2">{members.length} membre{members.length > 1 ? 's' : ''}</p>
-            <div className="space-y-1.5">
-              {members.map(m => (
-                <div key={m.id} className="flex items-center justify-between bg-cream rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-sage-pale flex items-center justify-center text-xs font-bold text-sage-dark">
-                      {(m.owner_name || m.email || '?')[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-brun">{m.owner_name || 'Sans nom'}</div>
-                      <div className="text-[0.6rem] text-terre">{m.email}</div>
-                    </div>
+    <Dialog open={open} onOpenChange={o => (o ? onOpenChange(true) : close())} title="Équipe" description={season?.name} size="md"
+      footer={<Button variant="secondary" onClick={close}>Fermer</Button>}>
+      <div className="space-y-6">
+        {/* Liste des membres */}
+        <section>
+          <h3 className="mb-2 font-sans text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            {members.length} membre{members.length > 1 ? 's' : ''}
+          </h3>
+          <ul className="divide-y divide-border rounded-xl border border-border">
+            {members.map(m => (
+              <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
+                    {initials(m.owner_name, m.email)}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`badge text-[0.5rem] ${m.role === 'owner' ? 'badge-rr' : 'badge-mp'}`}>
-                      {m.role === 'owner' ? 'Propriétaire' : 'Membre'}
-                    </span>
-                    {isOwner && m.role !== 'owner' && (
-                      <button
-                        className="text-terre hover:text-red-600 text-xs"
-                        onClick={() => handleRemove(m)}
-                        title="Retirer de l'équipe"
-                      >×</button>
-                    )}
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-fg">{m.owner_name || 'Sans nom'}</div>
+                    <div className="truncate text-xs text-fg-muted">{m.email}</div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Badge tone={m.role === 'owner' ? 'green' : 'neutral'}>{m.role === 'owner' ? 'Propriétaire' : 'Membre'}</Badge>
+                  {isOwner && m.role !== 'owner' && (
+                    <Button variant="danger-ghost" size="icon-sm" onClick={() => handleRemove(m)} aria-label={`Retirer ${m.email || m.owner_name || 'ce membre'} de l’équipe`}>
+                      <UserMinus className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-          {/* Invitation par email (owner only) */}
-          {isOwner && (
-            <div className="border-t border-lin-dark pt-4">
-              <p className="text-xs font-semibold text-brun mb-2">Inviter par email</p>
-              <div className="flex gap-2">
-                <input
-                  className="input !py-1.5 flex-1"
+        {/* Invitation par email (owner only) */}
+        {isOwner && (
+          <section>
+            <h3 className="mb-2 font-sans text-xs font-semibold uppercase tracking-wider text-fg-subtle">Inviter par e-mail</h3>
+            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={e => { e.preventDefault(); handleInviteByEmail() }}>
+              <div className="relative flex-1">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" aria-hidden />
+                <Input
+                  className="pl-9"
                   type="email"
+                  aria-label="Adresse e-mail à inviter"
                   placeholder="email@exemple.com"
                   value={inviteEmail}
                   onChange={e => { setInviteEmail(e.target.value); setInviteStatus(null) }}
-                  onKeyDown={e => { if (e.key === 'Enter') handleInviteByEmail() }}
                 />
-                <button
-                  className="btn btn-sage btn-sm whitespace-nowrap"
-                  onClick={handleInviteByEmail}
-                  disabled={inviteLoading || !inviteEmail.trim()}
-                >
-                  {inviteLoading ? '…' : 'Inviter'}
-                </button>
               </div>
-              {inviteStatus && (
-                <p className={`text-[0.7rem] mt-1.5 font-medium ${
-                  inviteStatus.type === 'success' ? 'text-sage-dark' :
-                  inviteStatus.type === 'pending' ? 'text-or-dark' :
-                  'text-red-600'
-                }`}>
-                  {inviteStatus.type === 'success' && '✓ '}{inviteStatus.type === 'pending' && '⏳ '}{inviteStatus.msg}
-                </p>
-              )}
+              <Button type="submit" loading={inviteLoading} disabled={!inviteEmail.trim()}>Inviter</Button>
+            </form>
+            {inviteStatus && (
+              <p role="status" className={`mt-2 flex items-start gap-1.5 text-xs font-medium ${
+                inviteStatus.type === 'success' ? 'text-primary' :
+                inviteStatus.type === 'pending' ? 'text-warning' :
+                'text-danger'
+              }`}>
+                {inviteStatus.type === 'success' && <Check className="mt-px h-3.5 w-3.5 shrink-0" />}
+                {inviteStatus.type === 'pending' && <Clock className="mt-px h-3.5 w-3.5 shrink-0" />}
+                {inviteStatus.msg}
+              </p>
+            )}
 
-              {/* Invitations en attente */}
-              {pendingInvites.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-[0.6rem] font-semibold text-terre uppercase tracking-wider mb-1.5">En attente d'inscription</p>
-                  <div className="space-y-1">
-                    {pendingInvites.map(inv => (
-                      <div key={inv.id} className="flex items-center justify-between bg-or-light/20 rounded-lg px-3 py-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[0.6rem]">⏳</span>
-                          <span className="text-xs text-terre">{inv.email}</span>
-                        </div>
-                        <button
-                          className="text-terre hover:text-red-600 text-[0.6rem]"
-                          onClick={() => handleCancelInvite(inv)}
-                          title="Annuler l'invitation"
-                        >annuler</button>
-                      </div>
-                    ))}
-                  </div>
+            {/* Invitations en attente */}
+            {pendingInvites.length > 0 && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-xs font-medium text-fg-muted">En attente d’inscription</p>
+                <ul className="space-y-1">
+                  {pendingInvites.map(inv => (
+                    <li key={inv.id} className="flex items-center justify-between gap-2 rounded-lg bg-warning-soft px-3 py-1.5">
+                      <span className="flex min-w-0 items-center gap-2 text-sm text-fg">
+                        <Clock className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
+                        <span className="truncate">{inv.email}</span>
+                      </span>
+                      <Button variant="ghost" size="sm" onClick={() => handleCancelInvite(inv)} aria-label={`Annuler l’invitation de ${inv.email}`}>
+                        <X className="h-3.5 w-3.5" />Annuler
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Lien d'invitation (owner only) */}
+        {isOwner && (
+          <section>
+            <h3 className="mb-2 font-sans text-xs font-semibold uppercase tracking-wider text-fg-subtle">Lien de partage</h3>
+            {!season?.invite_enabled ? (
+              <div className="rounded-xl border border-dashed border-border-strong p-4">
+                <p className="mb-3 text-sm text-fg-muted">Activez le lien pour inviter par URL.</p>
+                <Button variant="secondary" size="sm" onClick={handleEnableLink} loading={loading}>
+                  <Link2 className="h-4 w-4" />Activer le lien de partage
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input readOnly value={inviteLink} onClick={copyLink} aria-label="Lien d’invitation" className="flex-1 font-mono text-xs" />
+                  <Button onClick={copyLink} aria-label="Copier le lien">
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    <span className="hidden sm:inline">{copied ? 'Copié' : 'Copier'}</span>
+                  </Button>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Lien d'invitation (owner only) */}
-          {isOwner && (
-            <div className="border-t border-lin-dark pt-4">
-              <p className="text-xs font-semibold text-brun mb-2">Lien de partage</p>
-
-              {!season?.invite_enabled ? (
-                <div>
-                  <p className="text-[0.7rem] text-terre mb-2">
-                    Activez le lien pour inviter par URL.
-                  </p>
-                  <button className="btn btn-outline btn-sm" onClick={handleEnableLink} disabled={loading}>
-                    {loading ? '…' : 'Activer le lien de partage'}
-                  </button>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" onClick={handleRegenerate} disabled={loading}>
+                    <RefreshCw className="h-3.5 w-3.5" />Nouveau lien
+                  </Button>
+                  <Button variant="danger-ghost" size="sm" onClick={handleDisableLink}>Désactiver</Button>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex gap-2">
-                    <input
-                      className="input !text-[0.65rem] !py-1.5 flex-1"
-                      readOnly
-                      value={inviteLink}
-                      onClick={copyLink}
-                    />
-                    <button className="btn btn-sage btn-sm whitespace-nowrap" onClick={copyLink}>
-                      {copied ? '✓ Copié' : 'Copier'}
-                    </button>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button className="btn btn-outline btn-sm text-[0.6rem]" onClick={handleRegenerate} disabled={loading}>
-                      Nouveau lien
-                    </button>
-                    <button className="btn btn-danger btn-sm text-[0.6rem]" onClick={handleDisableLink}>
-                      Désactiver
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <button className="btn btn-outline w-full" onClick={() => { setShowModal(false); setInviteStatus(null) }}>Fermer</button>
-        </div>
-      </Modal>
-    </>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </Dialog>
   )
 }

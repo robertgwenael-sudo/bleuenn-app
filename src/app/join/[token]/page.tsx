@@ -1,9 +1,14 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
+import { AlertCircle, CheckCircle2, Loader2, Users } from 'lucide-react'
+import { createClient } from '@/lib/supabase'
+import { AuthLayout } from '@/components/AuthLayout'
+import { photos } from '@/lib/images'
 
 const supabase = createClient()
+
+const linkBtn = 'inline-flex h-12 w-full items-center justify-center rounded-btn bg-primary px-5 text-base font-medium text-primary-fg shadow-xs transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
 
 export default function JoinPage() {
   const params = useParams()
@@ -43,58 +48,45 @@ export default function JoinPage() {
   }, [token, router])
 
   return (
-    <div className="flex items-center justify-center min-h-screen"
-      style={{ background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)' }}>
-      <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
-        <span className="text-4xl block mb-3">&#x273F;</span>
-        <h1 className="font-serif italic text-3xl mb-4" style={{ color: '#6a8a62' }}>Bleuenn</h1>
-
-        {status === 'loading' && (
-          <p className="text-sm" style={{ color: '#8a7e6b' }}>Vérification…</p>
-        )}
-
-        {status === 'needLogin' && (
-          <div>
-            <p className="text-sm mb-4" style={{ color: '#8a7e6b' }}>
-              Connectez-vous pour rejoindre cette saison.
-            </p>
-            <a
-              href={`/?join=${token}`}
-              className="inline-block px-6 py-3 rounded-xl text-white text-sm font-bold"
-              style={{ background: 'linear-gradient(135deg, #6a8a62 0%, #8aaa80 100%)' }}
-            >
-              Se connecter
-            </a>
-          </div>
-        )}
-
-        {status === 'joining' && (
-          <p className="text-sm" style={{ color: '#8a7e6b' }}>Vous rejoignez l'équipe…</p>
-        )}
-
-        {status === 'success' && (
-          <div>
-            <div className="text-2xl mb-2">✓</div>
-            <p className="text-sm font-semibold" style={{ color: '#6a8a62' }}>
-              {seasonName ? `Bienvenue dans "${seasonName}" !` : 'Vous avez rejoint l\'équipe !'}
-            </p>
-            <p className="text-xs mt-2" style={{ color: '#8a7e6b' }}>Redirection…</p>
-          </div>
-        )}
-
-        {status === 'error' && (
-          <div>
-            <p className="text-sm text-red-600 font-semibold mb-3">{message}</p>
-            <a
-              href="/"
-              className="inline-block px-6 py-3 rounded-xl text-white text-sm font-bold"
-              style={{ background: 'linear-gradient(135deg, #6a8a62 0%, #8aaa80 100%)' }}
-            >
-              Retour à l'accueil
-            </a>
-          </div>
-        )}
+    <AuthLayout image={photos.champTournesols} alt="Grand tournesol dans un champ"
+      quote={<>On cultive mieux<br />à plusieurs mains.</>}>
+      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+        <Users className="h-6 w-6" aria-hidden />
       </div>
-    </div>
+      <h1 className="text-[2rem] leading-tight">Rejoindre une équipe</h1>
+
+      {(status === 'loading' || status === 'joining') && (
+        <p role="status" className="mt-4 flex items-center gap-2 text-sm text-fg-muted">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          {status === 'loading' ? 'Vérification…' : 'Vous rejoignez l’équipe…'}
+        </p>
+      )}
+
+      {status === 'needLogin' && (
+        <div className="mt-4">
+          <p className="mb-7 text-sm text-fg-muted">Connectez-vous pour rejoindre cette saison.</p>
+          <a href={`/?join=${token}`} className={linkBtn}>Se connecter</a>
+        </div>
+      )}
+
+      {status === 'success' && (
+        <div role="status" className="mt-5 rounded-xl bg-primary-soft p-4 text-primary">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden />
+            {seasonName ? `Bienvenue dans « ${seasonName} » !` : 'Vous avez rejoint l’équipe !'}
+          </p>
+          <p className="mt-1 pl-7 text-xs">Redirection…</p>
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div className="mt-5">
+          <p role="alert" className="mb-7 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{message}
+          </p>
+          <a href="/" className={linkBtn}>Retour à l’accueil</a>
+        </div>
+      )}
+    </AuthLayout>
   )
 }

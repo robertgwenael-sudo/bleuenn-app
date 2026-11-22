@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image'
+import { Sprout } from 'lucide-react'
 import { useBleuenn } from '@/hooks/useBleuenn'
-import Sidebar from '@/components/Sidebar'
 import AuthScreen from '@/components/AuthScreen'
 import Dashboard from '@/components/Dashboard'
 import Gardens from '@/components/Gardens'
@@ -15,22 +16,11 @@ import Verification from '@/components/Verification'
 import Catalogue from '@/components/Catalogue'
 import Analytique from '@/components/Analytique'
 import OnboardingModal from '@/components/OnboardingModal'
-
-const SECTIONS = [
-  { id: 'dashboard', label: 'Tableau de bord', icon: '📊' },
-  { id: 'jardins', label: 'Jardins & Planches', icon: '🌱' },
-  { id: 'semis', label: 'Semis & Germination', icon: '🌾' },
-  { id: 'calendrier', label: 'Calendrier de culture', icon: '📅' },
-  { id: 'recoltes', label: 'Récoltes', icon: '✂️' },
-  { id: 'ventes', label: 'Ventes', icon: '💰' },
-  { id: 'commandes', label: 'Commandes de graines', icon: '📦' },
-  { id: 'disponibilite', label: 'Disponibilité', icon: '🌸' },
-  { id: 'analytique', label: 'Analytique', icon: '📈' },
-  { id: 'catalogue', label: 'Catalogue cultures', icon: '🌻' },
-  { id: 'verification', label: 'Verification', icon: '📋' },
-] as const
-
-const VALID_IDS: Set<string> = new Set(SECTIONS.map(s => s.id))
+import { AppShell } from '@/components/shell/AppShell'
+import { VALID_IDS } from '@/components/shell/nav'
+import { LogoMark } from '@/components/shell/Logo'
+import { Button, Skeleton } from '@/components/ui'
+import { photos } from '@/lib/images'
 
 function getHashSection(): string {
   if (typeof window === 'undefined') return 'dashboard'
@@ -38,10 +28,43 @@ function getHashSection(): string {
   return VALID_IDS.has(hash) ? hash : 'dashboard'
 }
 
+/** Squelette de l'application pendant le chargement des données. */
+function LoadingShell() {
+  return (
+    <div className="min-h-screen" aria-busy="true" aria-live="polite">
+      <span className="sr-only">Chargement de vos données…</span>
+      <aside className="fixed inset-y-0 left-0 hidden w-sidebar flex-col gap-6 border-r border-sidebar-border bg-sidebar p-5 lg:flex">
+        <div className="flex items-center gap-2.5"><LogoMark /><Skeleton className="h-5 w-24" /></div>
+        {[4, 4, 3, 2].map((n, g) => (
+          <div key={g} className="space-y-2">
+            <Skeleton className="h-3 w-16" />
+            {Array.from({ length: n }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+          </div>
+        ))}
+      </aside>
+      <div className="lg:pl-sidebar">
+        <div className="flex h-topbar items-center gap-3 border-b border-border px-4 sm:px-6 lg:px-8">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="ml-auto h-9 w-9 rounded-full" />
+        </div>
+        <div className="mx-auto max-w-[1440px] space-y-6 px-4 pt-7 sm:px-6 lg:px-8">
+          <Skeleton className="h-44 w-full rounded-card" />
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-card" />)}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Skeleton className="h-72 rounded-card" />
+            <Skeleton className="h-72 rounded-card" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Home() {
   const ctx = useBleuenn()
   const [section, setSectionState] = useState<string>('dashboard')
-  const [mobileOpen, setMobileOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Lire le hash au montage
@@ -56,6 +79,7 @@ export default function Home() {
   const setSection = useCallback((id: string) => {
     window.location.hash = id
     setSectionState(id)
+    window.scrollTo({ top: 0 })
   }, [])
 
   // Not logged in
@@ -64,31 +88,23 @@ export default function Home() {
   }
 
   // Loading
-  if (ctx.loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen"
-        style={{ background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)' }}>
-        <div className="text-center animate-fade-in">
-          <span className="text-4xl block mb-3">&#x273F;</span>
-          <h1 className="font-serif italic text-3xl text-feuille-dark mb-2">Bleuenn</h1>
-          <p className="text-terre text-sm tracking-wider">Chargement...</p>
-        </div>
-      </div>
-    )
-  }
+  if (ctx.loading) return <LoadingShell />
 
   // No season yet → onboarding
   if (ctx.seasons.length === 0 && !showOnboarding) {
     return (
-      <div className="flex items-center justify-center min-h-screen"
-        style={{ background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)' }}>
-        <div className="card max-w-md text-center p-10">
-          <span className="text-3xl block mb-3">&#x273F;</span>
-          <h1 className="font-serif italic text-3xl text-feuille-dark mb-2">Bleuenn</h1>
-          <p className="text-terre mb-6">Bienvenue ! Creez votre premiere saison pour commencer.</p>
-          <button className="btn btn-sage" onClick={() => setShowOnboarding(true)}>
-            Creer ma premiere saison
-          </button>
+      <div className="relative flex min-h-screen items-center justify-center p-4">
+        <Image src={photos.champCoucherSoleil} alt="" fill priority sizes="100vw" className="object-cover" placeholder="blur" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/40 to-black/60" />
+        <div className="relative w-full max-w-md rounded-2xl border border-border bg-surface/95 p-8 text-center shadow-pop backdrop-blur sm:p-10">
+          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+            <Sprout className="h-6 w-6" aria-hidden />
+          </div>
+          <h1 className="text-3xl">Bienvenue sur Bleuenn</h1>
+          <p className="mt-2 text-sm text-fg-muted">Créez votre première saison pour commencer à planifier vos cultures.</p>
+          <Button size="lg" className="mt-7 w-full" onClick={() => setShowOnboarding(true)}>
+            Créer ma première saison
+          </Button>
         </div>
       </div>
     )
@@ -98,39 +114,19 @@ export default function Home() {
     return <OnboardingModal ctx={ctx} onClose={() => setShowOnboarding(false)} />
   }
 
-  const nav = (id: string) => { setSection(id); setMobileOpen(false) }
-
   return (
-    <div className="flex min-h-screen">
-      {/* Mobile toggle */}
-      <button
-        className="lg:hidden fixed top-4 left-4 z-50 bg-feuille-dark text-white rounded-btn px-3 py-2 text-lg shadow-md"
-        onClick={() => setMobileOpen(!mobileOpen)}
-      >&#x2261;</button>
-
-      <Sidebar
-        sections={SECTIONS}
-        activeSection={section}
-        onNav={nav}
-        ctx={ctx}
-        mobileOpen={mobileOpen}
-      />
-
-      <main className="flex-1 lg:ml-64 p-6 lg:p-9 min-h-screen">
-        <div className="animate-fade-in" key={section}>
-          {section === 'dashboard' && <Dashboard ctx={ctx} />}
-          {section === 'jardins' && <Gardens ctx={ctx} />}
-          {section === 'semis' && <Semis ctx={ctx} />}
-          {section === 'calendrier' && <Calendar ctx={ctx} />}
-          {section === 'recoltes' && <Recoltes ctx={ctx} />}
-          {section === 'ventes' && <Ventes ctx={ctx} />}
-          {section === 'commandes' && <Commandes ctx={ctx} />}
-          {section === 'disponibilite' && <Disponibilite ctx={ctx} />}
-          {section === 'analytique' && <Analytique ctx={ctx} />}
-          {section === 'catalogue' && <Catalogue ctx={ctx} />}
-          {section === 'verification' && <Verification ctx={ctx} />}
-        </div>
-      </main>
-    </div>
+    <AppShell ctx={ctx} section={section} onNav={setSection}>
+      {section === 'dashboard' && <Dashboard ctx={ctx} onNav={setSection} />}
+      {section === 'jardins' && <Gardens ctx={ctx} />}
+      {section === 'semis' && <Semis ctx={ctx} />}
+      {section === 'calendrier' && <Calendar ctx={ctx} />}
+      {section === 'recoltes' && <Recoltes ctx={ctx} />}
+      {section === 'ventes' && <Ventes ctx={ctx} />}
+      {section === 'commandes' && <Commandes ctx={ctx} />}
+      {section === 'disponibilite' && <Disponibilite ctx={ctx} />}
+      {section === 'analytique' && <Analytique ctx={ctx} />}
+      {section === 'catalogue' && <Catalogue ctx={ctx} />}
+      {section === 'verification' && <Verification ctx={ctx} />}
+    </AppShell>
   )
 }

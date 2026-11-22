@@ -1,8 +1,15 @@
 'use client'
 import { useState } from 'react'
-import { getPlantingStatus, getOverlappingM2 } from '@/lib/types'
+import { toast } from 'sonner'
+import { ArrowRight, CornerDownRight, Fence, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { getPlantingStatus } from '@/lib/types'
 import type { PlantingFull, Garden, CultureCatalog } from '@/lib/types'
-import Modal from '@/components/Modal'
+import {
+  Button, Card, Dialog, EmptyState, Field, Input, PageHeader, Select, StatusBadge, cn, useConfirm,
+} from '@/components/ui'
+import { AddPlantingForm, EditPlantingForm } from '@/components/plantings/PlantingForms'
+import { useIntent } from '@/components/shell/ui-context'
+import { photos } from '@/lib/images'
 
 // ─── Formulaire ajout jardin ──────────────────────
 function AddGardenForm({ ctx, onClose }: { ctx: any; onClose: () => void }) {
@@ -10,35 +17,35 @@ function AddGardenForm({ ctx, onClose }: { ctx: any; onClose: () => void }) {
   const [m2, setM2] = useState(100)
   const [desc, setDesc] = useState('')
   const [loading, setLoading] = useState(false)
+  const [tried, setTried] = useState(false)
 
-  const submit = async () => {
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    setTried(true)
     if (!name) return
     setLoading(true)
     await ctx.createGarden(name, m2, desc)
     setLoading(false)
+    toast.success(`Jardin « ${name} » créé`)
     onClose()
   }
 
   return (
-    <div className="space-y-4">
-      <h3 className="font-serif text-xl">Nouveau jardin</h3>
-      <div>
-        <label className="block text-xs font-semibold mb-1">Nom du jardin</label>
-        <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Jardin A" />
+    <form onSubmit={submit} className="space-y-4">
+      <Field label="Nom du jardin" error={tried && !name ? 'Donnez un nom au jardin.' : undefined}>
+        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Jardin A" autoFocus />
+      </Field>
+      <Field label="Surface (m²)">
+        <Input type="number" inputMode="decimal" value={m2} onChange={e => setM2(+e.target.value)} />
+      </Field>
+      <Field label="Description">
+        <Input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Cultures principales, notes…" />
+      </Field>
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+        <Button variant="secondary" onClick={onClose}>Annuler</Button>
+        <Button type="submit" loading={loading}>Créer le jardin</Button>
       </div>
-      <div>
-        <label className="block text-xs font-semibold mb-1">Surface (m²)</label>
-        <input className="input" type="number" value={m2} onChange={e => setM2(+e.target.value)} />
-      </div>
-      <div>
-        <label className="block text-xs font-semibold mb-1">Description</label>
-        <input className="input" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Cultures principales, notes…" />
-      </div>
-      <div className="flex gap-3">
-        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading}>{loading ? '…' : 'Créer'}</button>
-      </div>
-    </div>
+    </form>
   )
 }
 
@@ -74,51 +81,48 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
     setCultures(prev => prev.filter((_, i) => i !== idx))
   }
 
-  const submit = async () => {
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
     setLoading(true)
     // 1. Créer la planche
     const planche = await ctx.createPlanche(gardenId, plancheName, m2)
+    let n = 0
     if (planche) {
       // 2. Créer les plantations associées
       for (const c of cultures) {
         if (c.cultureId && c.dateSemis && c.surfaceM2 > 0) {
           await ctx.createPlanting(planche.id, c.cultureId, c.dateSemis, c.surfaceM2)
+          n++
         }
       }
+      toast.success(`${plancheName} créée`, { description: n ? `${n} culture${n > 1 ? 's' : ''} plantée${n > 1 ? 's' : ''}` : garden?.name })
     }
     setLoading(false)
     onClose()
   }
 
   return (
-    <div className="space-y-4">
-      <h3 className="font-serif text-xl">Nouvelle planche</h3>
-
+    <form onSubmit={submit} className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Numero</label>
+        <Field label="Numéro">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-brun">PL</span>
-            <input className="input !w-20" type="number" min={1} value={num} onChange={e => setNum(+e.target.value)} />
+            <span className="text-sm font-semibold text-fg-muted">PL</span>
+            <Input type="number" inputMode="numeric" min={1} value={num} onChange={e => setNum(+e.target.value)} aria-label="Numéro de planche" />
           </div>
-        </div>
-        <div>
-          <label className="block text-[0.65rem] font-bold text-terre uppercase tracking-widest mb-1">Surface (m²)</label>
-          <input className="input" type="number" min={1} step={0.5} value={m2} onChange={e => setM2(+e.target.value)} />
-        </div>
+        </Field>
+        <Field label="Surface (m²)">
+          <Input type="number" inputMode="decimal" min={1} step={0.5} value={m2} onChange={e => setM2(+e.target.value)} />
+        </Field>
       </div>
 
-      <div className="bg-lin rounded-btn p-3 text-xs text-terre">
-        Planche <strong className="text-brun">{plancheName}</strong> — {m2} m²
-        {cultures.length > 0 && <> — {usedM2}/{m2} m² attribues</>}
+      <div className="rounded-xl bg-surface-2 px-3.5 py-2.5 text-sm text-fg-muted">
+        Planche <strong className="text-fg">{plancheName}</strong> — {m2} m²
+        {cultures.length > 0 && <> — <span className="num">{usedM2}/{m2} m² attribués</span></>}
       </div>
 
       {/* Cultures associées */}
       {cultures.length > 0 && (
         <div className="space-y-3">
-          <div className="floral-divider">
-            <span className="text-[0.55rem]">cultures</span>
-          </div>
           {cultures.map((row, idx) => {
             const sel = catalog.find(c => c.id === row.cultureId)
             // Preview dates
@@ -127,33 +131,31 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
               const ds = new Date(row.dateSemis + 'T00:00:00')
               const dp = new Date(ds); dp.setDate(dp.getDate() + (sel.jours_cellule || 0))
               const dr = new Date(dp); dr.setDate(dr.getDate() + sel.jours_champ)
-              preview = `Plantation ${dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} — Recolte ${dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
+              preview = `Plantation ${dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} — Récolte ${dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
             }
             return (
-              <div key={idx} className="bg-white border border-lin-dark/40 rounded-btn p-3 space-y-2">
+              <div key={idx} className="space-y-3 rounded-xl border border-border p-3.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[0.65rem] font-bold text-terre uppercase tracking-widest">Culture {idx + 1}</span>
-                  <button className="text-terre/40 hover:text-rose-deep text-sm" onClick={() => removeCultureRow(idx)}>&#x2715;</button>
+                  <span className="text-xs font-semibold text-fg-muted">Culture {idx + 1}</span>
+                  <Button variant="ghost" size="icon-sm" onClick={() => removeCultureRow(idx)} aria-label={`Retirer la culture ${idx + 1}`}><X className="h-4 w-4" /></Button>
                 </div>
-                <select className="input text-sm" value={row.cultureId} onChange={e => updateCultureRow(idx, { cultureId: e.target.value })}>
+                <Select aria-label={`Culture ${idx + 1}`} value={row.cultureId} onChange={e => updateCultureRow(idx, { cultureId: e.target.value })}>
                   <option value="">— Choisir —</option>
                   {catalog.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} ({c.type}) — {c.prix_tige}€</option>
+                    <option key={c.id} value={c.id}>{c.name} ({c.type}) — {c.prix_tige} €</option>
                   ))}
-                </select>
+                </Select>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[0.6rem] text-terre mb-0.5">Surface (m²)</label>
-                    <input className="input text-sm" type="number" min={0.5} step={0.5} value={row.surfaceM2}
+                  <Field label="Surface (m²)">
+                    <Input type="number" inputMode="decimal" min={0.5} step={0.5} value={row.surfaceM2}
                       onChange={e => updateCultureRow(idx, { surfaceM2: +e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-[0.6rem] text-terre mb-0.5">Date de semis</label>
-                    <input className="input text-sm" type="date" value={row.dateSemis}
+                  </Field>
+                  <Field label="Date de semis">
+                    <Input type="date" value={row.dateSemis}
                       onChange={e => updateCultureRow(idx, { dateSemis: e.target.value })} />
-                  </div>
+                  </Field>
                 </div>
-                {preview && <p className="text-[0.65rem] text-sage-dark">{preview}</p>}
+                {preview && <p className="text-xs font-medium text-primary">{preview}</p>}
               </div>
             )
           })}
@@ -163,314 +165,58 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
       {/* Jauge surface */}
       {cultures.length > 0 && (
         <div>
-          <div className="h-2 bg-lin-dark rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all" style={{
-              width: `${Math.min(100, (usedM2 / m2) * 100)}%`,
-              backgroundColor: usedM2 > m2 ? '#b87878' : '#6b7f5e'
-            }} />
+          <div className="h-2 overflow-hidden rounded-full bg-surface-3">
+            <div className={cn('h-full rounded-full transition-all', usedM2 > m2 ? 'bg-danger' : 'bg-primary')}
+              style={{ width: `${Math.min(100, (usedM2 / m2) * 100)}%` }} />
           </div>
-          {usedM2 > m2 && <p className="text-[0.65rem] text-rose-deep font-bold mt-1">Depassement ! {usedM2} m² attribues sur {m2} m²</p>}
+          {usedM2 > m2 && <p role="alert" className="mt-1.5 text-xs font-semibold text-danger">Dépassement ! {usedM2} m² attribués sur {m2} m²</p>}
         </div>
       )}
 
-      <button className="btn btn-outline btn-sm w-full" onClick={addCultureRow} disabled={availableM2 <= 0}>
-        + Ajouter une culture a cette planche
-      </button>
+      <Button variant="secondary" className="w-full border-dashed" onClick={addCultureRow} disabled={availableM2 <= 0}>
+        <Plus className="h-4 w-4" />Ajouter une culture à cette planche
+      </Button>
 
-      <div className="flex gap-3 pt-2">
-        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || usedM2 > m2}>
-          {loading ? '...' : cultures.length > 0 ? `Creer ${plancheName} + ${cultures.length} culture${cultures.length > 1 ? 's' : ''}` : `Creer ${plancheName}`}
-        </button>
+      <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+        <Button variant="secondary" onClick={onClose}>Annuler</Button>
+        <Button type="submit" loading={loading} disabled={usedM2 > m2}>
+          {cultures.length > 0 ? `Créer ${plancheName} + ${cultures.length} culture${cultures.length > 1 ? 's' : ''}` : `Créer ${plancheName}`}
+        </Button>
       </div>
-    </div>
-  )
-}
-
-// ─── Formulaire ajout plantation ──────────────────
-function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string; ctx: any; onClose: () => void }) {
-  const [cultureId, setCultureId] = useState('')
-  const [dateSemis, setDateSemis] = useState('')
-  const [surfaceM2, setSurfaceM2] = useState(1)
-  const [loading, setLoading] = useState(false)
-
-  const catalog: CultureCatalog[] = ctx.catalog || []
-  const selected = catalog.find(c => c.id === cultureId)
-
-  // Calcul de la surface disponible sur la planche (temporel)
-  const allPlantings: PlantingFull[] = ctx.plantings || []
-  const planchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === plancheId)
-
-  // Trouver la planche dans les jardins
-  let plancheM2 = 0
-  for (const g of (ctx.gardens || [])) {
-    for (const pl of (g.planches || [])) {
-      if (pl.id === plancheId) { plancheM2 = pl.surface_m2; break }
-    }
-  }
-
-  // Preview des dates calculées
-  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
-  if (selected && dateSemis) {
-    const ds = new Date(dateSemis + 'T00:00:00')
-    const dp = new Date(ds); dp.setDate(dp.getDate() + (selected.jours_cellule || 0))
-    const dr = new Date(dp); dr.setDate(dr.getDate() + selected.jours_champ)
-    const df = new Date(dr); df.setDate(df.getDate() + selected.jours_recolte)
-    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFinDate = df.toISOString().slice(0, 10)
-  }
-
-  // Calcul temporel : seules les cultures qui chevauchent la période comptent
-  const usedM2 = (dateSemis && previewFinDate)
-    ? getOverlappingM2(planchePlantings, dateSemis, previewFinDate)
-    : planchePlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
-
-  const submit = async () => {
-    if (!cultureId || !dateSemis || isOverCapacity) return
-    setLoading(true)
-    await ctx.createPlanting(plancheId, cultureId, dateSemis, surfaceM2)
-    setLoading(false)
-    onClose()
-  }
-
-  return (
-    <div className="space-y-4">
-      <h3 className="font-serif text-xl">Ajouter une culture</h3>
-
-      {/* Jauge de la planche */}
-      <div className="bg-cream rounded-lg p-3">
-        <div className="flex justify-between text-xs mb-1.5">
-          <span className="font-semibold text-brun">Surface de la planche</span>
-          <span className="text-terre">{usedM2} / {plancheM2} m² utilisés — <strong className={availableM2 > 0 ? 'text-sage' : 'text-red-600'}>{availableM2} m² disponibles</strong></span>
-        </div>
-        <div className="h-2 bg-cream-dark rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all" style={{
-            width: `${Math.min(100, (usedM2 / plancheM2) * 100)}%`,
-            backgroundColor: usedM2 / plancheM2 > 0.9 ? '#e57373' : '#8a9e7a'
-          }} />
-        </div>
-        {planchePlantings.length > 0 && (
-          <div className="mt-2 text-[0.65rem] text-terre">
-            Cultures en place : {planchePlantings.map((p: PlantingFull) => `${p.culture_name} (${p.surface_m2} m²)`).join(', ')}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Culture</label>
-        <select className="input" value={cultureId} onChange={e => setCultureId(e.target.value)}>
-          <option value="">— Choisir une culture —</option>
-          {catalog.map(c => (
-            <option key={c.id} value={c.id}>{c.name} ({c.type}) — {c.prix_tige}/tige</option>
-          ))}
-        </select>
-      </div>
-
-      {selected && (
-        <div className="bg-sage-pale rounded-lg p-3 text-xs space-y-1">
-          <p><strong>Type :</strong> {selected.type === 'RR' ? 'Récolte Répétitive' : selected.type === 'MP' ? 'Moyen Producteur' : 'Récolte Unique'}</p>
-          <p><strong>Cellule :</strong> {selected.jours_cellule}j — <strong>Champ :</strong> {selected.jours_champ}j — <strong>Récolte :</strong> {selected.jours_recolte}j</p>
-          <p><strong>Rendement :</strong> {selected.rendement_plant} tiges/plant — <strong>Prix :</strong> {selected.prix_tige}</p>
-          {selected.pincer && <span className="badge badge-mp mr-1">Pinçage</span>}
-          {selected.filet && <span className="badge badge-ru mr-1">Filet</span>}
-          {selected.couvre_sol && <span className="badge badge-plante">Couvre-sol</span>}
-        </div>
-      )}
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Surface allouée (m²)</label>
-        <input
-          className={`input ${isOverCapacity ? '!border-red-400 !bg-red-50' : ''}`}
-          type="number"
-          min={0.5}
-          max={plancheM2}
-          step={0.5}
-          value={surfaceM2}
-          onChange={e => setSurfaceM2(+e.target.value)}
-        />
-        {isOverCapacity && (
-          <p className="text-[0.7rem] text-red-600 mt-1 font-semibold">
-            Capacité dépassée ! Seulement {availableM2} m² disponibles sur cette planche.
-          </p>
-        )}
-        {!isOverCapacity && surfaceM2 > 0 && (
-          <p className="text-[0.7rem] text-terre mt-1">
-            Il restera {(availableM2 - surfaceM2).toFixed(1)} m² disponibles après cette culture.
-          </p>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Date de semis</label>
-        <input className="input" type="date" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
-        <p className="text-[0.7rem] text-terre mt-1">
-          Le calendrier se calcule automatiquement à partir de cette date.
-        </p>
-      </div>
-
-      {previewPlantation && (
-        <div className="bg-cream-dark rounded-lg p-3 text-xs space-y-1">
-          <p className="font-semibold text-brun">Dates calculées automatiquement :</p>
-          <p>Plantation : <strong>{previewPlantation}</strong></p>
-          <p>Début récolte : <strong>{previewRecolte}</strong></p>
-          <p>Fin récolte : <strong>{previewFin}</strong></p>
-        </div>
-      )}
-
-      <div className="flex gap-3">
-        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !cultureId || !dateSemis || isOverCapacity || surfaceM2 <= 0}>
-          {loading ? '…' : 'Planter'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Formulaire modification plantation ──────────────
-function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; ctx: any; onClose: () => void }) {
-  const [dateSemis, setDateSemis] = useState(planting.date_semis)
-  const [surfaceM2, setSurfaceM2] = useState(planting.surface_m2)
-  const [notes, setNotes] = useState(planting.notes || '')
-  const [loading, setLoading] = useState(false)
-
-  // Surface disponible (calcul temporel, en excluant la culture en cours)
-  const allPlantings: PlantingFull[] = ctx.plantings || []
-  const samePlanchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id)
-
-  let plancheM2 = 0
-  for (const g of (ctx.gardens || [])) {
-    for (const pl of (g.planches || [])) {
-      if (pl.id === planting.planche_id) { plancheM2 = pl.surface_m2; break }
-    }
-  }
-
-  // Preview dates
-  const jc = planting.jours_cellule || 0
-  const jch = planting.jours_champ || 0
-  const jr = planting.jours_recolte || 21
-  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
-  if (dateSemis) {
-    const ds = new Date(dateSemis + 'T00:00:00')
-    const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
-    const dr = new Date(dp); dr.setDate(dr.getDate() + jch)
-    const df = new Date(dr); df.setDate(df.getDate() + jr)
-    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFinDate = df.toISOString().slice(0, 10)
-  }
-
-  // Calcul temporel : seules les cultures qui chevauchent comptent
-  const usedM2 = dateSemis ? getOverlappingM2(samePlanchePlantings, dateSemis, previewFinDate || planting.date_fin, planting.id) : 0
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
-
-  const submit = async () => {
-    if (!dateSemis || isOverCapacity || surfaceM2 <= 0) return
-    setLoading(true)
-    await ctx.updatePlanting(planting.id, { date_semis: dateSemis, surface_m2: surfaceM2, notes: notes || null })
-    setLoading(false)
-    onClose()
-  }
-
-  const handleDelete = async () => {
-    if (confirm(`Supprimer ${planting.culture_name} de cette planche ?`)) {
-      await ctx.deletePlanting(planting.id)
-      onClose()
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <h3 className="font-serif text-xl">Modifier — {planting.culture_name}</h3>
-
-      <div className="bg-sage-pale rounded-lg p-3 text-xs space-y-1">
-        <p><strong>Type :</strong> {planting.culture_type === 'RR' ? 'Récolte Répétitive' : planting.culture_type === 'MP' ? 'Moyen Producteur' : 'Récolte Unique'}</p>
-        <p><strong>Planche :</strong> {planting.planche_name} — <strong>Jardin :</strong> {planting.garden_name}</p>
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Surface allouée (m²)</label>
-        <input
-          className={`input ${isOverCapacity ? '!border-red-400 !bg-red-50' : ''}`}
-          type="number" min={0.5} max={plancheM2} step={0.5}
-          value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)}
-        />
-        {isOverCapacity && (
-          <p className="text-[0.7rem] text-red-600 mt-1 font-semibold">
-            Capacité dépassée ! Max {availableM2} m² disponibles.
-          </p>
-        )}
-        {!isOverCapacity && surfaceM2 > 0 && (
-          <p className="text-[0.7rem] text-terre mt-1">
-            Il restera {(availableM2 - surfaceM2).toFixed(1)} m² disponibles.
-          </p>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Date de semis</label>
-        <input className="input" type="date" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
-      </div>
-
-      {previewPlantation && (
-        <div className="bg-cream-dark rounded-lg p-3 text-xs space-y-1">
-          <p className="font-semibold text-brun">Dates recalculées :</p>
-          <p>Plantation : <strong>{previewPlantation}</strong></p>
-          <p>Début récolte : <strong>{previewRecolte}</strong></p>
-          <p>Fin récolte : <strong>{previewFin}</strong></p>
-        </div>
-      )}
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Notes</label>
-        <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes optionnelles…" />
-      </div>
-
-      <div className="flex gap-3">
-        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !dateSemis || isOverCapacity || surfaceM2 <= 0}>
-          {loading ? '…' : 'Enregistrer'}
-        </button>
-      </div>
-      <button className="btn btn-danger w-full text-xs" onClick={handleDelete}>
-        Supprimer cette culture de la planche
-      </button>
-    </div>
+    </form>
   )
 }
 
 // ─── Nom éditable inline ──────────────────────────
-function EditableName({ value, onSave, className }: { value: string; onSave: (v: string) => void; className?: string }) {
+function EditableName({ value, onSave, className, label }: { value: string; onSave: (v: string) => void; className?: string; label: string }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
 
   if (!editing) {
     return (
-      <span
-        className={`cursor-pointer hover:underline hover:decoration-dotted hover:underline-offset-2 ${className || ''}`}
+      <button
+        type="button"
+        className={cn('group inline-flex items-center gap-1.5 rounded text-left hover:underline hover:decoration-dotted hover:underline-offset-4', className)}
         onClick={() => { setDraft(value); setEditing(true) }}
         title="Cliquer pour renommer"
+        aria-label={`Renommer ${label} « ${value} »`}
       >
         {value}
-      </span>
+        <Pencil className="h-3 w-3 shrink-0 text-fg-subtle opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden />
+      </button>
     )
   }
 
   const save = () => {
     const trimmed = draft.trim()
-    if (trimmed && trimmed !== value) onSave(trimmed)
+    if (trimmed && trimmed !== value) { onSave(trimmed); toast.success(`Renommé en « ${trimmed} »`) }
     setEditing(false)
   }
 
   return (
     <input
-      className="input !py-1 !px-2 !text-sm !w-auto min-w-[100px]"
+      className="field-control !min-h-0 h-8 w-auto min-w-[100px] px-2 py-1 text-sm"
+      aria-label={`Nouveau nom pour ${label}`}
       value={draft}
       onChange={e => setDraft(e.target.value)}
       onBlur={save}
@@ -480,17 +226,17 @@ function EditableName({ value, onSave, className }: { value: string; onSave: (v:
   )
 }
 
-// ─── Status badge ──────────────────────────────────
-function StatusBadge({ status }: { status: string }) {
-  const cls: Record<string, string> = {
-    'À semer': 'badge-semer', 'En germination': 'badge-germination',
-    'Planté': 'badge-plante', 'En récolte': 'badge-recolte', 'Terminé': 'badge-termine'
-  }
-  return <span className={`badge ${cls[status] || 'badge-termine'}`}>{status}</span>
+function UsageBar({ pct, className }: { pct: number; className?: string }) {
+  return (
+    <div className={cn('h-1.5 overflow-hidden rounded-full bg-surface-3', className)}>
+      <div className={cn('h-full rounded-full transition-all', pct > 90 ? 'bg-danger' : 'bg-primary')} style={{ width: `${Math.min(100, pct)}%` }} />
+    </div>
+  )
 }
 
 // ─── Composant principal ──────────────────────────
 export default function Gardens({ ctx }: { ctx: any }) {
+  const confirm = useConfirm()
   const [modal, setModal] = useState<string | null>(null)
   const [selectedGardenId, setSelectedGardenId] = useState('')
   const [selectedPlancheId, setSelectedPlancheId] = useState('')
@@ -503,155 +249,171 @@ export default function Gardens({ ctx }: { ctx: any }) {
   const getPlanchePlantings = (plancheId: string) =>
     plantings.filter(p => p.planche_id === plancheId)
 
+  useIntent('new-garden', () => setModal('garden'))
+
+  const deleteGarden = async (g: Garden) => {
+    const ok = await confirm({
+      title: `Supprimer ${g.name} ?`,
+      description: 'Le jardin, toutes ses planches et leurs plantations seront supprimés.',
+      confirmLabel: 'Supprimer le jardin',
+      destructive: true,
+    })
+    if (ok) { await ctx.deleteGarden(g.id); toast.success(`${g.name} supprimé`) }
+  }
+  const deletePlanche = async (pl: any, g: Garden) => {
+    const ok = await confirm({
+      title: 'Supprimer cette planche ?',
+      description: `${pl.name} (${g.name}) et ses plantations seront supprimées.`,
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    })
+    if (ok) { await ctx.deletePlanche(pl.id); toast.success(`${pl.name} supprimée`) }
+  }
+
+  const close = () => setModal(null)
+  const selectedPlanche = gardens.flatMap(g => (g.planches || []).map((p: any) => ({ ...p, gardenName: g.name }))).find((p: any) => p.id === selectedPlancheId)
+  const selectedGarden = gardens.find(g => g.id === selectedGardenId)
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-7">
-        <div>
-          <h2 className="font-serif text-3xl mb-1">Jardins & Planches</h2>
-          <p className="text-terre text-sm">{gardens.length} jardins — {totalM2} m² de surface totale</p>
-        </div>
-        <button className="btn btn-sage" onClick={() => setModal('garden')}>+ Nouveau jardin</button>
-      </div>
+      <PageHeader
+        title="Jardins & planches"
+        description={`${gardens.length} jardin${gardens.length > 1 ? 's' : ''} — ${totalM2} m² de surface totale`}
+        image={photos.champCoucherSoleil}
+        actions={<Button onClick={() => setModal('garden')}><Plus className="h-4 w-4" />Nouveau jardin</Button>}
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {gardens.map(g => {
-          const planches = g.planches || []
-          const usedM2 = planches.reduce((s: number, p: any) => s + p.surface_m2, 0)
-          return (
-            <div key={g.id} className="card border-t-4 border-sage !p-5">
-              <div className="flex items-start justify-between mb-1">
-                <h3 className="font-serif text-lg">🌱 <EditableName value={g.name} onSave={v => ctx.updateGarden(g.id, { name: v })} /></h3>
-                <button className="btn btn-danger btn-sm" onClick={() => {
-                  if (confirm(`Supprimer ${g.name} et toutes ses planches ?`)) ctx.deleteGarden(g.id)
-                }}>×</button>
-              </div>
-              <p className="text-xs text-terre mb-3">{g.surface_m2} m² — {g.description || ''}</p>
-
-              {/* Barre surface */}
-              <div className="mb-3">
-                <div className="text-[0.7rem] text-sage mb-1">Surface utilisée : {usedM2} / {g.surface_m2} m²</div>
-                <div className="h-1.5 bg-cream-dark rounded-full overflow-hidden">
-                  <div className="h-full bg-sage-light rounded-full" style={{ width: `${Math.min(100, usedM2 / g.surface_m2 * 100)}%` }} />
+      {gardens.length === 0 ? (
+        <Card>
+          <EmptyState image={photos.champCoucherSoleil} title="Aucun jardin pour cette saison"
+            description="Un jardin regroupe des planches. Chaque planche reçoit une ou plusieurs cultures, en même temps ou en succession."
+            action={<Button onClick={() => setModal('garden')}><Fence className="h-4 w-4" />Créer mon premier jardin</Button>} />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          {gardens.map(g => {
+            const planches = g.planches || []
+            const usedM2 = planches.reduce((s: number, p: any) => s + p.surface_m2, 0)
+            return (
+              <Card key={g.id} className="flex flex-col overflow-hidden">
+                <div className="border-b border-border p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="font-serif text-xl">
+                        <EditableName value={g.name} label="le jardin" onSave={v => ctx.updateGarden(g.id, { name: v })} />
+                      </h2>
+                      <p className="mt-0.5 text-sm text-fg-muted">{g.surface_m2} m²{g.description ? ` — ${g.description}` : ''}</p>
+                    </div>
+                    <Button variant="ghost" size="icon-sm" onClick={() => deleteGarden(g)} aria-label={`Supprimer ${g.name}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3">
+                    <UsageBar pct={g.surface_m2 > 0 ? usedM2 / g.surface_m2 * 100 : 0} className="flex-1" />
+                    <span className="num shrink-0 text-xs text-fg-muted">Planches : {usedM2} / {g.surface_m2} m²</span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Planches */}
-              <div className="space-y-1.5 mb-3">
-                {planches.map((pl: any) => {
-                  const plPlantings = getPlanchePlantings(pl.id)
-                  const plUsedM2 = plPlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
-                  const plPct = pl.surface_m2 > 0 ? (plUsedM2 / pl.surface_m2 * 100) : 0
-                  return (
-                    <div key={pl.id} className="p-2.5 rounded-lg bg-cream hover:bg-sage-pale transition text-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <EditableName
-                            value={pl.name}
-                            onSave={v => ctx.updatePlanche(pl.id, { name: v })}
-                            className="font-bold"
-                          />
-                          <span className="text-terre text-xs ml-1">({plUsedM2}/{pl.surface_m2} m²)</span>
+                {/* Planches */}
+                <ul className="flex-1 divide-y divide-border">
+                  {planches.map((pl: any) => {
+                    const plPlantings = getPlanchePlantings(pl.id)
+                    const plUsedM2 = plPlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
+                    const plPct = pl.surface_m2 > 0 ? (plUsedM2 / pl.surface_m2 * 100) : 0
+                    const sorted = [...plPlantings].sort((a, b) => a.date_semis.localeCompare(b.date_semis))
+                    const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+
+                    // Détecter les successions : une culture dont le semis démarre après la fin d'une précédente
+                    const isSuccession = (p: PlantingFull, idx: number): PlantingFull | null => {
+                      if (idx === 0) return null
+                      for (let j = idx - 1; j >= 0; j--) {
+                        const prev = sorted[j]
+                        if (prev.date_fin && p.date_semis >= prev.date_fin) return prev
+                      }
+                      return null
+                    }
+
+                    return (
+                      <li key={pl.id} className="px-4 py-3 sm:px-5">
+                        <div className="flex items-center gap-2">
+                          <EditableName value={pl.name} label="la planche" onSave={v => ctx.updatePlanche(pl.id, { name: v })} className="text-sm font-semibold text-fg" />
+                          <span className="num text-xs text-fg-subtle">{plUsedM2}/{pl.surface_m2} m²</span>
+                          <UsageBar pct={plPct} className="ml-1 hidden w-16 sm:block" />
+                          <div className="ml-auto flex items-center gap-1">
+                            <Button variant="secondary" size="sm" onClick={() => { setSelectedPlancheId(pl.id); setModal('planting') }}>
+                              <Plus className="h-3.5 w-3.5" />Culture
+                            </Button>
+                            <Button variant="ghost" size="icon-sm" onClick={() => deletePlanche(pl, g)} aria-label={`Supprimer ${pl.name}`}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            className="btn btn-sm btn-outline"
-                            onClick={() => { setSelectedPlancheId(pl.id); setModal('planting') }}
-                          >+ Culture</button>
-                          <button className="text-terre hover:text-red-600 text-xs ml-1" onClick={() => {
-                            if (confirm('Supprimer cette planche ?')) ctx.deletePlanche(pl.id)
-                          }}>×</button>
-                        </div>
-                      </div>
-                      {/* Barre d'occupation de la planche */}
-                      <div className="h-1.5 bg-cream-dark rounded-full overflow-hidden mt-1.5 mb-1">
-                        <div className="h-full rounded-full transition-all" style={{
-                          width: `${Math.min(100, plPct)}%`,
-                          backgroundColor: plPct > 90 ? '#e57373' : '#8a9e7a'
-                        }} />
-                      </div>
-                      {plPlantings.length > 0 && (() => {
-                        const sorted = [...plPlantings].sort((a, b) => a.date_semis.localeCompare(b.date_semis))
-                        const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-
-                        // Détecter les successions : une culture dont le semis démarre après la fin d'une précédente
-                        const isSuccession = (p: PlantingFull, idx: number): PlantingFull | null => {
-                          if (idx === 0) return null
-                          for (let j = idx - 1; j >= 0; j--) {
-                            const prev = sorted[j]
-                            if (prev.date_fin && p.date_semis >= prev.date_fin) return prev
-                          }
-                          return null
-                        }
-
-                        return (
-                          <div className="flex flex-col gap-1 mt-1.5">
+                        {sorted.length > 0 && (
+                          <ul className="mt-2 space-y-1">
                             {sorted.map((p: PlantingFull, idx: number) => {
                               const ds = new Date(p.date_semis + 'T00:00:00')
                               const dp = new Date(p.date_plantation + 'T00:00:00')
                               const succession = isSuccession(p, idx)
                               return (
-                                <div key={p.id}>
+                                <li key={p.id}>
                                   {succession && (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 text-[0.6rem] text-terre/60 italic">
-                                      <span className="w-3 border-t border-dashed border-terre/30" />
-                                      succession après {succession.culture_name}
-                                    </div>
+                                    <p className="flex items-center gap-1.5 px-2 py-0.5 text-[0.7rem] italic text-fg-subtle">
+                                      <CornerDownRight className="h-3 w-3" aria-hidden />succession après {succession.culture_name}
+                                    </p>
                                   )}
                                   <button
-                                    className="flex items-center gap-2 text-xs bg-white/60 hover:bg-white rounded-lg px-2.5 py-1.5 cursor-pointer transition border border-transparent hover:border-sage/30 text-left w-full"
+                                    type="button"
+                                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-transparent bg-surface-2/70 px-2.5 py-2 text-left text-xs transition hover:border-border hover:bg-surface-2"
                                     onClick={() => { setSelectedPlanting(p); setModal('editPlanting') }}
                                     title="Cliquer pour modifier ou supprimer"
                                   >
-                                    <span className="font-semibold text-brun min-w-[90px]">{p.culture_name}</span>
-                                    <span className="text-terre">{p.surface_m2} m²</span>
-                                    <span className="text-terre/70">|</span>
-                                    <span className="text-terre" title="Entrée cellule">Semis {fmtShort(ds)}</span>
-                                    <span className="text-terre/70">→</span>
-                                    <span className="text-terre" title="Date plantation">Plant. {fmtShort(dp)}</span>
+                                    <span className="min-w-[7rem] text-sm font-medium text-fg">{p.culture_name}</span>
+                                    <span className="num text-fg-muted">{p.surface_m2} m²</span>
+                                    <span className="num flex items-center gap-1 text-fg-muted">
+                                      <span title="Entrée cellule">Semis {fmtShort(ds)}</span>
+                                      <ArrowRight className="h-3 w-3 text-fg-subtle" aria-hidden />
+                                      <span title="Date plantation">Plant. {fmtShort(dp)}</span>
+                                    </span>
                                     <span className="ml-auto"><StatusBadge status={getPlantingStatus(p)} /></span>
                                   </button>
-                                </div>
+                                </li>
                               )
                             })}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  )
-                })}
-              </div>
+                          </ul>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
 
-              <button
-                className="btn btn-outline btn-sm w-full"
-                onClick={() => { setSelectedGardenId(g.id); setModal('planche') }}
-              >+ Ajouter une planche</button>
-            </div>
-          )
-        })}
+                <div className="border-t border-border p-3 sm:px-5">
+                  <Button variant="ghost" className="w-full" onClick={() => { setSelectedGardenId(g.id); setModal('planche') }}>
+                    <Plus className="h-4 w-4" />Ajouter une planche
+                  </Button>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
-        {gardens.length === 0 && (
-          <div className="card col-span-full text-center py-12">
-            <p className="text-terre mb-4">Aucun jardin pour cette saison.</p>
-            <button className="btn btn-sage" onClick={() => setModal('garden')}>Créer mon premier jardin</button>
-          </div>
-        )}
-      </div>
-
-      {/* Modals */}
-      <Modal open={modal === 'garden'} onClose={() => setModal(null)}>
-        <AddGardenForm ctx={ctx} onClose={() => setModal(null)} />
-      </Modal>
-      <Modal open={modal === 'planche'} onClose={() => setModal(null)}>
-        <AddPlancheForm gardenId={selectedGardenId} ctx={ctx} onClose={() => setModal(null)} />
-      </Modal>
-      <Modal open={modal === 'planting'} onClose={() => setModal(null)}>
-        <AddPlantingForm plancheId={selectedPlancheId} ctx={ctx} onClose={() => setModal(null)} />
-      </Modal>
-      <Modal open={modal === 'editPlanting'} onClose={() => setModal(null)}>
+      {/* Modales */}
+      <Dialog open={modal === 'garden'} onOpenChange={o => !o && close()} title="Nouveau jardin" description="Une parcelle qui regroupera vos planches.">
+        <AddGardenForm ctx={ctx} onClose={close} />
+      </Dialog>
+      <Dialog open={modal === 'planche'} onOpenChange={o => !o && close()} title="Nouvelle planche" description={selectedGarden?.name}>
+        <AddPlancheForm key={selectedGardenId} gardenId={selectedGardenId} ctx={ctx} onClose={close} />
+      </Dialog>
+      <Dialog open={modal === 'planting'} onOpenChange={o => !o && close()} size="lg" title="Ajouter une culture"
+        description={selectedPlanche ? `${selectedPlanche.gardenName} · ${selectedPlanche.name}` : undefined}>
+        <AddPlantingForm key={selectedPlancheId} plancheId={selectedPlancheId} ctx={ctx} onClose={close} />
+      </Dialog>
+      <Dialog open={modal === 'editPlanting'} onOpenChange={o => !o && close()} size="lg"
+        title={selectedPlanting ? `Modifier — ${selectedPlanting.culture_name}` : 'Modifier'}>
         {selectedPlanting && (
-          <EditPlantingForm planting={selectedPlanting} ctx={ctx} onClose={() => setModal(null)} />
+          <EditPlantingForm key={selectedPlanting.id} planting={selectedPlanting} ctx={ctx} onClose={close} />
         )}
-      </Modal>
+      </Dialog>
     </div>
   )
 }

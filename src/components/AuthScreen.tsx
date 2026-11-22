@@ -1,5 +1,9 @@
 'use client'
 import { useState } from 'react'
+import { AlertCircle, ArrowLeft, CheckCircle2, Info } from 'lucide-react'
+import { Button, Field, Input } from '@/components/ui'
+import { AuthLayout } from '@/components/AuthLayout'
+import { IS_DEMO } from '@/lib/supabase'
 
 export default function AuthScreen({ signIn, signUp, resetPassword }: {
   signIn: (e: string, p: string) => Promise<any>
@@ -32,88 +36,79 @@ export default function AuthScreen({ signIn, signUp, resetPassword }: {
     else if (mode === 'register') setSuccess('Compte créé ! Vérifiez vos emails.')
   }
 
+  const switchMode = (m: typeof mode) => { setMode(m); setError(''); setSuccess('') }
+
+  const title = mode === 'login' ? 'Bon retour parmi les fleurs' : mode === 'register' ? 'Créer un compte' : 'Mot de passe oublié'
+  const subtitle = mode === 'login'
+    ? 'Connectez-vous pour retrouver vos planches, semis et récoltes.'
+    : mode === 'register'
+      ? 'Planifiez votre saison florale en quelques minutes.'
+      : 'Indiquez votre adresse : nous vous envoyons un lien pour choisir un nouveau mot de passe.'
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
-      style={{
-        background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)',
-      }}
-    >
-      {/* Decorative elements */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-30"
-        style={{
-          backgroundImage: `
-            radial-gradient(ellipse at 20% 20%, #d4a0a033 0%, transparent 50%),
-            radial-gradient(ellipse at 80% 80%, #6b7f5e22 0%, transparent 50%),
-            radial-gradient(ellipse at 50% 0%, #c9a96e15 0%, transparent 40%)
-          `,
-        }}
-      />
+    <AuthLayout>
+      {mode === 'forgot' && (
+        <button type="button" onClick={() => switchMode('login')}
+          className="-ml-1 mb-6 inline-flex items-center gap-1.5 rounded-md px-1 text-sm text-fg-muted hover:text-fg">
+          <ArrowLeft className="h-4 w-4" aria-hidden />Retour à la connexion
+        </button>
+      )}
+      <h1 className="text-[2rem] leading-tight">{title}</h1>
+      <p className="mt-2 text-sm text-fg-muted">{subtitle}</p>
 
-      <div className="relative z-10 max-w-md w-full">
-        {/* Logo area */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/80 shadow-card mb-4 border border-rose/20">
-            <span className="text-3xl">&#x273F;</span>
-          </div>
-          <h1 className="font-serif italic text-5xl text-feuille-dark tracking-wide">Bleuenn</h1>
-          <div className="floral-divider mt-3 max-w-[200px] mx-auto">
-            <span className="text-or text-[0.6rem]">Ferme Florale</span>
-          </div>
+      {IS_DEMO && mode === 'login' && (
+        <div className="mt-6 flex gap-2.5 rounded-xl border border-warning/30 bg-warning-soft px-3.5 py-3 text-sm text-warning">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>Mode démo : saisissez n’importe quelle adresse et n’importe quel mot de passe.</p>
         </div>
+      )}
 
-        {/* Card */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-card p-10 shadow-card-lg border border-white/60">
-          <h2 className="font-serif text-xl text-center text-brun mb-6">
-            {mode === 'login' ? 'Bienvenue' : mode === 'register' ? 'Créer un compte' : 'Mot de passe oublié'}
-          </h2>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Email</label>
-              <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                placeholder="marine@ferme.fr" />
+      <form onSubmit={handleSubmit} className="mt-7 space-y-5" noValidate={false}>
+        <Field label="Adresse e-mail">
+          <Input className="h-11" type="email" value={email} onChange={e => setEmail(e.target.value)} required
+            placeholder="marine@ferme.fr" autoComplete="email" inputMode="email" />
+        </Field>
+        {mode !== 'forgot' && (
+          <div>
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <label htmlFor="auth-password" className="text-xs font-medium text-fg-muted">Mot de passe</label>
+              {mode === 'login' && (
+                <button type="button" className="rounded text-xs font-medium text-accent hover:underline"
+                  onClick={() => switchMode('forgot')}>
+                  Mot de passe oublié ?
+                </button>
+              )}
             </div>
-            {mode !== 'forgot' && (
-            <div>
-              <div className="flex items-baseline justify-between mb-1.5">
-                <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest">Mot de passe</label>
-                {mode === 'login' && (
-                  <button type="button" className="text-[0.7rem] text-pivoine hover:underline"
-                    onClick={() => { setMode('forgot'); setError(''); setSuccess('') }}>
-                    Mot de passe oublié ?
-                  </button>
-                )}
-              </div>
-              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
-                placeholder="6 caractères minimum" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
-            </div>
-            )}
-
-            {error && <p className="text-rose-deep text-sm bg-rose-pale rounded-btn px-3 py-2">{error}</p>}
-            {success && <p className="text-feuille text-sm bg-sage-pale rounded-btn px-3 py-2">{success}</p>}
-
-            <button className="btn btn-sage w-full text-base py-3" disabled={loading}>
-              {loading ? '...' : mode === 'login' ? 'Se connecter' : mode === 'register' ? 'Créer mon compte' : 'Recevoir le lien'}
-            </button>
-          </form>
-
-          <div className="floral-divider mt-6 mb-4">
-            <span className="text-or/50 text-[0.55rem]">ou</span>
+            <Input id="auth-password" className="h-11" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
+              placeholder="6 caractères minimum" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
           </div>
+        )}
 
-          <p className="text-center text-sm text-terre">
-            {mode === 'login' ? (
-              <>Pas encore de compte ? <button className="text-pivoine font-bold hover:underline" onClick={() => setMode('register')}>S&apos;inscrire</button></>
-            ) : (
-              <>Déjà inscrit ? <button className="text-pivoine font-bold hover:underline" onClick={() => { setMode('login'); setError(''); setSuccess('') }}>Se connecter</button></>
-            )}
+        {error && (
+          <p role="alert" className="flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2.5 text-sm text-danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{error}
           </p>
-        </div>
+        )}
+        {success && (
+          <p role="status" className="flex items-start gap-2 rounded-lg bg-primary-soft px-3 py-2.5 text-sm text-primary">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{success}
+          </p>
+        )}
 
-        <p className="text-center text-[0.65rem] text-terre/40 mt-6 tracking-wider">
-          Gestion de ferme florale — Calendrier automatique
+        <Button type="submit" size="lg" className="w-full" loading={loading}>
+          {mode === 'login' ? 'Se connecter' : mode === 'register' ? 'Créer mon compte' : 'Recevoir le lien'}
+        </Button>
+      </form>
+
+      {mode !== 'forgot' && (
+        <p className="mt-8 text-center text-sm text-fg-muted">
+          {mode === 'login' ? (
+            <>Pas encore de compte ? <button type="button" className="font-semibold text-accent hover:underline" onClick={() => switchMode('register')}>S’inscrire</button></>
+          ) : (
+            <>Déjà inscrit ? <button type="button" className="font-semibold text-accent hover:underline" onClick={() => switchMode('login')}>Se connecter</button></>
+          )}
         </p>
-      </div>
-    </div>
+      )}
+    </AuthLayout>
   )
 }

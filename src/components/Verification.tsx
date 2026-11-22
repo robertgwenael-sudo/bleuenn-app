@@ -1,247 +1,24 @@
 'use client'
 import { Fragment, useState } from 'react'
-import { getWeekNumber, formatDateShort, getOverlappingM2 } from '@/lib/types'
-import type { PlantingFull, Garden, CultureCatalog } from '@/lib/types'
-import Modal from '@/components/Modal'
+import { toast } from 'sonner'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { getWeekNumber, formatDateShort } from '@/lib/types'
+import type { PlantingFull, Garden } from '@/lib/types'
+import { Button, Card, Dialog, EmptyState, PageHeader, TypeBadge, cn, useConfirm } from '@/components/ui'
+import { AddPlantingForm, EditPlantingForm } from '@/components/plantings/PlantingForms'
+import { photos } from '@/lib/images'
 
-// ─── Formulaire édition plantation ──────────────────
-function EditPlantingForm({ planting, ctx, onClose }: { planting: PlantingFull; ctx: any; onClose: () => void }) {
-  const [dateSemis, setDateSemis] = useState(planting.date_semis)
-  const [surfaceM2, setSurfaceM2] = useState(planting.surface_m2)
-  const [notes, setNotes] = useState(planting.notes || '')
-  const [loading, setLoading] = useState(false)
-
-  const allPlantings: PlantingFull[] = ctx.plantings || []
-  const samePlanchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === planting.planche_id)
-
-  let plancheM2 = 0
-  for (const g of (ctx.gardens || [])) {
-    for (const pl of (g.planches || [])) {
-      if (pl.id === planting.planche_id) { plancheM2 = pl.surface_m2; break }
-    }
-  }
-
-  // Preview dates dynamiques
-  const jc = planting.jours_cellule || 0
-  const jch = planting.jours_champ || 0
-  const jr = planting.jours_recolte || 21
-  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
-  if (dateSemis) {
-    const ds = new Date(dateSemis + 'T00:00:00')
-    const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
-    const dr = new Date(dp); dr.setDate(dr.getDate() + jch)
-    const df = new Date(dr); df.setDate(df.getDate() + jr)
-    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFinDate = df.toISOString().slice(0, 10)
-  }
-
-  // Calcul temporel : surface occupée pendant la période de cette culture
-  const usedM2 = dateSemis ? getOverlappingM2(samePlanchePlantings, dateSemis, previewFinDate || planting.date_fin, planting.id) : 0
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
-
-  const submit = async () => {
-    if (!dateSemis || isOverCapacity || surfaceM2 <= 0) return
-    setLoading(true)
-    await ctx.updatePlanting(planting.id, { date_semis: dateSemis, surface_m2: surfaceM2, notes: notes || null })
-    setLoading(false)
-    onClose()
-  }
-
-  const handleDelete = async () => {
-    if (confirm(`Supprimer ${planting.culture_name} de cette planche ?`)) {
-      await ctx.deletePlanting(planting.id)
-      onClose()
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <h3 className="font-serif text-xl">Modifier — {planting.culture_name}</h3>
-
-      <div className="bg-sage-pale rounded-lg p-3 text-xs space-y-1">
-        <p><strong>Type :</strong> {planting.culture_type === 'RR' ? 'Récolte Répétitive' : planting.culture_type === 'MP' ? 'Moyen Producteur' : 'Récolte Unique'}</p>
-        <p><strong>Planche :</strong> {planting.planche_name} — <strong>Jardin :</strong> {planting.garden_name}</p>
-        <p><strong>J. cellule :</strong> {jc} — <strong>J. champ :</strong> {jch} — <strong>J. récolte :</strong> {jr}</p>
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Surface allouée (m²)</label>
-        <input
-          className={`input ${isOverCapacity ? '!border-red-400 !bg-red-50' : ''}`}
-          type="number" min={0.5} max={plancheM2} step={0.5}
-          value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)}
-        />
-        {isOverCapacity && (
-          <p className="text-[0.7rem] text-red-600 mt-1 font-semibold">
-            Capacité dépassée ! Max {availableM2} m² disponibles.
-          </p>
-        )}
-        {!isOverCapacity && surfaceM2 > 0 && (
-          <p className="text-[0.7rem] text-terre mt-1">
-            Il restera {(availableM2 - surfaceM2).toFixed(1)} m² disponibles.
-          </p>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Date de semis</label>
-        <input className="input" type="date" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
-      </div>
-
-      {previewPlantation && (
-        <div className="bg-cream-dark rounded-lg p-3 text-xs space-y-1">
-          <p className="font-semibold text-brun">Dates recalculées :</p>
-          <p>Plantation : <strong>{previewPlantation}</strong></p>
-          <p>Début récolte : <strong>{previewRecolte}</strong></p>
-          <p>Fin récolte : <strong>{previewFin}</strong></p>
-        </div>
-      )}
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Notes</label>
-        <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes optionnelles…" />
-      </div>
-
-      <div className="flex gap-3">
-        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit} disabled={loading || !dateSemis || isOverCapacity || surfaceM2 <= 0}>
-          {loading ? '…' : 'Enregistrer'}
-        </button>
-      </div>
-      <button className="btn btn-danger w-full text-xs" onClick={handleDelete}>
-        Supprimer cette culture de la planche
-      </button>
-    </div>
-  )
-}
-
-// ─── Formulaire ajout rapide culture sur planche ────
-function AddCultureForm({ plancheId, plancheM2, ctx, onClose }: {
-  plancheId: string; plancheM2: number; ctx: any; onClose: () => void
-}) {
-  const catalog: CultureCatalog[] = ctx.catalog || []
-  const allPlantings: PlantingFull[] = ctx.plantings || []
-  const samePlanchePlantings = allPlantings.filter((p: PlantingFull) => p.planche_id === plancheId)
-
-  const [cultureId, setCultureId] = useState('')
-  const [surfaceM2, setSurfaceM2] = useState(1)
-  const [dateSemis, setDateSemis] = useState('')
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const filtered = catalog.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  ).sort((a, b) => a.name.localeCompare(b.name))
-
-  const selected = catalog.find(c => c.id === cultureId)
-
-  // Preview dates
-  let previewPlantation = '', previewRecolte = '', previewFin = '', previewFinDate = ''
-  if (dateSemis && selected) {
-    const jc = selected.jours_cellule || 0
-    const jch = selected.jours_champ || 0
-    const jr = selected.jours_recolte || 21
-    const ds = new Date(dateSemis + 'T00:00:00')
-    const dp = new Date(ds); dp.setDate(dp.getDate() + jc)
-    const dr = new Date(dp); dr.setDate(dr.getDate() + jch)
-    const df = new Date(dr); df.setDate(df.getDate() + jr)
-    previewPlantation = dp.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewRecolte = dr.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFin = df.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
-    previewFinDate = df.toISOString().slice(0, 10)
-  }
-
-  // Calcul temporel de la surface occupée pendant la période de la nouvelle culture
-  const usedM2 = (dateSemis && previewFinDate)
-    ? getOverlappingM2(samePlanchePlantings, dateSemis, previewFinDate)
-    : samePlanchePlantings.reduce((s: number, p: PlantingFull) => s + (p.surface_m2 || 0), 0)
-  const availableM2 = Math.max(0, plancheM2 - usedM2)
-  const isOverCapacity = surfaceM2 > availableM2
-
-  const submit = async () => {
-    if (!cultureId || !dateSemis || isOverCapacity || surfaceM2 <= 0) return
-    setLoading(true)
-    await ctx.createPlanting(plancheId, cultureId, dateSemis, surfaceM2)
-    setLoading(false)
-    onClose()
-  }
-
-  return (
-    <div className="space-y-4">
-      <h3 className="font-serif text-xl">Ajouter une culture</h3>
-      <p className="text-xs text-terre">
-        {availableM2.toFixed(1)} m² disponibles sur cette planche
-        {dateSemis && previewFinDate && <span className="text-sage ml-1">(pendant la période {dateSemis} → {previewFinDate})</span>}
-        {(!dateSemis || !previewFinDate) && <span className="text-terre/60 ml-1">(choisissez une culture et date de semis pour le calcul temporel)</span>}
-      </p>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Rechercher une culture</label>
-        <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tapez pour filtrer…" />
-      </div>
-
-      <div className="max-h-40 overflow-y-auto border border-cream-dark rounded-lg">
-        {filtered.map(c => (
-          <button
-            key={c.id}
-            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-cream/50 flex items-center justify-between ${cultureId === c.id ? 'bg-sage-pale font-semibold' : ''}`}
-            onClick={() => setCultureId(c.id)}
-          >
-            <span>{c.name}</span>
-            <span className={`badge text-[0.5rem] ${c.type === 'RR' ? 'badge-recolte' : c.type === 'MP' ? 'badge-mp' : 'badge-ru'}`}>{c.type}</span>
-          </button>
-        ))}
-        {filtered.length === 0 && <p className="text-xs text-terre p-3">Aucune culture trouvée</p>}
-      </div>
-
-      {selected && (
-        <div className="bg-sage-pale rounded-lg p-2 text-xs">
-          <strong>{selected.name}</strong> — J.cell: {selected.jours_cellule} / J.champ: {selected.jours_champ} / J.réc: {selected.jours_recolte}
-        </div>
-      )}
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Surface (m²)</label>
-        <input
-          className={`input ${isOverCapacity ? '!border-red-400 !bg-red-50' : ''}`}
-          type="number" min={0.5} max={plancheM2} step={0.5}
-          value={surfaceM2} onChange={e => setSurfaceM2(+e.target.value)}
-        />
-        {isOverCapacity && (
-          <p className="text-[0.7rem] text-red-600 mt-1 font-semibold">Max {availableM2} m² disponibles.</p>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold mb-1">Date de semis</label>
-        <input className="input" type="date" value={dateSemis} onChange={e => setDateSemis(e.target.value)} />
-      </div>
-
-      {previewPlantation && (
-        <div className="bg-cream-dark rounded-lg p-3 text-xs space-y-1">
-          <p className="font-semibold text-brun">Dates calculées :</p>
-          <p>Plantation : <strong>{previewPlantation}</strong></p>
-          <p>Début récolte : <strong>{previewRecolte}</strong></p>
-          <p>Fin récolte : <strong>{previewFin}</strong></p>
-        </div>
-      )}
-
-      <div className="flex gap-3">
-        <button className="btn btn-outline flex-1" onClick={onClose}>Annuler</button>
-        <button className="btn btn-sage flex-1" onClick={submit}
-          disabled={loading || !cultureId || !dateSemis || isOverCapacity || surfaceM2 <= 0}>
-          {loading ? '…' : 'Ajouter'}
-        </button>
-      </div>
-    </div>
-  )
-}
+// Classes de cellules (tableau dense de type tableur)
+const GH = 'border-b border-r border-border px-2 py-2 text-center text-[0.62rem] font-semibold uppercase tracking-wider'
+const TH = 'border-b border-border bg-surface-2 px-2 py-2 text-center text-[0.62rem] font-semibold uppercase tracking-wide text-fg-muted'
+const TD = 'border-b border-border/60 px-2 py-1.5 group-hover:bg-surface-2'
+const ST = 'border-b border-border bg-surface-2 px-2 py-1.5'
+const FT = 'border-t-2 border-border-strong bg-surface-3 px-2 py-2.5'
+const SEP = 'border-r border-border'
 
 // ─── Composant principal ────────────────────────────
 export default function Verification({ ctx }: { ctx: any }) {
+  const confirm = useConfirm()
   const gardens: Garden[] = ctx.gardens || []
   const plantings: PlantingFull[] = ctx.plantings || []
   const [modal, setModal] = useState<'edit' | 'add' | null>(null)
@@ -330,232 +107,239 @@ export default function Verification({ ctx }: { ctx: any }) {
     }
   }
 
+  const removePlanting = async (p: PlantingFull) => {
+    const ok = await confirm({
+      title: `Supprimer ${p.culture_name} ?`,
+      description: `La culture sera retirée de ${p.planche_name} (${p.garden_name}).`,
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    })
+    if (ok) {
+      await ctx.deletePlanting(p.id)
+      toast.success(`${p.culture_name} supprimé`)
+    }
+  }
+
   return (
     <div>
-      <h2 className="font-serif text-3xl mb-1">Tableau de vérification</h2>
-      <p className="text-terre text-sm mb-5">Vue complète de la production — {totalPlantings} cultures réparties sur {gardens.length} jardins</p>
+      <PageHeader title="Tableau de vérification"
+        description={`Vue complète de la production — ${totalPlantings} cultures réparties sur ${gardens.length} jardins`}
+        image={photos.champCoucherSoleil} />
 
-      {/* Modal édition */}
-      <Modal open={modal === 'edit' && !!selectedPlanting} onClose={() => setModal(null)}>
-        {selectedPlanting && <EditPlantingForm planting={selectedPlanting} ctx={ctx} onClose={() => setModal(null)} />}
-      </Modal>
+      {/* Modale édition */}
+      <Dialog open={modal === 'edit' && !!selectedPlanting} onOpenChange={o => !o && setModal(null)} size="lg"
+        title={selectedPlanting ? `Modifier — ${selectedPlanting.culture_name}` : 'Modifier'}>
+        {selectedPlanting && <EditPlantingForm key={selectedPlanting.id} planting={selectedPlanting} ctx={ctx} onClose={() => setModal(null)} />}
+      </Dialog>
 
-      {/* Modal ajout */}
-      <Modal open={modal === 'add' && !!selectedPlanche} onClose={() => setModal(null)}>
-        {selectedPlanche && <AddCultureForm plancheId={selectedPlanche.id} plancheM2={selectedPlanche.m2} ctx={ctx} onClose={() => setModal(null)} />}
-      </Modal>
+      {/* Modale ajout */}
+      <Dialog open={modal === 'add' && !!selectedPlanche} onOpenChange={o => !o && setModal(null)} size="lg" title="Ajouter une culture"
+        description={selectedPlanche ? `${selectedPlanche.m2} m² sur cette planche` : undefined}>
+        {selectedPlanche && <AddPlantingForm key={selectedPlanche.id} plancheId={selectedPlanche.id} ctx={ctx} onClose={() => setModal(null)} />}
+      </Dialog>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-[2800px] w-full text-[0.68rem] border-collapse">
-          <thead>
-            <tr className="bg-brun-dark text-cream">
-              <th colSpan={3} className="thv border-r border-white/20">PLANCHE</th>
-              <th colSpan={7} className="thv border-r border-white/20 bg-blue-900/40">GESTION DE LA PRODUCTION ET DU RENDEMENT</th>
-              <th colSpan={4} className="thv border-r border-white/20 bg-amber-900/40">REVENU</th>
-              <th colSpan={7} className="thv border-r border-white/20 bg-green-900/40">PRINCIPES DE CULTURE</th>
-              <th colSpan={8} className="thv border-r border-white/20 bg-teal-900/40">CALENDRIER</th>
-              <th className="thv bg-red-900/30">⚡</th>
-            </tr>
-            <tr className="bg-brun text-cream/90">
-              <th className="thv">Planche</th>
-              <th className="thv">Culture</th>
-              <th className="thv border-r border-white/20">m²</th>
-
-              <th className="thv">Plants</th>
-              <th className="thv">Tiges brutes</th>
-              <th className="thv">-30% perte</th>
-              <th className="thv">Tiges nettes</th>
-              <th className="thv">Tiges/sem.</th>
-              <th className="thv">Graines nec.</th>
-              <th className="thv border-r border-white/20">Prix/tige</th>
-
-              <th className="thv">Revenu pot.</th>
-              <th className="thv">CA/sem.</th>
-              <th className="thv">Rendement</th>
-              <th className="thv border-r border-white/20">Type</th>
-
-              <th className="thv">J. cellule</th>
-              <th className="thv">J. champ</th>
-              <th className="thv">J. recolte</th>
-              <th className="thv">Espac. cm</th>
-              <th className="thv">Rangs</th>
-              <th className="thv">Gr./plant</th>
-              <th className="thv border-r border-white/20">Options</th>
-
-              <th className="thv">Semis</th>
-              <th className="thv">Plantation</th>
-              <th className="thv">Récolte</th>
-              <th className="thv">Fin</th>
-              <th className="thv">W. entrée cell.</th>
-              <th className="thv">W. sortie cell.</th>
-              <th className="thv">W. récolte</th>
-              <th className="thv border-r border-white/20">W. fin réc.</th>
-
-              <th className="thv">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gardenGroupsVisible.map(gg => {
-              const gardenPlantingsCount = gg.planches.reduce((s, pl) => s + pl.plantings.length, 0)
-              const gardenRevenu = gg.planches.reduce((s, pl) =>
-                s + pl.plantings.reduce((s2, p) => s2 + (p.revenu_estime || 0), 0), 0)
-
-              return (
-                <Fragment key={gg.garden.id}>
-                  <tr className="bg-sage/15">
-                    <td colSpan={30} className="px-3 py-2 font-serif font-bold text-sm text-brun border-b-2 border-sage/30">
-                      {gg.garden.name}
-                      <span className="font-sans font-normal text-terre text-[0.65rem] ml-3">
-                        {gg.garden.surface_m2} m² — {gardenPlantingsCount} cultures — {gg.planches.length} planches — Revenu estimé : {Math.round(gardenRevenu)}€
-                      </span>
-                    </td>
-                  </tr>
-
-                  {gg.planches.map(plGroup => (
-                    <Fragment key={plGroup.plancheId}>
-                      {plGroup.plantings.map((p, idx) => {
-                        const c = calc(p)
-                        const isFirst = idx === 0
-                        const isLast = idx === plGroup.plantings.length - 1
-                        return (
-                          <tr key={p.id} className={`border-b border-cream-dark hover:bg-sage-pale/30 cursor-pointer transition-colors ${isFirst ? 'border-t border-sage/20' : ''}`}
-                            onClick={() => openEdit(p)}>
-                            <td className="tdv font-semibold text-brun">{plGroup.plancheName}</td>
-                            <td className="tdv font-medium text-feuille underline decoration-dotted underline-offset-2">{p.culture_name}</td>
-                            <td className="tdv text-right border-r border-cream-dark font-semibold bg-yellow-50/50">{c.surface}</td>
-
-                            <td className="tdv text-right">{c.plants}</td>
-                            <td className="tdv text-right text-terre">{c.tiges_brutes}</td>
-                            <td className="tdv text-right text-red-500">-30%</td>
-                            <td className="tdv text-right font-semibold">{c.tiges_nettes}</td>
-                            <td className="tdv text-right">{c.tiges_par_semaine}</td>
-                            <td className="tdv text-right">{c.graines}</td>
-                            <td className="tdv text-right border-r border-cream-dark">{c.prix.toFixed(2)}€</td>
-
-                            <td className="tdv text-right font-semibold text-sage">{Math.round(c.revenu)}€</td>
-                            <td className="tdv text-right">{c.ca_semaine}€</td>
-                            <td className="tdv text-right">{p.rendement || '—'}</td>
-                            <td className="tdv text-center border-r border-cream-dark">
-                              <span className={`badge text-[0.55rem] ${
-                                p.culture_type === 'RR' ? 'badge-recolte' :
-                                p.culture_type === 'MP' ? 'badge-mp' : 'badge-ru'
-                              }`}>{p.culture_type}</span>
-                            </td>
-
-                            <td className="tdv text-center">{c.jc || '—'}</td>
-                            <td className="tdv text-center">{c.jch}</td>
-                            <td className="tdv text-center">{c.jr}</td>
-                            <td className="tdv text-center">{c.espacement_cm}</td>
-                            <td className="tdv text-center">{c.rangs}</td>
-                            <td className="tdv text-center">{c.graines_par_plant}</td>
-                            <td className="tdv text-center border-r border-cream-dark">
-                              <div className="flex justify-center gap-0.5 flex-wrap">
-                                {c.pincer && <span className="text-[0.5rem] text-or-dark" title="Pincer">P</span>}
-                                {c.filet && <span className="text-[0.5rem] text-lavande" title="Filet">F</span>}
-                                {c.couvre_sol && <span className="text-[0.5rem] text-sage" title="Couvre-sol">CS</span>}
-                                {c.semis_direct && <span className="text-[0.5rem] text-rose-deep" title="Semis direct">SD</span>}
-                              </div>
-                            </td>
-
-                            <td className="tdv text-center bg-blush/10">{c.date_semis}</td>
-                            <td className="tdv text-center">{c.date_plantation}</td>
-                            <td className="tdv text-center bg-sage/10">{c.date_recolte}</td>
-                            <td className="tdv text-center">{c.date_fin}</td>
-                            <td className="tdv text-center font-mono text-terre">{c.week_semis}</td>
-                            <td className="tdv text-center font-mono text-terre">{c.week_plantation}</td>
-                            <td className="tdv text-center font-mono text-terre">{c.week_recolte ?? '—'}</td>
-                            <td className="tdv text-center font-mono text-terre border-r border-cream-dark">{c.week_fin ?? '—'}</td>
-
-                            <td className="tdv text-center" onClick={e => e.stopPropagation()}>
-                              <div className="flex gap-1 justify-center">
-                                <button
-                                  className="text-sage hover:text-feuille text-sm"
-                                  title="Modifier"
-                                  onClick={() => openEdit(p)}
-                                >✏️</button>
-                                <button
-                                  className="text-red-400 hover:text-red-600 text-sm"
-                                  title="Supprimer"
-                                  onClick={async () => {
-                                    if (confirm(`Supprimer ${p.culture_name} ?`)) {
-                                      await ctx.deletePlanting(p.id)
-                                    }
-                                  }}
-                                >🗑</button>
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                      {/* Sous-total planche */}
-                      {plGroup.plantings.length > 1 && (() => {
-                        const stPlants = plGroup.plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
-                        const stTiges = plGroup.plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
-                        const stGraines = plGroup.plantings.reduce((s, p) => s + (p.graines_necessaires || 0), 0)
-                        const stRevenu = plGroup.plantings.reduce((s, p) => s + (p.revenu_estime || 0), 0)
-                        const stSurface = plGroup.plantings.reduce((s, p) => s + (p.surface_m2 || 0), 0)
-                        return (
-                          <tr className="bg-cream/60 border-b border-sage/20">
-                            <td className="tdv text-right text-[0.6rem] font-bold text-terre" colSpan={2}>↳ {plGroup.plancheName}</td>
-                            <td className="tdv text-right border-r border-cream-dark text-[0.6rem] font-bold text-terre">{stSurface}/{plGroup.plancheM2} m²</td>
-                            <td className="tdv text-right text-[0.6rem] font-bold">{stPlants}</td>
-                            <td className="tdv" />
-                            <td className="tdv" />
-                            <td className="tdv text-right text-[0.6rem] font-bold">{stTiges}</td>
-                            <td className="tdv" />
-                            <td className="tdv text-right text-[0.6rem] font-bold">{stGraines}</td>
-                            <td className="tdv border-r border-cream-dark" />
-                            <td className="tdv text-right text-[0.6rem] font-bold text-sage">{Math.round(stRevenu)}€</td>
-                            <td colSpan={19} className="tdv" />
-                          </tr>
-                        )
-                      })()}
-                      {/* Bouton ajouter une culture à cette planche */}
-                      <tr className="border-b border-cream-dark/50">
-                        <td colSpan={30} className="px-3 py-1">
-                          <button
-                            className="text-[0.65rem] text-sage hover:text-feuille font-medium hover:underline"
-                            onClick={() => openAdd(plGroup.plancheId, plGroup.plancheM2)}
-                          >
-                            + Ajouter une culture sur {plGroup.plancheName}
-                          </button>
-                        </td>
-                      </tr>
-                    </Fragment>
-                  ))}
-                </Fragment>
-              )
-            })}
-
-            {totalPlantings === 0 && (
+      {totalPlantings === 0 && gardenGroupsVisible.length === 0 ? (
+        <Card>
+          <EmptyState image={photos.champCoucherSoleil} title="Aucune culture enregistrée"
+            description="Ajoutez des cultures dans Jardins & planches pour voir le tableau de vérification." />
+        </Card>
+      ) : (
+        <div className="relative max-h-[calc(100dvh-12rem)] overflow-auto rounded-card border border-border bg-surface shadow-card" role="region" aria-label="Tableau de vérification" tabIndex={0}>
+          <table className="grid-table min-w-[2600px] w-full text-[0.72rem]">
+            <thead className="sticky top-0 z-[3]">
+              <tr className="text-fg">
+                <th colSpan={3} className={cn(GH, 'sticky left-0 z-[4] bg-surface-3')}>Planche</th>
+                <th colSpan={7} className={cn(GH, 'bg-info-soft')}>Gestion de la production et du rendement</th>
+                <th colSpan={4} className={cn(GH, 'bg-warning-soft')}>Revenu</th>
+                <th colSpan={7} className={cn(GH, 'bg-primary-soft')}>Principes de culture</th>
+                <th colSpan={8} className={cn(GH, 'bg-violet-soft')}>Calendrier</th>
+                <th className={cn(GH, 'bg-surface-3')}><span className="sr-only">Actions</span></th>
+              </tr>
               <tr>
-                <td colSpan={30} className="text-center text-terre py-10">
-                  Aucune culture enregistrée. Ajoutez des cultures dans Jardins & Planches pour voir le tableau de vérification.
-                </td>
-              </tr>
-            )}
-          </tbody>
+                <th className={cn(TH, 'sticky left-0 z-[4] w-16 min-w-16')}>Planche</th>
+                <th className={cn(TH, 'sticky left-16 z-[4] min-w-[170px] !text-left')}>Culture</th>
+                <th className={cn(TH, SEP)}>m²</th>
 
-          {totalPlantings > 0 && (
-            <tfoot>
-              <tr className="bg-brun-dark/5 font-semibold border-t-2 border-brun/30">
-                <td colSpan={3} className="tdv text-right text-brun">TOTAUX</td>
-                <td className="tdv text-right">{gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.plants_count || 0), 0), 0), 0)}</td>
-                <td className="tdv" />
-                <td className="tdv" />
-                <td className="tdv text-right font-bold">{gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.tiges_estimees || 0), 0), 0), 0)}</td>
-                <td className="tdv" />
-                <td className="tdv text-right">{gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.graines_necessaires || 0), 0), 0), 0)}</td>
-                <td className="tdv border-r border-cream-dark" />
-                <td className="tdv text-right font-bold text-sage text-sm">
-                  {Math.round(gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.revenu_estime || 0), 0), 0), 0))}€
-                </td>
-                <td colSpan={19} className="tdv" />
+                <th className={TH}>Plants</th>
+                <th className={TH}>Tiges brutes</th>
+                <th className={TH}>−30 % perte</th>
+                <th className={TH}>Tiges nettes</th>
+                <th className={TH}>Tiges/sem.</th>
+                <th className={TH}>Graines néc.</th>
+                <th className={cn(TH, SEP)}>Prix/tige</th>
+
+                <th className={TH}>Revenu pot.</th>
+                <th className={TH}>CA/sem.</th>
+                <th className={TH}>Rendement</th>
+                <th className={cn(TH, SEP)}>Type</th>
+
+                <th className={TH}>J. cellule</th>
+                <th className={TH}>J. champ</th>
+                <th className={TH}>J. récolte</th>
+                <th className={TH}>Espac. cm</th>
+                <th className={TH}>Rangs</th>
+                <th className={TH}>Gr./plant</th>
+                <th className={cn(TH, SEP)}>Options</th>
+
+                <th className={TH}>Semis</th>
+                <th className={TH}>Plantation</th>
+                <th className={TH}>Récolte</th>
+                <th className={TH}>Fin</th>
+                <th className={TH}>S. entrée cell.</th>
+                <th className={TH}>S. sortie cell.</th>
+                <th className={TH}>S. récolte</th>
+                <th className={cn(TH, SEP)}>S. fin réc.</th>
+
+                <th className={TH}>Actions</th>
               </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {gardenGroupsVisible.map(gg => {
+                const gardenPlantingsCount = gg.planches.reduce((s, pl) => s + pl.plantings.length, 0)
+                const gardenRevenu = gg.planches.reduce((s, pl) =>
+                  s + pl.plantings.reduce((s2, p) => s2 + (p.revenu_estime || 0), 0), 0)
+
+                return (
+                  <Fragment key={gg.garden.id}>
+                    <tr>
+                      <td colSpan={3} className="sticky left-0 z-[1] border-y border-border bg-primary-soft px-3 py-2">
+                        <span className="font-serif text-sm font-semibold text-fg">{gg.garden.name}</span>
+                      </td>
+                      <td colSpan={27} className="border-y border-border bg-primary-soft px-3 py-2 text-xs text-fg-muted">
+                        {gg.garden.surface_m2} m² — {gardenPlantingsCount} cultures — {gg.planches.length} planches — Revenu estimé : <strong className="num text-fg">{Math.round(gardenRevenu)} €</strong>
+                      </td>
+                    </tr>
+
+                    {gg.planches.map(plGroup => (
+                      <Fragment key={plGroup.plancheId}>
+                        {plGroup.plantings.map(p => {
+                          const c = calc(p)
+                          return (
+                            <tr key={p.id} className="group cursor-pointer" onClick={() => openEdit(p)}>
+                              <td className={cn(TD, 'sticky left-0 z-[1] bg-surface font-semibold text-fg')}>{plGroup.plancheName}</td>
+                              <td className={cn(TD, 'sticky left-16 z-[1] bg-surface !text-left font-medium text-fg')}>
+                                <span className="underline decoration-border-strong decoration-dotted underline-offset-4 group-hover:decoration-primary">{p.culture_name}</span>
+                              </td>
+                              <td className={cn(TD, SEP, 'num text-right font-semibold')}>{c.surface}</td>
+
+                              <td className={cn(TD, 'num text-right')}>{c.plants}</td>
+                              <td className={cn(TD, 'num text-right text-fg-muted')}>{c.tiges_brutes}</td>
+                              <td className={cn(TD, 'num text-right text-danger')}>−30 %</td>
+                              <td className={cn(TD, 'num text-right font-semibold')}>{c.tiges_nettes}</td>
+                              <td className={cn(TD, 'num text-right')}>{c.tiges_par_semaine}</td>
+                              <td className={cn(TD, 'num text-right')}>{c.graines}</td>
+                              <td className={cn(TD, SEP, 'num text-right')}>{c.prix.toFixed(2)} €</td>
+
+                              <td className={cn(TD, 'num text-right font-semibold text-primary')}>{Math.round(c.revenu)} €</td>
+                              <td className={cn(TD, 'num text-right')}>{c.ca_semaine} €</td>
+                              <td className={cn(TD, 'num text-right')}>{p.rendement || '—'}</td>
+                              <td className={cn(TD, SEP, 'text-center')}><TypeBadge type={p.culture_type} /></td>
+
+                              <td className={cn(TD, 'num text-center')}>{c.jc || '—'}</td>
+                              <td className={cn(TD, 'num text-center')}>{c.jch}</td>
+                              <td className={cn(TD, 'num text-center')}>{c.jr}</td>
+                              <td className={cn(TD, 'num text-center')}>{c.espacement_cm}</td>
+                              <td className={cn(TD, 'num text-center')}>{c.rangs}</td>
+                              <td className={cn(TD, 'num text-center')}>{c.graines_par_plant}</td>
+                              <td className={cn(TD, SEP, 'text-center')}>
+                                <div className="flex flex-wrap justify-center gap-1 text-[0.65rem] font-semibold">
+                                  {c.pincer && <abbr className="text-warning no-underline" title="Pincer">P</abbr>}
+                                  {c.filet && <abbr className="text-violet no-underline" title="Filet">F</abbr>}
+                                  {c.couvre_sol && <abbr className="text-primary no-underline" title="Couvre-sol">CS</abbr>}
+                                  {c.semis_direct && <abbr className="text-accent no-underline" title="Semis direct">SD</abbr>}
+                                </div>
+                              </td>
+
+                              <td className={cn(TD, 'num text-center')}>{c.date_semis}</td>
+                              <td className={cn(TD, 'num text-center')}>{c.date_plantation}</td>
+                              <td className={cn(TD, 'num text-center font-medium')}>{c.date_recolte}</td>
+                              <td className={cn(TD, 'num text-center')}>{c.date_fin}</td>
+                              <td className={cn(TD, 'num text-center text-fg-muted')}>{c.week_semis}</td>
+                              <td className={cn(TD, 'num text-center text-fg-muted')}>{c.week_plantation}</td>
+                              <td className={cn(TD, 'num text-center text-fg-muted')}>{c.week_recolte ?? '—'}</td>
+                              <td className={cn(TD, SEP, 'num text-center text-fg-muted')}>{c.week_fin ?? '—'}</td>
+
+                              <td className={cn(TD, 'text-center')} onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-center gap-0.5">
+                                  <Button variant="ghost" size="icon-sm" className="!h-7 !w-7" onClick={() => openEdit(p)} aria-label={`Modifier ${p.culture_name}`}>
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon-sm" className="!h-7 !w-7 hover:!text-danger" onClick={() => removePlanting(p)} aria-label={`Supprimer ${p.culture_name}`}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                        {/* Sous-total planche */}
+                        {plGroup.plantings.length > 1 && (() => {
+                          const stPlants = plGroup.plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
+                          const stTiges = plGroup.plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
+                          const stGraines = plGroup.plantings.reduce((s, p) => s + (p.graines_necessaires || 0), 0)
+                          const stRevenu = plGroup.plantings.reduce((s, p) => s + (p.revenu_estime || 0), 0)
+                          const stSurface = plGroup.plantings.reduce((s, p) => s + (p.surface_m2 || 0), 0)
+                          return (
+                            <tr className="text-[0.68rem] font-semibold text-fg-muted">
+                              <td colSpan={2} className={cn(ST, 'sticky left-0 z-[1] text-right')}>Sous-total {plGroup.plancheName}</td>
+                              <td className={cn(ST, SEP, 'num text-right')}>{stSurface}/{plGroup.plancheM2} m²</td>
+                              <td className={cn(ST, 'num text-right text-fg')}>{stPlants}</td>
+                              <td className={ST} />
+                              <td className={ST} />
+                              <td className={cn(ST, 'num text-right text-fg')}>{stTiges}</td>
+                              <td className={ST} />
+                              <td className={cn(ST, 'num text-right text-fg')}>{stGraines}</td>
+                              <td className={cn(ST, SEP)} />
+                              <td className={cn(ST, 'num text-right text-primary')}>{Math.round(stRevenu)} €</td>
+                              <td colSpan={19} className={ST} />
+                            </tr>
+                          )
+                        })()}
+                        {/* Ajouter une culture à cette planche */}
+                        <tr>
+                          <td colSpan={3} className="sticky left-0 z-[1] border-b border-border bg-surface px-2 py-1">
+                            <Button variant="ghost" size="sm" className="!text-primary" onClick={() => openAdd(plGroup.plancheId, plGroup.plancheM2)}>
+                              <Plus className="h-3.5 w-3.5" />Ajouter une culture sur {plGroup.plancheName}
+                            </Button>
+                          </td>
+                          <td colSpan={27} className="border-b border-border" />
+                        </tr>
+                      </Fragment>
+                    ))}
+                  </Fragment>
+                )
+              })}
+
+              {totalPlantings === 0 && (
+                <tr>
+                  <td colSpan={30} className="py-10 text-center text-fg-muted">
+                    Aucune culture enregistrée. Ajoutez des cultures dans Jardins & planches pour voir le tableau de vérification.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+
+            {totalPlantings > 0 && (
+              <tfoot className="sticky bottom-0 z-[3]">
+                <tr className="font-semibold">
+                  <td colSpan={3} className={cn(FT, 'sticky left-0 z-[4] text-right uppercase tracking-wider')}>Totaux</td>
+                  <td className={cn(FT, 'num text-right')}>{gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.plants_count || 0), 0), 0), 0)}</td>
+                  <td className={FT} />
+                  <td className={FT} />
+                  <td className={cn(FT, 'num text-right')}>{gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.tiges_estimees || 0), 0), 0), 0)}</td>
+                  <td className={FT} />
+                  <td className={cn(FT, 'num text-right')}>{gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.graines_necessaires || 0), 0), 0), 0)}</td>
+                  <td className={cn(FT, SEP)} />
+                  <td className={cn(FT, 'num text-right text-sm text-primary')}>
+                    {Math.round(gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.revenu_estime || 0), 0), 0), 0))} €
+                  </td>
+                  <td colSpan={19} className={FT} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,9 @@
 'use client'
 import { useState } from 'react'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { Button, Field, Input, cn } from '@/components/ui'
+import { AuthLayout } from '@/components/AuthLayout'
+import { photos } from '@/lib/images'
 
 export default function OnboardingModal({ ctx, onClose }: { ctx: any; onClose: () => void }) {
   const [step, setStep] = useState(1)
@@ -19,61 +23,38 @@ export default function OnboardingModal({ ctx, onClose }: { ctx: any; onClose: (
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg, #f5f0e8 0%, #faf0f0 30%, #e9efe5 70%, #f5f0e8 100%)' }}
-    >
-      <div className="bg-white/90 backdrop-blur-sm rounded-card max-w-lg w-full p-10 shadow-card-lg border border-white/60">
-        <div className="text-center mb-2">
-          <span className="text-3xl">&#x273F;</span>
-        </div>
-        <h2 className="font-serif text-2xl text-center mb-1">Configuration initiale</h2>
-        <div className="floral-divider mb-6 max-w-[160px] mx-auto">
-          <span className="text-[0.55rem]">etape {step} sur 2</span>
-        </div>
-
-        {step === 1 && (
-          <div className="space-y-5">
-            <div>
-              <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Nom de votre ferme</label>
-              <input className="input" value={farmName} onChange={e => setFarmName(e.target.value)} placeholder="Bleuenn" />
-            </div>
-            <div>
-              <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Votre nom</label>
-              <input className="input" value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="Marine Gueguen" />
-            </div>
-            <button className="btn btn-sage w-full mt-4" onClick={() => setStep(2)}>Suivant</button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-5">
-            <div>
-              <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Nom de la saison</label>
-              <input className="input" value={seasonName} onChange={e => setSeasonName(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Annee</label>
-                <input className="input" type="number" value={year} onChange={e => setYear(+e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-[0.7rem] font-bold text-terre uppercase tracking-widest mb-1.5">Objectif CA</label>
-                <input className="input" type="number" value={goal} onChange={e => setGoal(+e.target.value)} />
-              </div>
-            </div>
-            <p className="text-xs text-terre leading-relaxed">
-              Composez vos jardins, ajoutez des planches et affectez des cultures.
-              Le calendrier se calculera automatiquement a partir de la date de semis.
-            </p>
-            <div className="flex gap-3 mt-4">
-              <button className="btn btn-outline flex-1" onClick={() => setStep(1)}>Retour</button>
-              <button className="btn btn-sage flex-1" onClick={handleFinish} disabled={loading}>
-                {loading ? '...' : 'Commencer'}
-              </button>
-            </div>
-          </div>
-        )}
+    <AuthLayout image={photos.semisGodets} alt="Jeunes plants en godets vus de dessus"
+      quote={<>Chaque saison commence<br />par un premier semis.</>}>
+      <p className="mb-2 text-xs font-medium text-fg-subtle">Étape {step} sur 2</p>
+      <div className="mb-6 flex gap-1.5" aria-hidden>
+        {[1, 2].map(i => <span key={i} className={cn('h-1 flex-1 rounded-full', i <= step ? 'bg-primary' : 'bg-surface-3')} />)}
       </div>
-    </div>
+      <h1 className="text-[2rem] leading-tight">{step === 1 ? 'Votre ferme' : 'Votre première saison'}</h1>
+      <p className="mt-2 text-sm text-fg-muted">
+        {step === 1 ? 'Quelques informations pour personnaliser votre espace.' : 'Composez ensuite vos jardins et planches : le calendrier se calculera automatiquement à partir des dates de semis.'}
+      </p>
+
+      {step === 1 && (
+        <form className="mt-7 space-y-5" onSubmit={e => { e.preventDefault(); setStep(2) }}>
+          <Field label="Nom de votre ferme"><Input className="h-11" value={farmName} onChange={e => setFarmName(e.target.value)} placeholder="Bleuenn" /></Field>
+          <Field label="Votre nom"><Input className="h-11" value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="Marine Gueguen" autoComplete="name" /></Field>
+          <Button type="submit" size="lg" className="w-full">Suivant<ArrowRight className="h-4 w-4" /></Button>
+        </form>
+      )}
+
+      {step === 2 && (
+        <form className="mt-7 space-y-5" onSubmit={e => { e.preventDefault(); handleFinish() }}>
+          <Field label="Nom de la saison"><Input className="h-11" value={seasonName} onChange={e => setSeasonName(e.target.value)} /></Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Année"><Input className="h-11" type="number" inputMode="numeric" value={year} onChange={e => setYear(+e.target.value)} /></Field>
+            <Field label="Objectif CA (€)"><Input className="h-11" type="number" inputMode="numeric" value={goal} onChange={e => setGoal(+e.target.value)} /></Field>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <Button variant="secondary" size="lg" onClick={() => setStep(1)}><ArrowLeft className="h-4 w-4" />Retour</Button>
+            <Button type="submit" size="lg" className="flex-1" loading={loading}>Commencer</Button>
+          </div>
+        </form>
+      )}
+    </AuthLayout>
   )
 }
