@@ -23,9 +23,10 @@ fictives en mémoire (n'importe quel email / mot de passe).
 
 ## Base de données
 
-Les migrations `supabase/migrations/001` à `012` sont appliquées en production.
-Toute nouvelle migration se teste d'abord dans une transaction annulée (voir
-`CLAUDE.md`), puis s'applique.
+Les migrations `supabase/migrations/001` à `012` sont appliquées en production ;
+`013` à `016` sont écrites et testées (PostgreSQL 16, base au format de la prod),
+à appliquer dans l'ordre 013, 014, 015, 016. Toute nouvelle migration se teste
+d'abord dans une transaction annulée (voir `CLAUDE.md`), puis s'applique.
 
 | Migration | Contenu |
 |---|---|
@@ -39,6 +40,10 @@ Toute nouvelle migration se teste d'abord dans une transaction annulée (voir
 | 010 | factures, avoirs, paiements (numérotation continue, documents figés) |
 | 011 | fournisseurs, bons de commande, réception vers les dépenses |
 | 012 | justificatifs (bucket privé), comptes, relevés CSV, rapprochement |
+| 013 | vivaces et bisannuelles (début de floraison, délai avant 1re floraison), plant acheté, arrachage, catalogue aligné sur la charte |
+| 014 | TVA par taux (paramétrage par ferme), bons de commande numérotés, livrer et facturer |
+| 015 | production du tableur (plants, graines, tiges, revenu), pertes réglables, pépinière |
+| 016 | saisons en années civiles, passer une saison à l'année suivante, préparer l'année suivante |
 
 ## Réglages Supabase à faire dans le tableau de bord
 

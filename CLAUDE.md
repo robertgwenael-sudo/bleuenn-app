@@ -8,15 +8,34 @@ d'abord pour la saisie au champ.
 
 - **La ferme est permanente** (`farms`, `farm_members`) : jardins, planches, équipe
   et catalogue durent d'une année sur l'autre.
-- **La saison est une unité de gestion** (CA, objectif, bilan). Une plantation
-  appartient à une saison, mais les cultures chevauchent les saisons (renoncules
-  semées en automne, récoltées au printemps suivant).
+- **La saison est une année civile** (migration 016 : « 2027 » va du 1er janvier
+  au 31 décembre, une seule par année et par ferme) et une unité de gestion (CA,
+  objectif, bilan). Une plantation est rattachée à l'année de sa **première
+  récolte** (renoncules plantées le 1er novembre 2026, récoltées en mars 2027 :
+  saison 2027) ; la saison est proposée à la création, modifiable.
+  « Passer cette saison en 2027 » (`basculer_saison`) et « Préparer 2027 »
+  (`reclasser_plantations`, `reprendre_plan_dans_saison`) font le passage.
 - **L'occupation d'une planche se lit par dates, toutes saisons confondues.**
   Calendrier, tâches et disponibilités s'affichent sur 12 mois glissants ; la
   saison n'est qu'un filtre.
 - Les dates de culture découlent de la date de semis :
   plantation = semis + jours_cellule ; récolte = plantation + jours_champ ;
   fin = récolte + jours_recolte (trigger `calc_planting_dates`, vue `plantings_full`).
+  Plant acheté (`achat_plant`) : la date saisie est la plantation.
+- **Vivaces et bisannuelles** (013) : première récolte = premier `debut_floraison`
+  (jj/mm) à partir de plantation + `delai_premiere_floraison_jours` (0 tant que
+  non confirmé) ; les jours au champ du tableur (335 à 365 j) sont ignorés. Sans
+  début de floraison : `date_recolte` et `date_fin` NULL, jamais devinées. Une
+  vivace occupe sa planche jusqu'à `arrachee_le` et **fleurit chaque année**
+  (`fenetresRecolte`, `recoltesDansPeriode`) : calendrier, tâches, prévu/réel,
+  disponibilités et analytique comptent la floraison de l'année affichée.
+  Occupation : `farmPlantingsTout` (vivaces sans floraison comprises) ; prévisions :
+  `farmPlantings` / `plantings` (avec dates), les autres listées à part
+  (`plantingsFloraisonManquante`) et signalées à l'écran.
+- **Estimations de production** (015, formules du tableur, `production.ts` et
+  trigger identiques) : plants = rangs × m² / (espacement / 100) ; graines =
+  plants × (1 + pertes de levée) × graines par motte ; tiges = plants × rendement ×
+  (1 − pertes au champ) ; revenu = tiges × prix. Donnée manquante = NULL.
 
 ## Règles non négociables
 
@@ -48,13 +67,15 @@ d'abord pour la saisie au champ.
 
     src/lib/domain/   logique métier pure + tests vitest (dates, montants, occupation,
                       tâches, prévu/réel, disponibilités, ventes, TVA, calculateur de
-                      commande, duplication de plan)
+                      commande, duplication de plan, cultures/vivaces, production
+                      et pépinière, saisons civiles, prévisionnel)
     src/hooks/        useBleuenn (ferme, saison, données de base), useTaches,
-                      useReel, useCommercial
+                      useReel, useCommercial, useProduction, useControlePepiniere
     src/components/   écrans ; ui/ design system ; shell/ navigation (nav.ts)
     src/lib/demo/     faux client Supabase en mémoire (NEXT_PUBLIC_DEMO=1) ;
                       données par domaine dans seeds/
-    supabase/migrations/  001 → 012, appliquées en production ; 014 (TVA) écrite, non appliquée
+    supabase/migrations/  001 → 012 appliquées en production ; 013 → 016 écrites et testées,
+                          à appliquer dans l'ordre (voir README)
 
 ## Commandes
 
@@ -85,6 +106,14 @@ rejet définitif visible. Les appels Supabase ne sont jamais mis en cache.
 - Une semaine appartient au mois de son lundi (vue Tâches).
 - Commande : livrer, puis facturer dans la foulée (case cochée par défaut) ; unités par défaut botte 10, bouquet 15, seau 25.
 - Disponibilités : seules les commandes confirmées, prêtes ou livrées réservent.
+- Vivaces (013) : début de floraison saisi au catalogue (absent de la charte) ; délai
+  avant 1re floraison à confirmer culture par culture ; une vivace en place n'est ni
+  dupliquée ni décalée d'une saison à l'autre.
+- Saisons (016) : années civiles ; plantation rattachée à l'année de sa première récolte.
+- Production (015) : pertes de levée et au champ de 30 % par défaut, réglables par ferme ;
+  semaines de récolte = arrondi supérieur de jours de récolte / 7 (au moins une), tiges
+  et CA répartis en entiers sans perte ; capacité de la pépinière (tables, plaques) en
+  ALERTE seule, jamais un refus ni un contrôle en base.
 - TVA (migration 014, à faire valider par la comptable) : la ferme est assujettie ou non
   (`farm_billing.assujettie_tva`). Assujettie : taux par catégorie dans `farm_vat_rates`
   (paramétrage par ferme, pré-rempli « Fleur non travaillée » 10 % et « Fleur travaillée »
