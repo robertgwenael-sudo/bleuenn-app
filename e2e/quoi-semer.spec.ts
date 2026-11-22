@@ -6,7 +6,7 @@ import { test, expect, connexion, titre, toast } from './fixtures'
 test('par plantation : chaîne m² → plants → + 30 % → graines, totaux par jardin, donnée manquante', async ({ page }) => {
   await connexion(page, 'quoi-semer')
   await expect(titre(page)).toHaveText('Quoi semer')
-  await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: 'Saison 2026' })
+  await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: '2026' })
 
   const tableau = page.getByRole('region', { name: 'Production par plantation' })
   // Statice, 5 m², 5 rangs, 20 cm, 1 graine par motte, 3 tiges, 0,50 € :
@@ -26,7 +26,7 @@ test('par plantation : chaîne m² → plants → + 30 % → graines, totaux par
 
 test('graines à commander : graines à semer face aux commandes', async ({ page }) => {
   await connexion(page, 'quoi-semer')
-  await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: 'Saison 2026' })
+  await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: '2026' })
   await page.getByRole('tab', { name: 'Graines à commander' }).click()
   const t = page.getByRole('region', { name: 'Graines à commander' })
   await expect(t.getByRole('columnheader', { name: 'Reste à commander' })).toBeVisible()
@@ -99,7 +99,7 @@ test('pépinière : capacité en plaques entières, chiffre du tableur en info, 
 
 test('tableau : tiges par semaine en plage entière, semaines arrondies au supérieur', async ({ page }) => {
   await connexion(page, 'quoi-semer')
-  await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: 'Saison 2026' })
+  await page.getByRole('combobox', { name: 'Période' }).selectOption({ label: '2026' })
   // Dahlia démo 8 m² : 2 rangs, 40 cm → 40 plants, 200 tiges, 140 nettes ; 84 j → 12 semaines → « 11 à 12 »
   const dahlia = page.getByRole('region', { name: 'Production par plantation' }).getByTestId('ligne-semis-table').filter({ hasText: 'Dahlia' }).first()
   await expect(dahlia).toContainText("11 à 12")

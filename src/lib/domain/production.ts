@@ -347,6 +347,28 @@ export function ligneSemis(p: PlantingProduction, taux: TauxPertes = TAUX_PERTES
   }
 }
 
+/**
+ * Ligne de l'écran « Vérification » : la MÊME production que « Quoi semer »
+ * (même appel, mêmes taux de la ferme), sans recalcul du calendrier. Les
+ * dates sont celles de la base (trigger calc_planting_dates) : une vivace
+ * sans début de floraison n'a ni récolte ni fin, et rien n'est deviné.
+ */
+export interface LigneVerification {
+  production: Production
+  /** Dates de récolte et de fin connues ; sinon floraison (ou jours au champ) à renseigner. */
+  recolteConnue: boolean
+}
+
+export function ligneVerification(
+  p: DonneesProduction & { date_recolte?: DateISO | null; date_fin?: DateISO | null },
+  taux: TauxPertes = TAUX_PERTES_DEFAUT,
+): LigneVerification {
+  return {
+    production: calculerProduction({ ...p, achat_plant: !!p.achat_plant }, taux),
+    recolteConnue: !!p.date_recolte && !!p.date_fin,
+  }
+}
+
 /** Période « 12 mois glissants » (cycle qui touche la fenêtre) ou une saison. */
 export type PeriodeSemis = { type: 'glissant'; aujourdhui: DateISO; mois?: number } | { type: 'saison'; season_id: string } | { type: 'tout' }
 

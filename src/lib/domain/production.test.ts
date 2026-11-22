@@ -4,7 +4,7 @@
 // cellules affichées « 23 » et « 3 » (9 pouces et 1 pouce).
 import { describe, expect, it } from 'vitest'
 import {
-  besoinsGraines, calculerProduction, controlerSemis, ligneSemis, propositionsTexte, semainesDeRecolte, texteRepartition, calendrierCulture, capacitePepiniere, chargePepiniere, lignesQuoiSemer,
+  besoinsGraines, calculerProduction, controlerSemis, ligneSemis, ligneVerification, propositionsTexte, semainesDeRecolte, texteRepartition, calendrierCulture, capacitePepiniere, chargePepiniere, lignesQuoiSemer,
   messageManquant, occupationsCellule, parJardin, plaquesParTable, reglagesPepiniere, tauxDeLaFerme, textePlacement,
   totaliser, type Calcul, type DonneesProduction, type Montant, type Production, type Repartition,
 } from './production'
@@ -171,6 +171,32 @@ const P = (o: Partial<PlantingProduction>): PlantingProduction => ({
   jours_cellule: 30, jours_champ: 80, jours_recolte: 21, rendement: 3, prix_tige: 0.5,
   espacement_cm: 20, rangs_par_planche: 5, graines_par_plant: 1, semis_direct: false,
   garden_id: 'gB', garden_name: 'JARDIN B', planche_id: 'pl8', planche_name: 'PL 8', achat_plant: false, ...o,
+})
+
+describe('« Vérification » : mêmes chiffres que « Quoi semer », jamais de valeur par défaut', () => {
+  const taux = { semis: 25, champ: 40 }
+  it('même production que la ligne Quoi semer, avec les taux de la ferme', () => {
+    for (const p of [P({}), P({ achat_plant: true }), P({ jours_cellule: 0, semis_direct: true }), P({ surface_m2: 7.5, jours_recolte: 75 })]) {
+      expect(ligneVerification({ ...p, date_recolte: '2026-07-14', date_fin: '2026-08-04' }, taux).production)
+        .toEqual(ligneSemis(p, taux).production)
+    }
+  })
+  it('donnée manquante : « non calculable », pas l’ancienne valeur par défaut (20 cm, 5 rangs, 0,50 €)', () => {
+    const { production: pr } = ligneVerification({ ...P({ espacement_cm: null as never, prix_tige: null as never }), date_recolte: '2026-07-14', date_fin: '2026-08-04' })
+    expect(pr.plants).toEqual({ etat: 'manquant', champs: ['espacement'] })
+    expect(pr.revenu.etat).toBe('manquant')
+    expect(pr.tigesParSemaine.etat).toBe('manquant')
+  })
+  it('semaines de récolte au supérieur : 22 jours = 4 semaines, somme exacte des tiges', () => {
+    const { production: pr } = ligneVerification({ ...P({ jours_recolte: 22 }), date_recolte: '2026-07-14', date_fin: '2026-08-05' })
+    expect(pr.semainesRecolte).toMatchObject({ etat: 'ok', valeur: 4 })
+    expect(pr.tigesParSemaine.etat === 'ok' && pr.tigesParSemaine.parts.reduce((a, b) => a + b, 0)).toBe(pr.tigesNettes.etat === 'ok' && pr.tigesNettes.valeur)
+  })
+  it('vivace sans début de floraison : ligne gardée, récolte inconnue, aucune date calculée', () => {
+    const l = ligneVerification({ ...P({ jours_champ: null as never }), date_recolte: null, date_fin: null })
+    expect(l.recolteConnue).toBe(false)
+    expect(l.production.plants.etat).toBe('ok')
+  })
 })
 
 describe('« Quoi semer » : période, jardins, graines à commander', () => {
