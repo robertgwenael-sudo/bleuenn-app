@@ -8,10 +8,11 @@ import {
   Badge, Button, Card, Dialog, EmptyState, Field, Input, PageHeader, Select, StatusBadge, cn, useConfirm,
 } from '@/components/ui'
 import { AddPlantingForm, EditPlantingForm } from '@/components/plantings/PlantingForms'
+import { EditerSurfaceDialog } from '@/components/plantings/EditerSurface'
 import {
   AlerteConflits, LegendeFrise, OccupationFrise, calculables, conflitsPlanche, periodeSure,
 } from '@/components/plantings/Occupation'
-import { chevauche, fenetreMensuelle, formatJourMois, formatMois, phraseOccupation, surfaceOccupeeLe } from '@/lib/domain'
+import { chevauche, fenetreMensuelle, formatJourMois, formatMois, phraseOccupation, segmentsOccupation, surfaceOccupeeLe } from '@/lib/domain'
 import { useIntent } from '@/components/shell/ui-context'
 import { photos } from '@/lib/images'
 
@@ -242,6 +243,9 @@ function UsageBar({ pct, className }: { pct: number; className?: string }) {
 export default function Gardens({ ctx }: { ctx: any }) {
   const confirm = useConfirm()
   const [modal, setModal] = useState<string | null>(null)
+  // Modifier nom et surface d'un jardin ou d'une planche
+  const [editJardin, setEditJardin] = useState<any | null>(null)
+  const [editPlanche, setEditPlanche] = useState<{ pl: any; g: any; occupationMax: number } | null>(null)
   const [selectedGardenId, setSelectedGardenId] = useState('')
   const [selectedPlancheId, setSelectedPlancheId] = useState('')
   const [selectedPlanting, setSelectedPlanting] = useState<PlantingFull | null>(null)
@@ -337,9 +341,14 @@ export default function Gardens({ ctx }: { ctx: any }) {
                       </h2>
                       <p className="mt-0.5 text-sm text-fg-muted">{g.surface_m2} m²{g.description ? ` — ${g.description}` : ''}</p>
                     </div>
-                    <Button variant="ghost" size="icon-sm" onClick={() => deleteGarden(g)} aria-label={`Supprimer ${g.name}`}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button variant="ghost" size="icon-sm" onClick={() => setEditJardin(g)} aria-label={`Modifier ${g.name} (nom, surface)`}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => deleteGarden(g)} aria-label={`Supprimer ${g.name}`}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <div className="mt-3 flex items-center gap-3">
                     <UsageBar pct={g.surface_m2 > 0 ? usedM2 / g.surface_m2 * 100 : 0} className="flex-1" />
@@ -386,6 +395,13 @@ export default function Gardens({ ctx }: { ctx: any }) {
                           <div className="ml-auto flex items-center gap-1">
                             <Button variant="secondary" size="sm" onClick={() => { setSelectedPlancheId(pl.id); setModal('planting') }}>
                               <Plus className="h-3.5 w-3.5" />Culture
+                            </Button>
+                            <Button variant="ghost" size="icon-sm" aria-label={`Modifier ${pl.name} (nom, surface)`}
+                              onClick={() => {
+                                const futurs = segmentsOccupation(calc).filter(sg => sg.fin >= today)
+                                setEditPlanche({ pl, g, occupationMax: futurs.reduce((m, sg) => Math.max(m, sg.surface_occupee), 0) })
+                              }}>
+                              <Pencil className="h-3.5 w-3.5" />
                             </Button>
                             <Button variant="ghost" size="icon-sm" onClick={() => deletePlanche(pl, g)} aria-label={`Supprimer ${pl.name}`}>
                               <Trash2 className="h-3.5 w-3.5" />
@@ -468,6 +484,23 @@ export default function Gardens({ ctx }: { ctx: any }) {
           <EditPlantingForm key={selectedPlanting.id} planting={selectedPlanting} ctx={ctx} onClose={close} />
         )}
       </Dialog>
+
+      {editJardin && (
+        <EditerSurfaceDialog open onOpenChange={o => !o && setEditJardin(null)} type="jardin"
+          initial={{ name: editJardin.name, surface_m2: Number(editJardin.surface_m2), description: editJardin.description }}
+          contexte={{ sommePlanches: (editJardin.planches || []).reduce((t: number, p: any) => t + Number(p.surface_m2), 0) }}
+          onSave={async v => { await ctx.updateGarden(editJardin.id, v); toast.success('Jardin mis à jour') }} />
+      )}
+      {editPlanche && (
+        <EditerSurfaceDialog open onOpenChange={o => !o && setEditPlanche(null)} type="planche"
+          initial={{ name: editPlanche.pl.name, surface_m2: Number(editPlanche.pl.surface_m2) }}
+          contexte={{
+            surfaceJardin: Number(editPlanche.g.surface_m2),
+            autresPlanches: (editPlanche.g.planches || []).filter((p: any) => p.id !== editPlanche.pl.id).reduce((t: number, p: any) => t + Number(p.surface_m2), 0),
+            occupationMax: editPlanche.occupationMax,
+          }}
+          onSave={async v => { await ctx.updatePlanche(editPlanche.pl.id, { name: v.name, surface_m2: v.surface_m2 }); toast.success('Planche mise à jour') }} />
+      )}
     </div>
   )
 }
