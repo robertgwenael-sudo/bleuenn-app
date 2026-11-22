@@ -14,6 +14,10 @@ import { LIBELLES_RAISONS, cleMois, cleSemaine, type Loss, type LossReason } fro
 import { aujourdhuiParis, useReel, type ReelCtx } from '@/hooks/useReel'
 import { ChoixRaison, CumulPlantation } from '@/components/reel/SaisieParts'
 import { fmtPct, fmtTiges } from '@/components/reel/commun'
+import { fileHorsLigne, uuidClient, type EntreeFile } from '@/lib/offline'
+import { useApresEnvoi, useHorsLigne } from '@/components/offline/useHorsLigne'
+import { BandeauHorsLigne } from '@/components/offline/IndicateurHorsLigne'
+import { SaisiesLocales, type DescriptionSaisie } from '@/components/offline/SaisiesLocales'
 
 type SortKey = 'date' | 'culture' | 'tiges' | 'quality'
 type Mode = 'recolte' | 'perte'
@@ -41,6 +45,17 @@ export default function Recoltes({ ctx }: { ctx: any }) {
   const sort = useSort<SortKey>('date', 'desc')
   const formRef = useRef<HTMLDivElement>(null)
   const selectRef = useRef<HTMLSelectElement>(null)
+
+  // File hors ligne : saisies posées sur le téléphone, envoyées au retour du réseau.
+  const userId: string | null = ctx.user?.id ?? null
+  const horsLigne = useHorsLigne(userId)
+  const rechargerSaison = async () => {
+    const f = ctx.refreshSeason ?? ctx.reload
+    if (typeof f === 'function') await f()
+  }
+  // Pertes : useReel recharge déjà quand les récoltes changent, mais une
+  // synchro de pertes seules ne touche pas aux récoltes.
+  useApresEnvoi(tables => { if (tables.has('losses')) reel.reload() })
 
   const plantings: PlantingFull[] = ctx.plantings || []
   const harvests: Harvest[] = ctx.harvests || []
@@ -81,21 +96,37 @@ export default function Recoltes({ ctx }: { ctx: any }) {
     e?.preventDefault()
     setTried(true)
     if (!plantingId || !tigesValides || (mode === 'perte' && !raison)) return
+    const seasonId: string | undefined = ctx.activeSeason?.id
+    if (!seasonId) { toast.error('Aucune saison active'); return }
     setLoading(true)
     const p = plantingMap[plantingId]
     const lieu = p ? `${p.culture_name} — ${p.garden_name} ${p.planche_name}` : undefined
-    if (mode === 'recolte') {
-      await ctx.createHarvest(plantingId, date, n, quality, notes)
-      toast.success(`${fmtTiges(n)} tiges enregistrées`, { description: lieu })
-    } else {
-      const ok = await reel.addLoss({ planting_id: plantingId, date, tiges: n, reason: raison as LossReason, notes })
-      setLoading(false)
-      if (!ok) return
-      toast.success(`${fmtTiges(n)} tiges perdues enregistrées`, { description: `${LIBELLES_RAISONS[raison as LossReason]} · ${lieu ?? ''}` })
-      setHisto('pertes')
-      setRaison('')
-    }
+    // Identifiant généré ici : un renvoi de la même saisie ne peut pas doublonner.
+    const id = uuidClient()
+    const note = notes.trim() || null
+    const estRecolte = mode === 'recolte'
+    const r = estRecolte
+      ? await fileHorsLigne().enregistrer('harvests', { id, planting_id: plantingId, season_id: seasonId, date, tiges: n, quality, notes: note }, userId)
+      : await fileHorsLigne().enregistrer('losses', {
+          id, season_id: seasonId, planting_id: plantingId, culture_id: p?.culture_id ?? null,
+          date, tiges: n, reason: raison as LossReason, notes: note,
+        }, userId)
     setLoading(false)
+    if (r.issue === 'rejet' || r.issue === 'echec') {
+      console.error(`[récoltes] ${estRecolte ? 'récolte' : 'perte'} non enregistrée`, r.message)
+      toast.error(estRecolte ? 'La récolte n’a pas été enregistrée' : 'La perte n’a pas été enregistrée', { description: r.message })
+      return
+    }
+    const quoi = estRecolte ? `${fmtTiges(n)} tiges` : `${fmtTiges(n)} tiges perdues`
+    const desc = estRecolte ? lieu : `${LIBELLES_RAISONS[raison as LossReason]} · ${lieu ?? ''}`
+    if (r.issue === 'en_file') {
+      toast.info('Enregistrée sur le téléphone, envoi au retour du réseau', { description: `${quoi} · ${desc ?? ''}` })
+    } else {
+      toast.success(`${quoi} enregistrées`, { description: desc })
+      if (estRecolte) rechargerSaison().catch(e => console.error('[récoltes] rechargement', e))
+      else reel.reload()
+    }
+    if (!estRecolte) { setHisto('pertes'); setRaison('') }
     setTiges('')
     setNotes('')
     setTried(false)
@@ -162,6 +193,43 @@ export default function Recoltes({ ctx }: { ctx: any }) {
   }, [sort.key, plantingMap, cultureNom])
   const lossSorted = useSorted(lossRows, lossGetter, sort.dir)
 
+  // Saisies encore sur le téléphone, pour l'onglet affiché.
+  const locales = horsLigne.entrees.filter(e => e.table === (histo === 'recoltes' ? 'harvests' : 'losses'))
+  const decrireLocale = (e: EntreeFile): DescriptionSaisie => {
+    const l = e.ligne as any
+    const pl = l.planting_id ? plantingMap[l.planting_id] : undefined
+    return {
+      titre: pl?.culture_name ?? (l.culture_id ? cultureNom.get(l.culture_id) : undefined) ?? '—',
+      sousTitre: `${formatDateFR(l.date)} · ${pl ? `${pl.garden_name} · ${pl.planche_name}` : '—'}`,
+      notes: l.notes,
+      tiges: l.tiges,
+      extra: e.table === 'harvests' ? <QualityBadge q={l.quality} /> : <Badge tone={tonRaison[l.reason as LossReason]}>{LIBELLES_RAISONS[l.reason as LossReason]}</Badge>,
+    }
+  }
+  const supprimerLocale = async (e: EntreeFile) => {
+    const rejetee = e.etat === 'rejetee'
+    const ok = await confirm({
+      title: rejetee ? 'Supprimer cette saisie refusée ?' : 'Supprimer cette saisie en attente ?',
+      description: rejetee
+        ? 'Elle a été refusée par la base et ne sera jamais envoyée. La supprimer l’efface du téléphone.'
+        : 'Elle n’a pas encore été envoyée et ne le sera pas. Si un envoi était déjà en route, la saisie peut apparaître dans l’historique : supprimez-la alors là.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    })
+    if (!ok) return
+    try {
+      await fileHorsLigne().supprimer(e.id)
+      toast.success('Saisie supprimée du téléphone')
+    } catch (err) {
+      console.error('[récoltes] suppression de la saisie locale', err)
+      toast.error('Suppression impossible', { description: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  const reessayerLocale = async (e: EntreeFile) => {
+    const b = await fileHorsLigne().reessayer(e.id, userId)
+    if (b.rejetees > 0) toast.error('Toujours refusée par la base')
+  }
+
   const selected = plantingId ? plantingMap[plantingId] : undefined
   const estPerte = mode === 'perte'
 
@@ -178,6 +246,8 @@ export default function Recoltes({ ctx }: { ctx: any }) {
           sub={`tiges, ${fmtPct(totalSaison > 0 ? totalPertes / totalSaison : null)} des récoltes`} />
       </div>
 
+      <BandeauHorsLigne etat={horsLigne} className="mb-4" />
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,400px)_minmax(0,1fr)] xl:items-start">
         {/* Formulaire — pensé pour le téléphone, au pouce */}
         <Card className="scroll-mt-24 xl:sticky xl:top-[5.5rem]" ref={formRef}>
@@ -189,7 +259,10 @@ export default function Recoltes({ ctx }: { ctx: any }) {
                 { value: 'recolte', label: 'Récolte', icon: <Scissors className="h-4 w-4" aria-hidden /> },
                 { value: 'perte', label: 'Perte', icon: <TrendingDown className="h-4 w-4" aria-hidden /> },
               ]} />
-            <form onSubmit={submit} className="space-y-4">
+            {/* noValidate : le pas du stepper (10 tiges, 5 pour une perte) n'est qu'un
+                raccourci des boutons −/+. Sans lui, le navigateur refusait « 25 tiges »
+                (« valeurs valides : 20 et 30 »). La validation est faite par `submit`. */}
+            <form onSubmit={submit} noValidate className="space-y-4">
               <Field label="Culture / planche" error={tried && !plantingId ? (estPerte ? 'Choisissez la culture concernée.' : 'Choisissez la culture récoltée.') : undefined}>
                 <Select ref={selectRef} className="h-12 text-base sm:h-11 sm:text-sm" value={plantingId} onChange={e => setPlantingId(e.target.value)}>
                   <option value="">— Choisir —</option>
@@ -254,6 +327,8 @@ export default function Recoltes({ ctx }: { ctx: any }) {
             <SearchInput value={search} onChange={setSearch} placeholder="Culture, jardin, note…" className="sm:w-72"
               label={histo === 'recoltes' ? 'Rechercher une récolte' : 'Rechercher une perte'} />
           </div>
+
+          <SaisiesLocales entrees={locales} decrire={decrireLocale} onSupprimer={supprimerLocale} onReessayer={reessayerLocale} />
 
           {histo === 'recoltes' ? (
             harvests.length === 0 ? (

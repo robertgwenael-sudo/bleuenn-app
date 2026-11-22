@@ -15,7 +15,13 @@ import { buildDemoDb, DEMO_USER_ID, DEMO_EMAIL, type DemoDb } from './data'
 import { recalculerVenteDemo, totalLigneDemo } from './seeds/commercial'
 
 type Row = Record<string, any>
-type Result = { data: any; error: { message: string; code?: string } | null; count?: number | null }
+type Result = { data: any; error: { message: string; code?: string } | null; count?: number | null; status?: number }
+
+/** Réseau coupé dans le navigateur (mode démo seulement). */
+function horsLigneDemo(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+const ERREUR_RESEAU_DEMO: Result = { data: null, error: { code: '', message: 'TypeError: Failed to fetch' }, status: 0 }
 
 const SESSION_KEY = 'bleuenn-demo-session'
 const LATENCY = 180
@@ -303,6 +309,9 @@ class DemoQuery implements PromiseLike<Result> {
 
   private async run(): Promise<Result> {
     await wait(this.op === 'select' ? LATENCY : 90)
+    // Hors ligne simulé (Playwright `context.setOffline(true)`) : même forme
+    // d'erreur que postgrest-js quand fetch échoue, pour tester la file.
+    if (horsLigneDemo()) return ERREUR_RESEAU_DEMO
     if (!currentUser()) return { data: null, error: { code: '42501', message: 'Connexion requise (mode démo)' } }
     try {
       const t = this.table
@@ -313,6 +322,11 @@ class DemoQuery implements PromiseLike<Result> {
         const list: Row[] = Array.isArray(this.payload) ? this.payload : [this.payload]
         const inserted: Row[] = []
         for (const v of list) {
+          // Clé primaire : un identifiant client déjà présent est refusé (23505),
+          // comme en base — la file hors ligne s'en sert pour ne jamais doublonner.
+          if (v.id && (d[t] as Row[]).some(r => r.id === v.id)) {
+            return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint "${t}_pkey"` }, status: 409 }
+          }
           const row: Row = { id: uuid(), created_at: new Date().toISOString(), ...DEFAULTS[t], ...v }
           if (t === 'plantings') calcPlanting(row)
           if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === row.id)) row.total = Math.round(row.tiges * row.prix_unitaire * 100) / 100
@@ -423,6 +437,7 @@ const auth = {
 // ─── RPC ──────────────────────────────────────────────────────────
 async function rpc(fn: string, args: Row = {}): Promise<Result> {
   await wait(120)
+  if (horsLigneDemo()) return ERREUR_RESEAU_DEMO
   const d = getDb()
   const me = currentUser()
   if (!me) return { data: null, error: { message: 'Connexion requise' } }
