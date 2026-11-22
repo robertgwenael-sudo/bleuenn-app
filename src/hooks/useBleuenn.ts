@@ -1,12 +1,43 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase'
 import type {
   Season, Garden, Planche, CultureCatalog, PlantingFull,
-  Harvest, Sale, SeedOrder, Profile, TeamMember
+  Harvest, Sale, SeedOrder, Profile, TeamMember, Farm, FarmMember
 } from '@/lib/types'
 
 const supabase = createClient()
+
+/** Date du jour à Paris, `YYYY-MM-DD` (le domaine la prend toujours en paramètre). */
+export function aujourdhuiParis(): string {
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date())
+}
+
+/**
+ * Lire la base sans avaler les erreurs : `const { data } = await …` rend
+ * `null` sur échec et l'écran afficherait « aucun élément ». Ici, toute
+ * erreur est journalisée et signalée par un toast ; la valeur de repli
+ * n'est utilisée qu'APRÈS avoir prévenu.
+ */
+function lire<T>(res: { data: any; error: any }, quoi: string, repli: T): T {
+  if (res.error) {
+    console.error(`Lecture impossible (${quoi}) :`, res.error)
+    toast.error(`Impossible de charger ${quoi}`, { description: res.error.message || String(res.error), id: `lecture-${quoi}` })
+    return repli
+  }
+  return (res.data ?? repli) as T
+}
+
+/** Même principe pour une écriture : renvoie `true` si elle a réussi. */
+function ecrire(res: { error: any }, quoi: string): boolean {
+  if (res.error) {
+    console.error(`Échec (${quoi}) :`, res.error)
+    toast.error(`Échec : ${quoi}`, { description: res.error.message || String(res.error) })
+    return false
+  }
+  return true
+}
 
 export function useBleuenn() {
   const [user, setUser] = useState<any>(null)
@@ -20,6 +51,11 @@ export function useBleuenn() {
   const [sales, setSales] = useState<Sale[]>([])
   const [seedOrders, setSeedOrders] = useState<SeedOrder[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  // Niveau ferme (migration 006)
+  const [farm, setFarm] = useState<Farm | null>(null)
+  const [farmTeam, setFarmTeam] = useState<FarmMember[]>([])
+  const [farmPlantings, setFarmPlantings] = useState<PlantingFull[]>([])
+  const [today] = useState<string>(aujourdhuiParis)
   const [loading, setLoading] = useState(true)
 
   // ─── Auth ───────────────────────────────
@@ -68,20 +104,20 @@ export function useBleuenn() {
       supabase.from('culture_catalog').select('*').order('name'),
     ])
 
-    setProfile(profRes.data)
-    setCatalog(catRes.data || [])
+    setProfile(lire(profRes, 'votre profil', null))
+    setCatalog(lire(catRes, 'le catalogue des cultures', [] as CultureCatalog[]))
 
-    const memberSeasonIds = (memberRes.data || []).map((m: any) => m.season_id)
+    const memberSeasonIds = lire(memberRes, 'vos saisons', [] as any[]).map((m: any) => m.season_id)
 
     let allSeasons: Season[] = []
     if (memberSeasonIds.length > 0) {
-      const { data } = await supabase.from('seasons').select('*').in('id', memberSeasonIds).order('year')
-      allSeasons = data || []
+      const r = await supabase.from('seasons').select('*').in('id', memberSeasonIds).order('year')
+      allSeasons = lire(r, 'les saisons', [] as Season[])
     }
     // Fallback : saisons propres (au cas où team_members pas encore peuplé)
     if (allSeasons.length === 0) {
-      const { data } = await supabase.from('seasons').select('*').eq('user_id', user.id).order('year')
-      allSeasons = data || []
+      const r = await supabase.from('seasons').select('*').eq('user_id', user.id).order('year')
+      allSeasons = lire(r, 'les saisons', [] as Season[])
     }
 
     setSeasons(allSeasons)
@@ -89,42 +125,78 @@ export function useBleuenn() {
     setActiveSeason(active)
 
     if (active) {
-      await loadSeasonData(active.id)
-      await loadTeamMembers(active.id)
+      await Promise.all([
+        loadSeasonData(active.id, active.farm_id),
+        loadTeamMembers(active.id),
+        loadFarm(active.farm_id),
+      ])
+    } else {
+      setFarm(null); setFarmTeam([]); setFarmPlantings([])
     }
     setLoading(false)
   }, [user])
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  const loadSeasonData = async (seasonId: string) => {
-    const [garRes, plRes, harRes, salRes, soRes] = await Promise.all([
-      supabase.from('gardens').select('*, planches(*)').eq('season_id', seasonId).order('sort_order'),
+  /**
+   * Données de la saison active ET de la ferme :
+   *  - jardins et planches par ferme (permanents, toutes saisons) ;
+   *  - `plantings` : saison active (inchangé pour les écrans existants) ;
+   *  - `farmPlantings` : toute la ferme, toutes saisons, pour lire
+   *    l'occupation des planches par dates.
+   */
+  const loadSeasonData = async (seasonId: string, farmId: string | null | undefined = activeSeason?.farm_id) => {
+    const gardensQuery = farmId
+      ? supabase.from('gardens').select('*, planches(*)').eq('farm_id', farmId).order('sort_order')
+      : supabase.from('gardens').select('*, planches(*)').eq('season_id', seasonId).order('sort_order')
+    const [garRes, plRes, farmPlRes, harRes, salRes, soRes] = await Promise.all([
+      gardensQuery,
       supabase.from('plantings_full').select('*').eq('season_id', seasonId),
+      farmId
+        ? supabase.from('plantings_full').select('*').eq('farm_id', farmId).order('date_semis')
+        : Promise.resolve({ data: null, error: null }),
       supabase.from('harvests').select('*').eq('season_id', seasonId).order('date', { ascending: false }),
       supabase.from('sales').select('*').eq('season_id', seasonId).order('date', { ascending: false }),
       supabase.from('seed_orders').select('*').eq('season_id', seasonId).order('culture_name'),
     ])
-    setGardens(garRes.data || [])
-    setPlantings(plRes.data || [])
-    setHarvests(harRes.data || [])
-    setSales(salRes.data || [])
-    setSeedOrders(soRes.data || [])
+    const seasonPlantings = lire(plRes, 'les plantations de la saison', [] as PlantingFull[])
+    setGardens(lire(garRes, 'les jardins', [] as Garden[]))
+    setPlantings(seasonPlantings)
+    setFarmPlantings(farmId ? lire(farmPlRes, 'les plantations de la ferme', [] as PlantingFull[]) : seasonPlantings)
+    setHarvests(lire(harRes, 'les récoltes', [] as Harvest[]))
+    setSales(lire(salRes, 'les ventes', [] as Sale[]))
+    setSeedOrders(lire(soRes, 'les commandes de graines', [] as SeedOrder[]))
+  }
+
+  /** Ferme et équipe de la ferme (RPC `farm_team`, emails compris). */
+  const loadFarm = async (farmId: string | null | undefined) => {
+    if (!farmId) { setFarm(null); setFarmTeam([]); return }
+    const [farmRes, teamRes] = await Promise.all([
+      supabase.from('farms').select('*').eq('id', farmId).maybeSingle(),
+      supabase.rpc('farm_team', { p_farm_id: farmId }),
+    ])
+    setFarm(lire<Farm | null>(farmRes, 'la ferme', null))
+    setFarmTeam(lire(teamRes, 'l’équipe de la ferme', [] as FarmMember[]))
   }
 
   const switchSeason = async (seasonId: string) => {
     // Déactiver toutes, activer celle-ci
     if (!user) return
-    await supabase.from('seasons').update({ is_active: false }).eq('user_id', user.id)
-    await supabase.from('seasons').update({ is_active: true }).eq('id', seasonId)
+    ecrire(await supabase.from('seasons').update({ is_active: false }).eq('user_id', user.id), 'changement de saison')
+    ecrire(await supabase.from('seasons').update({ is_active: true }).eq('id', seasonId), 'changement de saison')
     await loadAll()
   }
 
   // ─── CRUD Saisons ──────────────────────
   const createSeason = async (name: string, year: number, goal: number) => {
-    const { data } = await supabase.from('seasons').insert({
-      user_id: user.id, name, year, revenue_goal: goal, is_active: true
+    // Rattachée à la ferme courante si on en est owner ; sinon la base
+    // rattache la saison à la ferme de son créateur (créée au besoin).
+    const ownsFarm = !!farm && farmTeam.some(m => m.user_id === user.id && m.role === 'owner')
+    const res = await supabase.from('seasons').insert({
+      user_id: user.id, name, year, revenue_goal: goal, is_active: true,
+      ...(ownsFarm ? { farm_id: farm!.id } : {}),
     }).select().single()
+    const data = ecrire(res, 'création de la saison') ? res.data : null
     // Le créateur est inscrit owner par le trigger trg_add_season_owner
     if (data) await loadAll()
     return data
@@ -133,40 +205,43 @@ export function useBleuenn() {
   // ─── CRUD Jardins ──────────────────────
   const createGarden = async (name: string, m2: number, desc: string) => {
     if (!activeSeason) return null
-    const { data } = await supabase.from('gardens').insert({
-      user_id: user.id, season_id: activeSeason.id, name, surface_m2: m2, description: desc,
-      sort_order: gardens.length
+    // Le jardin appartient à la ferme ; season_id reste renseigné pour compatibilité.
+    const res = await supabase.from('gardens').insert({
+      user_id: user.id, farm_id: activeSeason.farm_id, season_id: activeSeason.id,
+      name, surface_m2: m2, description: desc, sort_order: gardens.length
     }).select().single()
+    const data = ecrire(res, 'création du jardin') ? res.data : null
     if (data) await loadSeasonData(activeSeason.id)
     return data
   }
 
   const updateGarden = async (id: string, updates: Partial<Garden>) => {
-    await supabase.from('gardens').update(updates).eq('id', id)
+    ecrire(await supabase.from('gardens').update(updates).eq('id', id), 'modification du jardin')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
   const deleteGarden = async (id: string) => {
-    await supabase.from('gardens').delete().eq('id', id)
+    ecrire(await supabase.from('gardens').delete().eq('id', id), 'suppression du jardin')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
   // ─── CRUD Planches ─────────────────────
   const createPlanche = async (gardenId: string, name: string, m2: number) => {
-    const { data } = await supabase.from('planches').insert({
+    const res = await supabase.from('planches').insert({
       garden_id: gardenId, name, surface_m2: m2
     }).select().single()
+    const data = ecrire(res, 'création de la planche') ? res.data : null
     if (data && activeSeason) await loadSeasonData(activeSeason.id)
     return data
   }
 
   const updatePlanche = async (id: string, updates: Partial<Planche>) => {
-    await supabase.from('planches').update(updates).eq('id', id)
+    ecrire(await supabase.from('planches').update(updates).eq('id', id), 'modification de la planche')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
   const deletePlanche = async (id: string) => {
-    await supabase.from('planches').delete().eq('id', id)
+    ecrire(await supabase.from('planches').delete().eq('id', id), 'suppression de la planche')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
@@ -188,7 +263,7 @@ export function useBleuenn() {
       surface_m2: surfaceM2,
       ...overrides
     }).select().single()
-    if (error) console.error('createPlanting error:', error)
+    ecrire({ error }, 'ajout de la plantation')
     if (data && activeSeason) await loadSeasonData(activeSeason.id)
     return data
   }
@@ -204,12 +279,12 @@ export function useBleuenn() {
     notes?: string
   }) => {
     const { error } = await supabase.from('plantings').update(updates).eq('id', id)
-    if (error) console.error('updatePlanting error:', error)
+    ecrire({ error }, 'modification de la plantation')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
   const deletePlanting = async (id: string) => {
-    await supabase.from('plantings').delete().eq('id', id)
+    ecrire(await supabase.from('plantings').delete().eq('id', id), 'suppression de la plantation')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
@@ -292,9 +367,8 @@ export function useBleuenn() {
   const loadTeamMembers = async (seasonId: string) => {
     // profiles n'est lisible que par son propriétaire : un join renverrait
     // null pour les coéquipiers. season_team() n'expose que email et nom.
-    const { data, error } = await supabase.rpc('season_team', { p_season_id: seasonId })
-    if (error) console.error('season_team error:', error)
-    setTeamMembers((data || []) as TeamMember[])
+    const res = await supabase.rpc('season_team', { p_season_id: seasonId })
+    setTeamMembers(lire(res, 'l’équipe de la saison', [] as TeamMember[]))
   }
 
   const enableInviteLink = async () => {
@@ -349,31 +423,62 @@ export function useBleuenn() {
     if (error) return { error: error.message }
     // Si ajouté directement, recharger les membres
     if (data?.status === 'added') {
-      await loadTeamMembers(activeSeason.id)
+      await Promise.all([loadTeamMembers(activeSeason.id), loadFarm(activeSeason.farm_id)])
     }
     return data
   }
 
   const getPendingInvites = async () => {
     if (!activeSeason) return []
-    const { data } = await supabase
+    // Une invitation faite depuis n'importe quelle saison de la ferme fait
+    // rejoindre la ferme entière : on les liste toutes.
+    const farmSeasonIds = seasons.filter(s => s.farm_id === activeSeason.farm_id).map(s => s.id)
+    const res = await supabase
       .from('pending_invites')
       .select('*')
-      .eq('season_id', activeSeason.id)
+      .in('season_id', farmSeasonIds.length ? farmSeasonIds : [activeSeason.id])
       .order('created_at')
-    return data || []
+    return lire(res, 'les invitations en attente', [] as any[])
   }
 
   const cancelInvite = async (inviteId: string) => {
-    await supabase.from('pending_invites').delete().eq('id', inviteId)
+    ecrire(await supabase.from('pending_invites').delete().eq('id', inviteId), 'annulation de l’invitation')
   }
 
-  const removeMember = async (memberId: string) => {
-    await supabase.from('team_members').delete().eq('id', memberId)
-    if (activeSeason) await loadTeamMembers(activeSeason.id)
+  /**
+   * Retire quelqu'un de la FERME (toutes ses saisons, jardins, plantations).
+   * `farmMemberId` est l'`id` d'une ligne de `farmTeam` (farm_members).
+   * Un owner ne peut pas se retirer lui-même (policy RLS).
+   */
+  const removeMember = async (farmMemberId: string) => {
+    const target = farmTeam.find(m => m.id === farmMemberId)
+    if (target && target.user_id === user?.id) {
+      toast.error('Vous ne pouvez pas vous retirer vous-même de la ferme')
+      return false
+    }
+    const res = await supabase.from('farm_members').delete().eq('id', farmMemberId)
+    const ok = ecrire(res, 'retrait du membre')
+    if (activeSeason) await Promise.all([loadFarm(activeSeason.farm_id), loadTeamMembers(activeSeason.id)])
+    return ok
   }
 
-  const isOwner = teamMembers.some(m => m.user_id === user?.id && m.role === 'owner')
+  // ─── Plan de culture ─────────────────
+  /**
+   * Reprend le plan d'une saison l'année suivante (RPC duplicate_season_plan) :
+   * nouvelle saison, mêmes plantations avec semis décalé de `shiftYears` ans.
+   * Recharge puis renvoie l'id de la nouvelle saison (null en cas d'échec).
+   */
+  const duplicatePlan = async (sourceSeasonId: string, name: string, year: number, shiftYears = 1): Promise<string | null> => {
+    const res = await supabase.rpc('duplicate_season_plan', {
+      p_source_season: sourceSeasonId, p_name: name, p_year: year, p_shift_years: shiftYears,
+    })
+    if (!ecrire(res, 'reprise du plan')) return null
+    await loadAll()
+    return (res.data as string) ?? null
+  }
+
+  const isFarmOwner = farmTeam.some(m => m.user_id === user?.id && m.role === 'owner')
+  const isOwner = isFarmOwner || teamMembers.some(m => m.user_id === user?.id && m.role === 'owner')
 
   return {
     user, profile, loading,
@@ -387,6 +492,8 @@ export function useBleuenn() {
     createSale, deleteSale,
     upsertSeedOrder, addCulture, updateCulture, deleteCulture,
     teamMembers, isOwner,
+    // Niveau ferme (migration 006)
+    farm, farmTeam, farmPlantings, isFarmOwner, duplicatePlan, today,
     enableInviteLink, disableInviteLink, regenerateInviteToken,
     joinByToken, inviteByEmail, getPendingInvites, cancelInvite, removeMember,
     reload: loadAll,
