@@ -13,7 +13,7 @@ import {
   AlerteConflits, LegendeFrise, OccupationFrise, calculables, conflitsPlanche, periodeSure,
 } from '@/components/plantings/Occupation'
 import {
-  ajouterJours, ajouterMois, premiereRecolte, chevauche, cycleDe, estDateValide, estSansFin, fenetreMensuelle, formatJourMois, formatMois,
+  ajouterJours, ajouterMois, premiereRecolte, chevauche, cycleDe, delaiAConfirmer, estDateValide, floraisonARenseigner, estSansFin, fenetreMensuelle, formatJourMois, formatMois,
   phraseOccupation, premierDuMois, segmentsOccupation, surfaceOccupeeLe, type Intervalle,
 } from '@/lib/domain'
 import { CycleBadge } from '@/components/plantings/Cycle'
@@ -137,7 +137,7 @@ function AddPlancheForm({ gardenId, ctx, onClose }: { gardenId: string; ctx: any
               const anneeRef = Number(String(ctx.today).slice(0, 4))
               const dp = ajouterJours(row.dateSemis, sel.jours_cellule || 0)
               const dr = premiereRecolte(sel, dp)
-              preview = `Plantation ${formatJourMois(dp, anneeRef)}, ${cycleDe(sel) === 'vivace' ? '1re récolte' : 'récolte'} ${formatJourMois(dr, anneeRef)}`
+              preview = `Plantation ${formatJourMois(dp, anneeRef)}, ${dr ? `${cycleDe(sel) === 'vivace' ? '1re récolte' : 'récolte'} ${formatJourMois(dr, anneeRef)}` : 'floraison à renseigner au catalogue'}`
             }
             return (
               <div key={idx} className="space-y-3 rounded-xl border border-border p-3.5">
@@ -253,7 +253,9 @@ export default function Gardens({ ctx }: { ctx: any }) {
 
   const gardens: Garden[] = ctx.gardens || []
   // Toutes les plantations de la ferme, toutes saisons : la planche est permanente
-  const farmPlantings: PlantingFull[] = ctx.farmPlantings || ctx.plantings || []
+  // Toutes les plantations, y compris les vivaces sans début de floraison (013) : elles occupent la planche
+  const farmPlantings: PlantingFull[] = ctx.farmPlantingsTout || ctx.farmPlantings || ctx.plantings || []
+  const sansFloraison: PlantingFull[] = ctx.plantingsFloraisonManquante || []
   const activeSeasonId: string | undefined = ctx.activeSeason?.id
   const today: string = ctx.today
   // « Plantations en cours » : 12 mois à venir, sans les plantations terminées.
@@ -323,6 +325,15 @@ export default function Gardens({ ctx }: { ctx: any }) {
           <Segmented label="Plantations affichées" value={vue} onChange={setVue} size="sm" className="lg:w-auto"
             options={[{ value: 'en-cours', label: 'Plantations en cours' }, { value: 'an-dernier', label: 'Aussi l’an dernier' }]} />
           <div className="lg:ml-auto"><LegendeFrise activeSeasonName={ctx.activeSeason?.name} anciennes={aussiAnDernier} /></div>
+        </div>
+      )}
+      {sansFloraison.length > 0 && (
+        <div role="status" aria-label="Floraison à renseigner" className="mb-5 flex items-start gap-2.5 rounded-card border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-fg">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+          <div>
+            <p><strong className="text-warning">{sansFloraison.length} plantation{sansFloraison.length > 1 ? 's' : ''} sans dates de récolte : floraison à renseigner</strong> au catalogue. Elles occupent leur planche mais sont exclues du prévisionnel de CA et des disponibilités (jamais comptées à 0 €).</p>
+            <p className="mt-0.5 text-xs text-fg-muted">{sansFloraison.map(p => `${p.culture_name} (${p.garden_name} · ${p.planche_name})`).join(', ')}</p>
+          </div>
         </div>
       )}
       {nbPlanchesEnConflit > 0 && (
@@ -442,7 +453,8 @@ export default function Gardens({ ctx }: { ctx: any }) {
                               const autre = p.season_id !== activeSeasonId
                               const vieille = ancienne(p)
                               const per = periodeSure(p)
-                              const vivaceEnPlace = cycleDe(p) === 'vivace' && !!per && estSansFin(per.fin)
+                              // Vivace en place, ou bisannuelle sans floraison connue : pas de fin datée
+                              const vivaceEnPlace = !!per && estSansFin(per.fin)
                               if (vieille) return (
                                 <li key={p.id}>
                                   <button type="button" onClick={() => editer(p)} title="Ancienne plantation : cliquer pour la consulter"
@@ -472,13 +484,17 @@ export default function Gardens({ ctx }: { ctx: any }) {
                                     <span className="min-w-[7rem] text-sm font-medium text-fg">{p.culture_name}</span>
                                     <CycleBadge cycle={p.cycle} masquerAnnuelle />
                                     {p.achat_plant && <Badge tone="amber">Plant acheté</Badge>}
+                                    {floraisonARenseigner(p) && <Badge tone="amber">Floraison à renseigner</Badge>}
+                                    {delaiAConfirmer(p) && <Badge tone="amber">Délai avant 1re floraison à confirmer</Badge>}
                                     {autre && !vivaceEnPlace && <Badge tone="violet">{p.season_name || 'Autre saison'}</Badge>}
                                     <span className="num text-fg-muted">{p.surface_m2} m²</span>
                                     <span className="num flex items-center gap-1 text-fg-muted">
                                       <span title={p.achat_plant ? 'Plantation (plant acheté)' : 'Entrée cellule'}>{p.achat_plant ? 'Plantation' : 'Semis'} {formatJourMois(p.date_semis, anneeRef)}</span>
                                       <ArrowRight className="h-3 w-3 text-fg-subtle" aria-hidden />
                                       {vivaceEnPlace
-                                        ? <span title="Vivace : fleurit chaque année, la planche reste occupée jusqu’à l’arrachage">en place, fleurit chaque année vers le {formatJourMois(p.date_recolte)}</span>
+                                        ? <span title="Reste en place jusqu’à l’arrachage">{p.date_recolte
+                                            ? `en place, fleurit ${cycleDe(p) === 'vivace' ? 'chaque année ' : ''}vers le ${formatJourMois(p.date_recolte)}`
+                                            : 'en place, pas de dates de récolte'}</span>
                                         : <span title="Dernier jour en place : la planche se libère le lendemain">{p.arrachee_le ? 'arrachée le' : 'fin'} {formatJourMois(per?.fin ?? p.date_fin, anneeRef)}</span>}
                                     </span>
                                     <span className="ml-auto"><StatusBadge status={getPlantingStatus(p)} /></span>

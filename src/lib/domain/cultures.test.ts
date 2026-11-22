@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { plantation } from './fixtures.test-utils'
 import {
   EN_PLACE_SANS_FIN, cycleDe, dateSuggeree, enRecolteLe, erreursFicheCycle, estAncienne, fenetresRecolte,
-  finOccupation, floraisonARenseigner, lireJourMois, premiereRecolte, prochaineOccurrence, vivaceEnPlace,
+  avecDatesDeRecolte, delaiAConfirmer, finOccupation, floraisonARenseigner, lireJourMois, sansDatesDeRecolte, premiereRecolte, prochaineOccurrence, vivaceEnPlace,
 } from './cultures'
 import { conflitsSiAjout, libreAPartirDu, periodeOccupation, phraseOccupation, segmentsOccupation, surfaceOccupeeLe } from './occupation'
 import { projeterDuplication } from './plan'
@@ -167,14 +167,11 @@ describe('contrôle d’une fiche du catalogue', () => {
     expect(erreursFicheCycle({ ...fiche, cycle: 'vivace' })).toEqual([])
   })
 
-  it('Digitale 45/320/12 en bisannuelle : acceptée (floraison à 365 j)', () => {
-    expect(erreursFicheCycle({ jours_cellule: 45, jours_champ: 320, jours_recolte: 12, cycle: 'bisannuelle' })).toEqual([])
-  })
-
-  it('pivoine : au-delà d’un an, on passe par les années avant la première récolte', () => {
-    expect(erreursFicheCycle({ jours_cellule: 0, jours_champ: 1095, jours_recolte: 21, cycle: 'vivace' })[0]).toMatch(/années avant la première récolte/)
-    expect(erreursFicheCycle({ jours_cellule: 0, jours_champ: 0, jours_recolte: 21, cycle: 'vivace', annees_avant_recolte: 3 })).toEqual([])
-    expect(erreursFicheCycle({ jours_cellule: 0, jours_champ: 0, jours_recolte: 21, cycle: 'annuelle', annees_avant_recolte: 3 })).toHaveLength(1)
+  it('vivace : jours au champ ignorés, délai avant 1re floraison borné', () => {
+    expect(erreursFicheCycle({ jours_cellule: 0, jours_champ: 1095, jours_recolte: 21, cycle: 'vivace' })).toEqual([])
+    expect(erreursFicheCycle({ jours_cellule: 0, jours_champ: 0, jours_recolte: 21, cycle: 'vivace', delai_premiere_floraison_jours: 1095 })).toEqual([])
+    expect(erreursFicheCycle({ jours_cellule: 0, jours_champ: 0, jours_recolte: 21, cycle: 'vivace', delai_premiere_floraison_jours: -1 })).toHaveLength(1)
+    expect(erreursFicheCycle({ jours_cellule: 0, jours_champ: 60, jours_recolte: 21, cycle: 'annuelle', delai_premiere_floraison_jours: 10 })).toHaveLength(1)
   })
 
   it('1ère implantation mal saisie : refusée', () => {
@@ -184,30 +181,48 @@ describe('contrôle d’une fiche du catalogue', () => {
 
 describe('première récolte calée sur la floraison', () => {
   // Retour de prod : achillée plantée le 31/03/2026 récoltée le 01/03/2027
-  // (335 jours au champ). Avec sa floraison renseignée, elle fleurit dans sa fenêtre.
-  const achilleeCat = { cycle: 'vivace' as const, jours_champ: 335, floraison_debut: '15/06' }
+  // (335 jours au champ, artifice du tableur). Les jours au champ sont
+  // ignorés : la récolte suit le début de floraison et le délai.
+  const achilleeCat = { cycle: 'vivace' as const, jours_champ: 335, debut_floraison: '15/06' }
 
-  it('vivace : première occurrence de la floraison après le délai au champ', () => {
-    expect(premiereRecolte(achilleeCat, '2026-03-31')).toBe('2027-06-15')
-    expect(premiereRecolte({ cycle: 'vivace', jours_champ: 365, floraison_debut: '10/05' }, '2026-03-01')).toBe('2027-05-10')
+  it('délai à confirmer (null) : prochaine floraison après la plantation, signalé', () => {
+    expect(premiereRecolte(achilleeCat, '2026-03-31')).toBe('2026-06-15')
+    expect(delaiAConfirmer(achilleeCat)).toBe(true)
   })
 
-  it('sans floraison renseignée : méthode du tableur, signalée', () => {
-    expect(premiereRecolte({ cycle: 'vivace', jours_champ: 335 }, '2026-03-31')).toBe('2027-03-01')
+  it('délai connu : première floraison à partir de plantation + délai', () => {
+    const ancolie = { cycle: 'vivace' as const, jours_champ: 0, debut_floraison: '10/05', delai_premiere_floraison_jours: 240 }
+    expect(premiereRecolte(ancolie, '2026-03-01')).toBe('2027-05-10')
+    expect(premiereRecolte({ ...ancolie, delai_premiere_floraison_jours: 60 }, '2026-03-01')).toBe('2026-05-10')
+    expect(delaiAConfirmer(ancolie)).toBe(false)
+  })
+
+  it('sans début de floraison : aucune date de récolte, jamais devinée', () => {
+    expect(premiereRecolte({ cycle: 'vivace', jours_champ: 335 }, '2026-03-31')).toBeNull()
     expect(floraisonARenseigner({ cycle: 'vivace' })).toBe(true)
     expect(floraisonARenseigner(achilleeCat)).toBe(false)
     expect(floraisonARenseigner({ cycle: 'annuelle' })).toBe(false)
+    expect(delaiAConfirmer({ cycle: 'vivace' })).toBe(false)
   })
 
-  it('annuelle : la floraison est ignorée, pivoine : années en plus', () => {
-    expect(premiereRecolte({ cycle: 'annuelle', jours_champ: 67, floraison_debut: '15/06' }, '2026-04-24')).toBe('2026-06-30')
-    expect(premiereRecolte({ cycle: 'vivace', jours_champ: 0, annees_avant_recolte: 3, floraison_debut: '20/05' }, '2025-10-15')).toBe('2029-05-20')
+  it('une plantation sans floraison : en place, aucune fenêtre, hors prévisionnel', () => {
+    const p = { ...achillee, date_recolte: null as unknown as string, date_fin: null as unknown as string }
+    expect(fenetresRecolte(p, { debut: '2026-01-01', fin: '2030-12-31' })).toEqual([])
+    expect(periodeOccupation(p)).toEqual({ debut: '2026-05-01', fin: EN_PLACE_SANS_FIN })
+    expect(avecDatesDeRecolte([p, zinnia]).map(x => x.id)).toEqual(['zinnia'])
+    expect(sansDatesDeRecolte([p, zinnia]).map(x => x.id)).toEqual(['achillee'])
+    const bis = { ...p, id: 'lunaire', cycle: 'bisannuelle' as const }
+    expect(periodeOccupation(bis).fin).toBe(EN_PLACE_SANS_FIN)
+  })
+
+  it('annuelle : plantation + jours au champ, floraison ignorée', () => {
+    expect(premiereRecolte({ cycle: 'annuelle', jours_champ: 67, debut_floraison: '15/06' }, '2026-04-24')).toBe('2026-06-30')
   })
 
   it('fiche : floraison réservée aux vivaces et bisannuelles, au format jj/mm', () => {
-    const f = { jours_cellule: 30, jours_champ: 335, jours_recolte: 21 }
-    expect(erreursFicheCycle({ ...f, cycle: 'vivace', floraison_debut: '15/06' })).toEqual([])
-    expect(erreursFicheCycle({ ...f, cycle: 'vivace', floraison_debut: '31/06' })).toHaveLength(1)
-    expect(erreursFicheCycle({ jours_cellule: 23, jours_champ: 67, jours_recolte: 21, floraison_debut: '15/06' })).toHaveLength(1)
+    const f = { jours_cellule: 30, jours_champ: 0, jours_recolte: 21 }
+    expect(erreursFicheCycle({ ...f, cycle: 'vivace', debut_floraison: '15/06' })).toEqual([])
+    expect(erreursFicheCycle({ ...f, cycle: 'vivace', debut_floraison: '31/06' })).toHaveLength(1)
+    expect(erreursFicheCycle({ jours_cellule: 23, jours_champ: 67, jours_recolte: 21, debut_floraison: '15/06' })).toHaveLength(1)
   })
 })

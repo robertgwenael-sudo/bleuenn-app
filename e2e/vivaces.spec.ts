@@ -44,3 +44,22 @@ test('bascule « Aussi l’an dernier » : anciennes plantations grisées, vivac
   await expect(achillee).toBeVisible()
   await expect(achillee).not.toHaveAccessibleName(/ancienne/)
 })
+
+test('vivace sans début de floraison : listée à part, jamais datée ; catalogue avec floraison et délai', async ({ page }) => {
+  await connexion(page, 'jardins')
+  const manque = page.getByRole('status', { name: 'Floraison à renseigner' })
+  await expect(manque).toContainText('Rudbeckia')
+  await expect(manque).toContainText('exclues du prévisionnel')
+
+  await page.goto('/#catalogue')
+  await expect(page.getByRole('main').getByRole('heading', { level: 1, name: 'Catalogue des cultures' })).toBeVisible()
+  await page.getByRole('radiogroup', { name: 'Filtrer par cycle' }).getByRole('radio', { name: 'Vivaces' }).click()
+  const table = page.getByRole('main').locator('table')
+  await expect(table.getByRole('row', { name: /Rudbeckia/ })).toContainText('floraison à renseigner')
+  await expect(table.getByRole('row', { name: /Achillée/ })).toContainText('délai avant 1re floraison à confirmer')
+  await table.getByRole('button', { name: /^Achillée/ }).click()
+  const dlg = page.getByRole('dialog', { name: /Achillée/ })
+  await expect(dlg.getByLabel('Début de floraison')).toHaveValue('15/06')
+  await expect(dlg.getByLabel('Délai avant 1re floraison (jours)')).toHaveValue('')
+  await expect(dlg.getByLabel('Jours au champ')).toHaveCount(0)
+})

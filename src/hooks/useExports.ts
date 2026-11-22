@@ -18,6 +18,7 @@ import type {
   ClientExport, CommandeExport, DonneesExport, LigneExport, PerteExport, PlantationExport, RecolteExport, VenteExport,
 } from '@/lib/domain/exports'
 import type { OrderLine, Sale, SaleLine, Order } from '@/lib/domain'
+import { avecDatesDeRecolte } from '@/lib/domain/cultures'
 
 export interface PeriodeChargement {
   farmId: string | null
@@ -116,7 +117,8 @@ export function useExports(p: PeriodeChargement) {
       const lv = grouper(lignesVente as unknown as (SaleLine & { [k: string]: unknown })[], 'sale_id')
       const lc = grouper(lignesCommande as unknown as (OrderLine & { [k: string]: unknown })[], 'order_id')
 
-      const plan = plantations.filter(x => seasonId ? x.season_id === seasonId : x.date_semis <= au && x.date_fin >= du)
+      // 013 : une vivace sans début de floraison n'a ni dates de récolte ni prévisionnel exportable
+      const plan = avecDatesDeRecolte(plantations).filter(x => seasonId ? x.season_id === seasonId : x.date_semis <= au && x.date_fin >= du)
 
       setSaisons(s)
       setDonnees({

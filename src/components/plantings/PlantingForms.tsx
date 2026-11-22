@@ -5,7 +5,7 @@ import { ArrowRight, CalendarCheck, Shovel, Trash2, Undo2, X } from 'lucide-reac
 import type { PlantingFull, CultureCatalog } from '@/lib/types'
 import { Badge, Button, Field, Input, SearchInput, TypeBadge, TYPE_LABEL, cn, useConfirm } from '@/components/ui'
 import {
-  ajouterJours, conflitsSiAjout, cycleDe, dateSuggeree, estDateValide, estSansFin, floraisonARenseigner, formatJourMois,
+  ajouterJours, conflitsSiAjout, cycleDe, dateSuggeree, delaiAConfirmer, estDateValide, estSansFin, floraisonARenseigner, formatJourMois,
   libreAPartirDu, periodeOccupation, premiereRecolte, segmentsOccupation, dureeJours, type CycleCulture, type PlantingOccupation,
 } from '@/lib/domain'
 import { AvertissementSaisie, calculables, periodeSure } from './Occupation'
@@ -17,20 +17,22 @@ import { CycleBadge } from './Cycle'
 // Un conflit avertit mais n'empêche jamais d'enregistrer.
 // 013 : une vivace occupe la planche jusqu'à son arrachage ; un plant
 // acheté ne passe pas en cellule (la date saisie est la plantation).
-type Cycle = { jc: number; jch: number; jr: number; annees: number; semisDirect: boolean; cycle: CycleCulture; floraison: string | null }
+// Vivace / bisannuelle : la récolte suit le début de floraison ; sans lui,
+// pas de dates de récolte (null), jamais devinées.
+type Cycle = { jc: number; jch: number; jr: number; semisDirect: boolean; cycle: CycleCulture; floraison: string | null; delai: number | null }
 
 function cycleCulture(c: CultureCatalog): Cycle {
   return {
     jc: c.jours_cellule || 0, jch: c.jours_champ, jr: c.jours_recolte ?? 21,
-    annees: cycleDe(c) === 'vivace' ? c.annees_avant_recolte || 0 : 0,
-    semisDirect: !!c.semis_direct, cycle: cycleDe(c), floraison: c.floraison_debut ?? null,
+    semisDirect: !!c.semis_direct, cycle: cycleDe(c),
+    floraison: c.debut_floraison ?? null, delai: c.delai_premiere_floraison_jours ?? null,
   }
 }
 
 function datesProjet(date: string, c: Cycle, achatPlant: boolean) {
   const plantation = ajouterJours(date, achatPlant ? 0 : c.jc)
-  const recolte = premiereRecolte({ jours_champ: c.jch, annees_avant_recolte: c.annees, cycle: c.cycle, floraison_debut: c.floraison }, plantation)
-  const fin = ajouterJours(recolte, c.jr)
+  const recolte = premiereRecolte({ jours_champ: c.jch, cycle: c.cycle, debut_floraison: c.floraison, delai_premiere_floraison_jours: c.delai }, plantation)
+  const fin = recolte ? ajouterJours(recolte, c.jr) : null
   return { plantation, recolte, fin }
 }
 
@@ -41,7 +43,7 @@ function occupationProjet(ctx: any, projet: Projet): PlantingOccupation | null {
   const dates = datesProjet(projet.dateSemis, projet.cycle, projet.achatPlant)
   return {
     id: projet.id, surface_m2: projet.surface, date_semis: projet.dateSemis, date_plantation: dates.plantation,
-    date_fin: dates.fin, semis_direct: projet.cycle.semisDirect, culture_name: projet.cultureName,
+    date_fin: dates.fin as string, semis_direct: projet.cycle.semisDirect, culture_name: projet.cultureName,
     season_name: ctx.activeSeason?.name, season_year: ctx.activeSeason?.year,
     cycle: projet.cycle.cycle, arrachee_le: projet.arracheeLe ?? null,
   }
@@ -54,7 +56,9 @@ function infosPlanche(ctx: any, plancheId: string) {
       if (pl.id === plancheId) { plancheM2 = Number(pl.surface_m2); plancheName = `${g.name} · ${pl.name}` }
     }
   }
-  const source: PlantingFull[] = ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
+  // 013 : toutes les plantations, y compris celles sans dates de récolte (elles occupent la planche)
+  const source: PlantingFull[] = ctx.farmPlantingsTout?.length ? ctx.farmPlantingsTout
+    : ctx.farmPlantings?.length ? ctx.farmPlantings : (ctx.plantings || [])
   return { plancheM2, plancheName, voisines: calculables(source.filter(p => p.planche_id === plancheId)) }
 }
 
@@ -85,6 +89,7 @@ function verifierOccupation(ctx: any, plancheId: string, projet: Projet, autresP
 }
 
 const fmtM2 = (x: number) => String(Math.round(x * 100) / 100).replace('.', ',')
+const fmtDate = (d: string | null, anneeRef: number) => (d ? formatJourMois(d, anneeRef) : null)
 
 /** « jusqu'au 15 mai » ou « vivace en place ». */
 function jusquA(p: PlantingFull, anneeRef: number) {
@@ -94,11 +99,20 @@ function jusquA(p: PlantingFull, anneeRef: number) {
 }
 
 // ─── Aperçu des dates calculées ─────────────────────
-function DatesPreview({ title, plantation, recolte, fin, vivace, compact, floraisonManquante }: {
-  title: string; plantation: string; recolte: string; fin: string; vivace?: boolean; compact?: boolean; floraisonManquante?: boolean
+function DatesPreview({ title, plantation, recolte, fin, vivace, compact, delaiNonConfirme }: {
+  title: string; plantation: string; recolte: string | null; fin: string | null; vivace?: boolean; compact?: boolean; delaiNonConfirme?: boolean
 }) {
-  const alerte = floraisonManquante && (
-    <p className="text-xs font-medium text-warning">Début de floraison non renseigné au catalogue : récolte calculée avec les jours au champ, à vérifier.</p>
+  // Sans début de floraison (vivace, bisannuelle) : aucune date de récolte, jamais devinée
+  if (!recolte || !fin) {
+    return (
+      <p role="status" className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-fg">
+        <strong className="text-warning">Floraison à renseigner</strong> : sans début de floraison au catalogue, pas de dates de récolte.
+        La plantation occupe la planche mais reste hors prévisionnel de CA et hors disponibilités. Plantation le <strong>{plantation}</strong>.
+      </p>
+    )
+  }
+  const alerte = delaiNonConfirme && (
+    <p className="mt-1 text-xs font-medium text-warning">Délai avant 1re floraison à confirmer : calculé avec 0 jour (prochaine floraison après la plantation).</p>
   )
   const items = [
     { l: 'Plantation', v: plantation, c: 'bg-phase-champ' },
@@ -180,8 +194,8 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
   const jcCatalogue = planting.achat_plant ? (cat ? (planting.jours_cellule_override || cat.jours_cellule || 0) : 0) : (planting.jours_cellule || 0)
   const cycle: Cycle = {
     jc: jcCatalogue, jch: planting.jours_champ || 0, jr: planting.jours_recolte || 21,
-    annees: planting.annees_avant_recolte || 0, semisDirect: !!planting.semis_direct, cycle: cycleDe(planting),
-    floraison: planting.floraison_debut ?? null,
+    semisDirect: !!planting.semis_direct, cycle: cycleDe(planting),
+    floraison: planting.debut_floraison ?? null, delai: planting.delai_premiere_floraison_jours ?? null,
   }
   const vivace = cycle.cycle === 'vivace'
   const v = verifierOccupation(ctx, planting.planche_id, {
@@ -237,7 +251,9 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
         <div className="col-span-2 sm:col-span-1"><dt className="text-fg-subtle">Type</dt><dd className="mt-0.5 flex flex-wrap items-center gap-1.5 font-medium text-fg"><TypeBadge type={planting.culture_type} />{TYPE_LABEL[planting.culture_type]}<CycleBadge cycle={planting.cycle} masquerAnnuelle /></dd></div>
         <div><dt className="text-fg-subtle">Emplacement</dt><dd className="mt-0.5 font-medium text-fg">{planting.garden_name} · {planting.planche_name}</dd></div>
         {planting.season_name && <div><dt className="text-fg-subtle">Saison</dt><dd className="mt-0.5 font-medium text-fg">{planting.season_name}</dd></div>}
-        <div><dt className="text-fg-subtle">Cycle (cellule / champ / récolte)</dt><dd className="num mt-0.5 font-medium text-fg">{achatPlant ? 0 : cycle.jc} / {cycle.jch} / {cycle.jr} j</dd></div>
+        {cycle.cycle === 'annuelle'
+          ? <div><dt className="text-fg-subtle">Cycle (cellule / champ / récolte)</dt><dd className="num mt-0.5 font-medium text-fg">{achatPlant ? 0 : cycle.jc} / {cycle.jch} / {cycle.jr} j</dd></div>
+          : <div><dt className="text-fg-subtle">Floraison (début, délai, récolte)</dt><dd className="num mt-0.5 font-medium text-fg">{cycle.floraison ?? 'à renseigner'}, {cycle.delai ?? 'délai à confirmer'}{cycle.delai != null ? ' j' : ''}, {cycle.jr} j</dd></div>}
         <div><dt className="text-fg-subtle">Plants</dt><dd className="num mt-0.5 font-medium text-fg">{planting.plants_count}</dd></div>
         <div><dt className="text-fg-subtle">Tiges nettes{vivace ? ' par an' : ''}</dt><dd className="num mt-0.5 font-medium text-fg">{planting.tiges_estimees}</dd></div>
       </dl>
@@ -257,7 +273,7 @@ export function EditPlantingForm({ planting, ctx, onClose }: { planting: Plantin
       <AvertissementSaisie projetId={planting.id} conflits={v.conflits} plancheM2={v.plancheM2} surface={surfaceM2} libre={v.libre}
         semisSuggere={v.semisSuggere} dateSemis={dateSemis} onUseDate={setDateSemis} today={today} />
 
-      {v.dates && <DatesPreview title="Dates recalculées" vivace={vivace} floraisonManquante={floraisonARenseigner(planting)} plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={formatJourMois(v.dates.recolte, anneeRef)} fin={formatJourMois(v.dates.fin, anneeRef)} />}
+      {v.dates && <DatesPreview title="Dates recalculées" vivace={vivace} delaiNonConfirme={delaiAConfirmer(planting)} plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={fmtDate(v.dates.recolte, anneeRef)} fin={fmtDate(v.dates.fin, anneeRef)} />}
 
       {vivace && (
         <section aria-label="Arrachage" className="rounded-xl border border-border p-3.5">
@@ -381,7 +397,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
                 <input type="checkbox" checked={coche} onChange={() => basculer(c)} className="h-4 w-4 accent-[rgb(var(--primary))]" aria-label={c.name} />
                 <span className="flex-1 truncate">{c.name}</span>
                 <CycleBadge cycle={c.cycle} masquerAnnuelle />
-                <span className="num hidden text-xs text-fg-subtle sm:inline">{c.jours_cellule || 0} / {c.jours_champ} / {c.jours_recolte} j</span>
+                <span className="num hidden text-xs text-fg-subtle sm:inline">{cycleDe(c) === 'annuelle' ? `${c.jours_cellule || 0} / ${c.jours_champ} / ${c.jours_recolte} j` : `floraison ${c.debut_floraison ?? 'à renseigner'}`}</span>
                 <TypeBadge type={c.type} />
               </label>
             )
@@ -402,6 +418,8 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-fg">{c.name}</span>
                   <CycleBadge cycle={c.cycle} masquerAnnuelle />
+                  {floraisonARenseigner(c) && <Badge tone="amber">Floraison à renseigner</Badge>}
+                  {delaiAConfirmer(c) && <Badge tone="amber">Délai avant 1re floraison à confirmer</Badge>}
                   {c.premiere_implantation && <span className="text-xs text-fg-subtle">implantation dès le {c.premiere_implantation}</span>}
                   {c.pincer && <Badge tone="amber">Pinçage</Badge>}
                   {c.filet && <Badge tone="violet">Filet</Badge>}
@@ -419,7 +437,7 @@ export function AddPlantingForm({ plancheId, ctx, onClose }: { plancheId: string
                   </Field>
                   <div className="pb-3"><CaseAchatPlant checked={l.achatPlant} onChange={b => maj(l.cultureId, { achatPlant: b })} /></div>
                 </div>
-                {v.dates && <DatesPreview compact title="" vivace={vivace} floraisonManquante={floraisonARenseigner(c)} plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={formatJourMois(v.dates.recolte, anneeRef)} fin={formatJourMois(v.dates.fin, anneeRef)} />}
+                {v.dates && <DatesPreview compact title="" vivace={vivace} delaiNonConfirme={delaiAConfirmer(c)} plantation={formatJourMois(v.dates.plantation, anneeRef)} recolte={fmtDate(v.dates.recolte, anneeRef)} fin={fmtDate(v.dates.fin, anneeRef)} />}
                 <AvertissementSaisie projetId={projetId(l.cultureId)} conflits={v.conflits} plancheM2={v.plancheM2} surface={l.surface} libre={v.libre}
                   semisSuggere={v.semisSuggere} dateSemis={l.dateSemis} onUseDate={d => maj(l.cultureId, { dateSemis: d })} today={today} />
               </li>

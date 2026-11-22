@@ -63,26 +63,26 @@ function addDays(date: string, days: number): string {
 const coalesce = (...v: any[]) => v.find(x => x !== null && x !== undefined) ?? null
 const nullif0 = (v: any) => (v === 0 ? null : v)
 
-// make_interval(years => n) : un 29 février devient un 28 février
-function addYears(date: string, years: number): string {
-  if (!years) return date
-  const [y, mo, j] = date.split('-').map(Number)
-  const ny = y + years
-  const last = new Date(Date.UTC(ny, mo, 0)).getUTCDate()
-  return `${String(ny).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(Math.min(j, last)).padStart(2, '0')}`
-}
-/** Migration 013 : années avant la 1re floraison, vivaces seulement. */
-const anneesVivace = (cat: Row) => (cat.cycle === 'vivace' ? Number(cat.annees_avant_recolte || 0) : 0)
-/** Migration 013 : prochaine_date_jjmm(d, floraison_debut) pour une vivace ou bisannuelle. */
-function caleFloraison(cat: Row, d: string): string {
-  if (!cat.floraison_debut || (cat.cycle ?? 'annuelle') === 'annuelle') return d
-  const [j, m] = String(cat.floraison_debut).split('/').map(Number)
+/** prochaine_date_jjmm(d, jj/mm) de la migration 013 (29/02 → 28/02 hors bissextile). */
+function prochaineDateJjmm(d: string, jjmm: string): string {
+  const [j, m] = jjmm.split('/').map(Number)
+  let c = d
   for (const a of [Number(d.slice(0, 4)), Number(d.slice(0, 4)) + 1]) {
     const dernier = new Date(Date.UTC(a, m, 0)).getUTCDate()
-    const c = `${String(a).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(Math.min(j, dernier)).padStart(2, '0')}`
+    c = `${String(a).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(Math.min(j, dernier)).padStart(2, '0')}`
     if (c >= d) return c
   }
-  return d
+  return c
+}
+/**
+ * Première récolte (trigger 013) : annuelle = plantation + jours au champ ;
+ * vivace / bisannuelle = prochaine floraison après plantation + délai
+ * (0 si non confirmé), null sans début de floraison.
+ */
+function premiereRecolteDemo(cat: Row, plantation: string, jChamp: number): string | null {
+  if ((cat.cycle ?? 'annuelle') === 'annuelle') return addDays(plantation, jChamp)
+  if (!cat.debut_floraison) return null
+  return prochaineDateJjmm(addDays(plantation, Number(cat.delai_premiere_floraison_jours ?? 0)), cat.debut_floraison)
 }
 
 // ─── Trigger calc_planting_dates (migrations 002, 013) ───────────
@@ -99,8 +99,8 @@ function calcPlanting(p: Row) {
   const espacement = coalesce(cat.espacement_cm, 20)
 
   p.date_plantation = addDays(p.date_semis, jCellule)
-  p.date_recolte = caleFloraison(cat, addYears(addDays(p.date_plantation, jChamp), anneesVivace(cat)))
-  p.date_fin = addDays(p.date_recolte, jRecolte)
+  p.date_recolte = premiereRecolteDemo(cat, p.date_plantation, jChamp)
+  p.date_fin = p.date_recolte ? addDays(p.date_recolte, jRecolte) : null
 
   let plants = Math.max(1, Math.floor((surface * 10000) / (espacement * espacement)))
   if (plants > surface * 50) plants = Math.round(surface * 25)
@@ -118,11 +118,11 @@ function contraintes013(t: string, r: Row): { message: string; code?: string } |
     const cycle = r.cycle ?? 'annuelle'
     if (!['annuelle', 'bisannuelle', 'vivace'].includes(cycle)) return viole('culture_catalog_cycle_check')
     if (r.premiere_implantation != null && !RE_JJMM_013.test(r.premiere_implantation)) return viole('culture_catalog_premiere_implantation_check')
-    const a = Number(r.annees_avant_recolte ?? 0)
-    if (a < 0 || a > 10 || (a > 0 && cycle !== 'vivace')) return viole('culture_catalog_annees_avant_recolte_check')
-    if (r.floraison_debut != null && (cycle === 'annuelle' || !RE_JJMM_013.test(r.floraison_debut))) return viole('culture_catalog_floraison_debut_check')
+    const delai = r.delai_premiere_floraison_jours
+    if (delai != null && (cycle === 'annuelle' || delai < 0 || delai > 3650)) return viole('culture_catalog_delai_floraison_check')
+    if (r.debut_floraison != null && (cycle === 'annuelle' || !RE_JJMM_013.test(r.debut_floraison))) return viole('culture_catalog_debut_floraison_check')
     const jc = Number(r.jours_cellule ?? 0), jch = Number(r.jours_champ), jr = Number(r.jours_recolte ?? 21)
-    if (jc + jch > 365 || jr > 365 || (cycle === 'annuelle' && jc + jch + jr > 365)) return viole('culture_catalog_cycle_365_check')
+    if (jc > 365 || jr > 365 || (cycle === 'annuelle' && jc + jch + jr > 365)) return viole('culture_catalog_cycle_365_check')
   }
   if (t === 'plantings' && r.arrachee_le != null && r.arrachee_le < r.date_semis) return viole('plantings_arrachee_le_check')
   return null
@@ -142,12 +142,13 @@ function plantingsFull(): Row[] {
     const jch = coalesce(p.jours_champ_override, c.jours_champ)
     const jr = coalesce(p.jours_recolte_override, c.jours_recolte, 21)
     const datePlantation = addDays(p.date_semis, jc)
-    const dateRecolte = caleFloraison(c, addYears(addDays(datePlantation, jch), anneesVivace(c)))
+    const dateRecolte = premiereRecolteDemo(c, datePlantation, jch)
+    const dateFin = dateRecolte ? addDays(dateRecolte, jr) : null
     const cycle = c.cycle ?? 'annuelle'
     out.push({
       id: p.id, planche_id: p.planche_id, culture_id: p.culture_id, season_id: p.season_id,
       surface_m2: p.surface_m2, date_semis: p.date_semis,
-      date_plantation: datePlantation, date_recolte: dateRecolte, date_fin: addDays(dateRecolte, jr),
+      date_plantation: datePlantation, date_recolte: dateRecolte, date_fin: dateFin,
       plants_count: p.plants_count, tiges_estimees: p.tiges_estimees, revenu_estime: p.revenu_estime,
       graines_necessaires: p.graines_necessaires,
       jours_cellule_override: p.jours_cellule_override, jours_champ_override: p.jours_champ_override,
@@ -167,9 +168,9 @@ function plantingsFull(): Row[] {
       farm_id: g.farm_id ?? s.farm_id, season_name: s.name, season_year: s.year,  // migration 006
       // migration 013
       cycle, achat_plant: !!p.achat_plant, arrachee_le: p.arrachee_le ?? null,
-      annees_avant_recolte: anneesVivace(c), premiere_implantation: c.premiere_implantation ?? null,
-      floraison_debut: c.floraison_debut ?? null,
-      fin_occupation: p.arrachee_le ?? (cycle === 'vivace' ? null : addDays(dateRecolte, jr)),
+      premiere_implantation: c.premiere_implantation ?? null,
+      debut_floraison: c.debut_floraison ?? null, delai_premiere_floraison_jours: c.delai_premiere_floraison_jours ?? null,
+      fin_occupation: p.arrachee_le ?? (cycle === 'vivace' ? null : dateFin),
     })
   }
   return out
@@ -195,7 +196,7 @@ function plantingActuals(): Row[] {
 // ─── Valeurs par défaut des tables (001_schema.sql) ──────────────
 const DEFAULTS: Record<string, Row> = {
   seasons: { revenue_goal: 15000, is_active: false, invite_enabled: false },
-  culture_catalog: { jours_cellule: 0, jours_recolte: 21, rendement_plant: 1, prix_tige: 0.5, pincer: false, filet: false, couvre_sol: false, semis_direct: false, espacement_cm: 20, rangs_par_planche: 5, graines_par_plant: 1, notes: null, temp_germination: null, cycle: 'annuelle', premiere_implantation: null, annees_avant_recolte: 0, floraison_debut: null },
+  culture_catalog: { jours_cellule: 0, jours_recolte: 21, rendement_plant: 1, prix_tige: 0.5, pincer: false, filet: false, couvre_sol: false, semis_direct: false, espacement_cm: 20, rangs_par_planche: 5, graines_par_plant: 1, notes: null, temp_germination: null, cycle: 'annuelle', premiere_implantation: null, debut_floraison: null, delai_premiere_floraison_jours: null },
   gardens: { sort_order: 0, description: null },
   planches: { sort_order: 0 },
   plantings: { surface_m2: 1, jours_cellule_override: 0, jours_champ_override: null, jours_recolte_override: null, rendement_override: null, prix_override: null, notes: null, achat_plant: false, arrachee_le: null },

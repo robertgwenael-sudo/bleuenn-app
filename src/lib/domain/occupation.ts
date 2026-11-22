@@ -37,7 +37,7 @@ const EPSILON_M2 = 1e-9
 
 export function periodeOccupation(p: Pick<PlantingOccupation, 'id' | 'date_semis' | 'date_plantation' | 'date_fin' | 'semis_direct' | 'cycle' | 'arrachee_le'>): Intervalle {
   const debut = p.semis_direct ? p.date_semis : p.date_plantation
-  if (!debut || (!p.date_fin && !p.arrachee_le && p.cycle !== 'vivace')) {
+  if (!debut || (!p.date_fin && !p.arrachee_le && (p.cycle ?? 'annuelle') === 'annuelle')) {
     throw new Error(`Plantation ${p.id} : dates incomplètes, occupation non calculable`)
   }
   const fin = finOccupation(p)

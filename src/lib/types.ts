@@ -198,6 +198,8 @@ export function getPlantingStatus(p: PlantingFull, jour: string = aujourdhuiPari
   if (jour < p.date_semis) return 'À semer'
   if (jour < p.date_plantation && p.jours_cellule > 0) return 'En germination'
   if (p.arrachee_le && jour > p.arrachee_le) return 'Terminé'
+  // 013 : vivace ou bisannuelle sans début de floraison, pas de récolte datée
+  if (!p.date_recolte) return 'Planté'
   if (jour < p.date_recolte) return 'Planté'
   // Vivace en place (013) : en récolte chaque année dans sa fenêtre, plantée entre deux
   if (vivaceEnPlace(p, jour)) return enRecolteLe(p, jour) ? 'En récolte' : 'Planté'

@@ -12,24 +12,33 @@
 --    étaient un artifice pour simuler une vivace : on les marque vivaces.
 --
 -- Modèle (sans dupliquer la ligne chaque année) :
---  * `culture_catalog.cycle` ; `jours_champ` d'une vivace = délai entre la
---    plantation et la PREMIÈRE floraison (≤ 365 j) ;
---    `annees_avant_recolte` = années supplémentaires avant cette première
---    floraison (pivoine « 3 ans » dans la charte), 0 par défaut ;
---  * `plantings.date_recolte` / `date_fin` = première fenêtre de récolte,
---    comme avant (rétrocompatible). La fenêtre se répète chaque année à la
---    même date tant que la vivace est en place (calcul côté domaine :
---    `fenetresRecolte`) ;
---  * `floraison_debut` (jj/mm, vivace ou bisannuelle) : jour de l'année où
---    commence la récolte. S'il est renseigné, la première récolte est la
---    première occurrence de ce jour après plantation + jours_champ (+ années) :
---    une achillée plantée en mars fleurit dans SA fenêtre, pas « 335 jours
---    plus tard » en mars. La charte n'a pas cette donnée : vide à la
---    migration, l'écran Catalogue la signale « à renseigner » et, en
---    attendant, la récolte suit la méthode du tableur (jours au champ) ;
---  * jours en cellule / au champ / de récolte alignés sur la charte de
---    Marine quand elle a la valeur ; chaque changement est tracé dans
---    `culture_catalog_corrections_013` (avant → après, sert aussi au down) ;
+--  * `culture_catalog.cycle` ;
+--  * annuelle : inchangée, récolte = plantation + jours_champ ;
+--  * vivace et bisannuelle : la récolte NE SE DÉDUIT PLUS des jours au
+--    champ (335 à 365 j dans la charte : un artifice du tableur, « 365 jours
+--    avant la première floraison : impossible », Marine). Deux données :
+--      - `debut_floraison` (jj/mm) : jour de l'année où la récolte commence ;
+--      - `delai_premiere_floraison_jours` (nullable) : délai minimal entre la
+--        plantation et la première floraison ;
+--    première récolte = première occurrence de `debut_floraison` à partir
+--    de plantation + délai ; durée = jours_recolte ; répétée chaque année
+--    jusqu'à `arrachee_le` (domaine : `fenetresRecolte`) ;
+--  * données manquantes, jamais devinées :
+--      - délai NULL, floraison saisie : délai 0 (prochaine floraison après
+--        la plantation), l'écran affiche « délai avant 1re floraison à
+--        confirmer » ;
+--      - floraison absente : date_recolte et date_fin NULL. La plantation
+--        est « floraison à renseigner », hors prévisionnel de CA et hors
+--        disponibilités (filtrées à la lecture), listée comme manquante ;
+--  * jours_champ des vivaces et bisannuelles : mis à 0 (valeur neutre,
+--    ignorée par les calculs) ; l'ancienne valeur est gardée dans
+--    `culture_catalog_corrections_013` et restaurée par le down. Le délai
+--    reste NULL : aucune valeur n'est recopiée ni inventée ;
+--  * `plantings.date_recolte` / `date_fin` = première fenêtre de récolte
+--    (rétrocompatible pour les annuelles) ;
+--  * jours en cellule et de récolte alignés sur la charte de Marine quand
+--    elle a la valeur (jours au champ aussi, pour les annuelles) ; chaque
+--    changement est tracé dans `culture_catalog_corrections_013` ;
 --  * occupation de la planche : de la plantation à `arrachee_le` (inclus) ;
 --    une vivace sans `arrachee_le` est toujours en place
 --    (`plantings_full.fin_occupation` = null). Une annuelle arrachée avant
@@ -47,8 +56,8 @@
 alter table public.culture_catalog
   add column cycle text not null default 'annuelle',
   add column premiere_implantation text,
-  add column annees_avant_recolte int not null default 0,
-  add column floraison_debut text;
+  add column debut_floraison text,
+  add column delai_premiere_floraison_jours int;
 
 alter table public.culture_catalog
   add constraint culture_catalog_cycle_check
@@ -57,20 +66,21 @@ alter table public.culture_catalog
   add constraint culture_catalog_premiere_implantation_check
     check (premiere_implantation is null or premiere_implantation ~
       '^((0[1-9]|1[0-9]|2[0-9])/(0[1-9]|1[0-2])|30/(0[13-9]|1[0-2])|31/(0[13578]|1[02]))$'),
-  add constraint culture_catalog_annees_avant_recolte_check
-    check (annees_avant_recolte between 0 and 10 and (annees_avant_recolte = 0 or cycle = 'vivace')),
-  add constraint culture_catalog_floraison_debut_check
-    check (floraison_debut is null or (cycle <> 'annuelle' and floraison_debut ~
+  add constraint culture_catalog_delai_floraison_check
+    check (delai_premiere_floraison_jours is null
+      or (cycle <> 'annuelle' and delai_premiere_floraison_jours between 0 and 3650)),
+  add constraint culture_catalog_debut_floraison_check
+    check (debut_floraison is null or (cycle <> 'annuelle' and debut_floraison ~
       '^((0[1-9]|1[0-9]|2[0-9])/(0[1-9]|1[0-2])|30/(0[13-9]|1[0-2])|31/(0[13578]|1[02]))$'));
 
 comment on column public.culture_catalog.cycle is
   'annuelle | bisannuelle | vivace. Une vivace occupe sa planche jusqu''à arrachage et fleurit chaque année.';
 comment on column public.culture_catalog.premiere_implantation is
   '1ère date d''implantation au champ possible, jj/mm (charte de Marine, dernier gel au sol au 21 mai).';
-comment on column public.culture_catalog.floraison_debut is
-  'Vivace ou bisannuelle : début de la récolte chaque année, jj/mm. Null = récolte à plantation + jours_champ (méthode du tableur).';
-comment on column public.culture_catalog.annees_avant_recolte is
-  'Vivace : années supplémentaires avant la première floraison (pivoine). 0 = floraison jours_champ après plantation.';
+comment on column public.culture_catalog.debut_floraison is
+  'Vivace ou bisannuelle : début de la récolte chaque année, jj/mm. Null = floraison à renseigner, pas de dates de récolte.';
+comment on column public.culture_catalog.delai_premiere_floraison_jours is
+  'Vivace ou bisannuelle : délai minimal plantation → 1re floraison. Null = à confirmer (calcul avec 0).';
 
 -- ------------------------------------------------------------
 -- B. Plantations
@@ -124,7 +134,6 @@ declare
   j_cellule int;
   j_champ int;
   j_recolte int;
-  annees int;
   rend numeric;
   prix numeric;
   espacement numeric;
@@ -137,19 +146,20 @@ begin
                     else coalesce(nullif(new.jours_cellule_override, 0), cat.jours_cellule, 0) end;
   j_champ   := coalesce(new.jours_champ_override, cat.jours_champ);
   j_recolte := coalesce(new.jours_recolte_override, cat.jours_recolte, 21);
-  annees    := case when cat.cycle = 'vivace' then coalesce(cat.annees_avant_recolte, 0) else 0 end;
   rend      := coalesce(new.rendement_override, cat.rendement_plant, 1);
   prix      := coalesce(new.prix_override, cat.prix_tige, 0.50);
   espacement := coalesce(cat.espacement_cm, 20);
 
-  -- Première fenêtre de récolte ; pour une vivace elle se répète chaque année.
-  -- Vivace / bisannuelle avec floraison_debut : calée sur sa fenêtre annuelle.
   new.date_plantation := new.date_semis + j_cellule;
-  new.date_recolte    := ((new.date_plantation + j_champ) + make_interval(years => annees))::date;
-  if cat.cycle <> 'annuelle' and cat.floraison_debut is not null then
-    new.date_recolte := public.prochaine_date_jjmm(new.date_recolte, cat.floraison_debut);
+  if coalesce(cat.cycle, 'annuelle') = 'annuelle' then
+    new.date_recolte := new.date_plantation + j_champ;
+  else
+    -- Vivace / bisannuelle : première floraison dans SA fenêtre annuelle ;
+    -- sans début de floraison, pas de date de récolte (jamais devinée).
+    new.date_recolte := public.prochaine_date_jjmm(
+      new.date_plantation + coalesce(cat.delai_premiere_floraison_jours, 0), cat.debut_floraison);
   end if;
-  new.date_fin        := new.date_recolte + j_recolte;
+  new.date_fin := new.date_recolte + j_recolte;   -- null si pas de récolte connue
 
   plants := greatest(1, floor(new.surface_m2 * 10000 / (espacement * espacement)));
   if plants > new.surface_m2 * 50 then plants := (new.surface_m2 * 25)::int; end if;
@@ -172,7 +182,8 @@ create or replace view public.plantings_full with (security_invoker = true) as
 with b as (
   select p.*,
     c.name as c_name, c.type as c_type, c.cycle as c_cycle,
-    c.premiere_implantation as c_premiere_implantation, c.floraison_debut as c_floraison_debut,
+    c.premiere_implantation as c_premiere_implantation, c.debut_floraison as c_debut_floraison,
+    c.delai_premiere_floraison_jours as c_delai,
     c.temp_germination as c_temp_germination, c.pincer as c_pincer, c.filet as c_filet,
     c.couvre_sol as c_couvre_sol, c.semis_direct as c_semis_direct, c.espacement_cm as c_espacement_cm,
     c.rangs_par_planche as c_rangs_par_planche, c.graines_par_plant as c_graines_par_plant,
@@ -180,16 +191,15 @@ with b as (
     case when p.achat_plant then 0
          else coalesce(nullif(p.jours_cellule_override, 0), c.jours_cellule, 0) end as v_cellule,
     coalesce(p.jours_champ_override, c.jours_champ) as v_champ,
-    coalesce(p.jours_recolte_override, c.jours_recolte, 21) as v_recolte,
-    case when c.cycle = 'vivace' then coalesce(c.annees_avant_recolte, 0) else 0 end as v_annees
+    coalesce(p.jours_recolte_override, c.jours_recolte, 21) as v_recolte
   from public.plantings p
   join public.culture_catalog c on c.id = p.culture_id
 ), d as (
   select b.*,
     (b.date_semis + b.v_cellule) as v_plantation,
-    case when b.c_cycle <> 'annuelle' and b.c_floraison_debut is not null
-         then public.prochaine_date_jjmm((((b.date_semis + b.v_cellule) + b.v_champ) + make_interval(years => b.v_annees))::date, b.c_floraison_debut)
-         else (((b.date_semis + b.v_cellule) + b.v_champ) + make_interval(years => b.v_annees))::date end as v_date_recolte
+    case when b.c_cycle = 'annuelle'
+         then (b.date_semis + b.v_cellule) + b.v_champ
+         else public.prochaine_date_jjmm((b.date_semis + b.v_cellule) + coalesce(b.c_delai, 0), b.c_debut_floraison) end as v_date_recolte
   from b
 )
 select d.id, d.planche_id, d.culture_id, d.season_id, d.surface_m2, d.date_semis,
@@ -218,13 +228,14 @@ select d.id, d.planche_id, d.culture_id, d.season_id, d.surface_m2, d.date_semis
   d.c_cycle as cycle,
   d.achat_plant,
   d.arrachee_le,
-  d.v_annees as annees_avant_recolte,
   d.c_premiere_implantation as premiere_implantation,
-  d.c_floraison_debut as floraison_debut,
+  d.c_debut_floraison as debut_floraison,
+  d.c_delai as delai_premiere_floraison_jours,
   -- Dernier jour d'occupation de la planche ; null = vivace toujours en place
   case when d.arrachee_le is not null then d.arrachee_le
+       when d.c_cycle = 'annuelle' then d.v_date_recolte + d.v_recolte
        when d.c_cycle = 'vivace' then null
-       else d.v_date_recolte + d.v_recolte end as fin_occupation
+       else d.v_date_recolte + d.v_recolte end as fin_occupation  -- bisannuelle sans floraison : null, fin inconnue
 from d
 join public.planches pl on pl.id = d.planche_id
 join public.gardens g on g.id = pl.garden_id
@@ -305,8 +316,9 @@ update public.culture_catalog
 --     quand la charte a la valeur. Nom comparé sans casse ni accents, sur
 --     le nom complet ou sur le nom avant la parenthèse. Une clé que la
 --     charte donne deux fois avec des valeurs différentes (Gomphrena,
---     Lavatère, Gypsophile) n'est pas appliquée. Pivoine : « 3 ans » au
---     champ, traité plus bas. Chaque changement est tracé.
+--     Lavatère, Gypsophile) n'est pas appliquée. Jours au champ : annuelles
+--     seulement (artifice du tableur pour les vivaces). Chaque changement
+--     est tracé.
 -- ------------------------------------------------------------
 create table public.culture_catalog_corrections_013 (
   id bigint generated always as identity primary key,
@@ -362,7 +374,9 @@ insert into _cv_charte (cle, jc, jch, jr) values
   ('clarkia', 25, 60, 21), ('soleil du mexique', 21, 60, 21), ('marguerite sauvage', 0, 60, 21);
 
 create temporary table _cv_cible as
-select distinct on (c.id) c.id, c.user_id, c.name, ch.jc, ch.jch, ch.jr,
+select distinct on (c.id) c.id, c.user_id, c.name, ch.jc,
+       -- jours au champ de la charte : seulement pour les annuelles
+       case when c.cycle = 'annuelle' then ch.jch end as jch, ch.jr,
        c.jours_cellule as a_jc, c.jours_champ as a_jch, c.jours_recolte as a_jr
   from public.culture_catalog c
   join _cv_charte ch
@@ -388,16 +402,13 @@ update public.culture_catalog c
      or t.jch is distinct from c.jours_champ and t.jch is not null
      or t.jr is distinct from c.jours_recolte and t.jr is not null);
 
--- Pivoine « 3 ans » : un jours_champ saisi en jours au-delà d'un an devient
--- des années entières + un reste en jours (même date de première floraison,
--- à un jour près les années bissextiles). Aucune valeur inventée.
+-- Vivaces et bisannuelles : les jours au champ du tableur (335 à 365 j,
+-- pivoine « 3 ans ») ne servent plus. Valeur neutre 0, ancienne valeur
+-- tracée ; le délai avant 1re floraison reste NULL (à confirmer).
 insert into public.culture_catalog_corrections_013 (culture_id, user_id, culture_name, champ, avant, apres, source)
-select id, user_id, name, 'jours_champ', jours_champ, jours_champ % 365, 'années avant récolte : ' || least(10, jours_champ / 365)
-  from public.culture_catalog where cycle = 'vivace' and jours_champ > 365;
-update public.culture_catalog
-   set annees_avant_recolte = least(10, jours_champ / 365),
-       jours_champ = jours_champ % 365
- where cycle = 'vivace' and jours_champ > 365;
+select id, user_id, name, 'jours_champ', jours_champ, 0, 'vivace ou bisannuelle : jours au champ du tableur ignorés'
+  from public.culture_catalog where cycle <> 'annuelle' and jours_champ <> 0;
+update public.culture_catalog set jours_champ = 0 where cycle <> 'annuelle' and jours_champ <> 0;
 
 -- ------------------------------------------------------------
 -- G. Données : 1ère date d'implantation possible (charte, colonne Q)
@@ -445,12 +456,12 @@ update public.culture_catalog c
 --    NOT VALID : une ligne ancienne non reconnue par les motifs ne bloque
 --    pas la migration, mais toute modification devra respecter la règle
 --    (l'écran Catalogue affiche la même règle avant d'enregistrer).
---    Délai avant floraison ≤ 365 j pour tous ; cycle complet ≤ 365 j pour
---    une annuelle ; fenêtre de récolte ≤ 365 j.
+--    Cycle complet ≤ 365 j pour une annuelle ; cellule et fenêtre de
+--    récolte ≤ 365 j pour tous (jours au champ ignorés hors annuelles).
 -- ------------------------------------------------------------
 alter table public.culture_catalog
   add constraint culture_catalog_cycle_365_check check (
-    coalesce(jours_cellule, 0) + jours_champ <= 365
+    coalesce(jours_cellule, 0) <= 365
     and coalesce(jours_recolte, 21) <= 365
     and (cycle <> 'annuelle' or coalesce(jours_cellule, 0) + jours_champ + coalesce(jours_recolte, 21) <= 365)
   ) not valid;
@@ -499,7 +510,7 @@ drop function pg_temp.cv_norm(text);
 -- revoke all on public.plantings_full from anon;
 -- grant select on public.plantings_full to authenticated;
 --
--- -- Trigger : corps de 002 (sans option plant ni années de vivace)
+-- -- Trigger : corps de 002 (sans option plant ni floraison)
 -- create or replace function public.calc_planting_dates()
 -- returns trigger language plpgsql set search_path = '' as $$
 -- declare cat record; j_cellule int; j_champ int; j_recolte int;
@@ -541,12 +552,12 @@ drop function pg_temp.cv_norm(text);
 --  where c.id in (select culture_id from origine);
 -- drop table public.culture_catalog_corrections_013;
 -- alter table public.culture_catalog
---   drop constraint culture_catalog_floraison_debut_check,
---   drop constraint culture_catalog_annees_avant_recolte_check,
+--   drop constraint culture_catalog_debut_floraison_check,
+--   drop constraint culture_catalog_delai_floraison_check,
 --   drop constraint culture_catalog_premiere_implantation_check,
 --   drop constraint culture_catalog_cycle_check,
---   drop column floraison_debut,
---   drop column annees_avant_recolte,
+--   drop column debut_floraison,
+--   drop column delai_premiere_floraison_jours,
 --   drop column premiere_implantation,
 --   drop column cycle;
 -- alter table public.plantings

@@ -730,10 +730,10 @@ export interface ChampsCultureCycle {
   cycle?: CycleCulture
   /** 1ère date d'implantation au champ possible, `jj/mm` (charte). */
   premiere_implantation?: string | null
-  /** Vivace : années supplémentaires avant la première floraison (pivoine). */
-  annees_avant_recolte?: number
-  /** Vivace ou bisannuelle : début de la récolte chaque année, `jj/mm` (absent de la charte, à saisir). */
-  floraison_debut?: string | null
+  /** Vivace ou bisannuelle : début de la récolte chaque année, `jj/mm` (absent de la charte, à saisir). Null = pas de dates de récolte. */
+  debut_floraison?: string | null
+  /** Vivace ou bisannuelle : délai minimal plantation → 1re floraison. Null = à confirmer (calcul avec 0). */
+  delai_premiere_floraison_jours?: number | null
 }
 
 /** Colonnes ajoutées à `plantings` et à la vue `plantings_full`. */
@@ -744,10 +744,10 @@ export interface ChampsPlantingCycle {
   arrachee_le?: DateISO | null
   /** Vue seulement : cycle de la culture. */
   cycle?: CycleCulture
-  /** Vue seulement : null = vivace toujours en place. */
+  /** Vue seulement : null = vivace toujours en place (ou bisannuelle sans floraison connue). */
   fin_occupation?: DateISO | null
-  annees_avant_recolte?: number
   premiere_implantation?: string | null
-  floraison_debut?: string | null
+  debut_floraison?: string | null
+  delai_premiere_floraison_jours?: number | null
 }
 // ▲▲▲ fin de la section 013 ▲▲▲

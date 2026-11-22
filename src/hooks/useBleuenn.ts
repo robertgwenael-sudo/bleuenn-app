@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase'
+import { avecDatesDeRecolte, sansDatesDeRecolte } from '@/lib/domain/cultures'
 import type {
   Season, Garden, Planche, CultureCatalog, PlantingFull,
   Harvest, Sale, SeedOrder, Profile, TeamMember, Farm, FarmMember
@@ -55,6 +56,11 @@ export function useBleuenn() {
   const [farm, setFarm] = useState<Farm | null>(null)
   const [farmTeam, setFarmTeam] = useState<FarmMember[]>([])
   const [farmPlantings, setFarmPlantings] = useState<PlantingFull[]>([])
+  // 013 : toutes les plantations de la ferme, y compris les vivaces et
+  // bisannuelles sans début de floraison (pas de dates de récolte). Seuls
+  // Jardins et les formulaires de plantation (occupation) les lisent ;
+  // `plantings` et `farmPlantings` ne gardent que les plantations datées.
+  const [farmPlantingsTout, setFarmPlantingsTout] = useState<PlantingFull[]>([])
   const [today] = useState<string>(aujourdhuiParis)
   const [loading, setLoading] = useState(true)
 
@@ -113,9 +119,12 @@ export function useBleuenn() {
       supabase.from('seed_orders').select('*').eq('season_id', seasonId).order('culture_name'),
     ])
     const seasonPlantings = lire(plRes, 'les plantations de la saison', [] as PlantingFull[])
+    const toutesFerme = farmId ? lire(farmPlRes, 'les plantations de la ferme', [] as PlantingFull[]) : seasonPlantings
     setGardens(lire(garRes, 'les jardins', [] as Garden[]))
-    setPlantings(seasonPlantings)
-    setFarmPlantings(farmId ? lire(farmPlRes, 'les plantations de la ferme', [] as PlantingFull[]) : seasonPlantings)
+    // Hors prévisionnel (CA, disponibilités, semis…) : floraison à renseigner
+    setPlantings(avecDatesDeRecolte(seasonPlantings))
+    setFarmPlantings(avecDatesDeRecolte(toutesFerme))
+    setFarmPlantingsTout(toutesFerme)
     setHarvests(lire(harRes, 'les récoltes', [] as Harvest[]))
     setSales(lire(salRes, 'les ventes', [] as Sale[]))
     setSeedOrders(lire(soRes, 'les commandes de graines', [] as SeedOrder[]))
@@ -181,7 +190,7 @@ export function useBleuenn() {
         loadFarm(active.farm_id),
       ])
     } else {
-      setFarm(null); setFarmTeam([]); setFarmPlantings([])
+      setFarm(null); setFarmTeam([]); setFarmPlantings([]); setFarmPlantingsTout([])
     }
     setLoading(false)
   }, [user])
@@ -527,6 +536,8 @@ export function useBleuenn() {
     teamMembers, isOwner,
     // Niveau ferme (migration 006)
     farm, farmTeam, farmPlantings, isFarmOwner, duplicatePlan, today,
+    // 013 : occupation complète et plantations « floraison à renseigner »
+    farmPlantingsTout, plantingsFloraisonManquante: sansDatesDeRecolte(farmPlantingsTout),
     enableInviteLink, disableInviteLink, regenerateInviteToken,
     joinByToken, inviteByEmail, getPendingInvites, cancelInvite, removeMember,
     reload: loadAll,

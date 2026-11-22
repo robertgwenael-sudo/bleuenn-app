@@ -44,6 +44,13 @@ describe('vivaces, anémones et plant acheté de la démo', () => {
     expect(r('Ancolie').date_recolte).toBe('2026-05-15')
   })
 
+  it('une vivace sans début de floraison : aucune date de récolte, signalée', () => {
+    const r = pf().find(p => p.culture_name === 'Rudbeckia')!
+    expect(r.cycle).toBe('vivace')
+    expect(r.date_recolte).toBeNull()
+    expect(r.date_fin).toBeNull()
+  })
+
   it('un plant acheté : planté à la date saisie, aucune graine', () => {
     const achats = pf().filter(p => p.achat_plant)
     expect(achats).toHaveLength(1)

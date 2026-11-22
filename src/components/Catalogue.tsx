@@ -9,7 +9,7 @@ import {
 } from '@/components/ui'
 import { useIntent } from '@/components/shell/ui-context'
 import { photos } from '@/lib/images'
-import { CYCLES_CULTURE, LIBELLE_CYCLE, cycleDe, erreursFicheCycle, eurosEnCentimes, floraisonARenseigner, formatEuros, type CycleCulture } from '@/lib/domain'
+import { CYCLES_CULTURE, LIBELLE_CYCLE, cycleDe, delaiAConfirmer, erreursFicheCycle, eurosEnCentimes, floraisonARenseigner, formatEuros, type CycleCulture } from '@/lib/domain'
 import { CycleBadge } from '@/components/plantings/Cycle'
 
 /** Prix par tige affiché sans arrondi flottant ; « non renseigné » si illisible. */
@@ -17,16 +17,19 @@ function prixTige(p: unknown): string {
   try { return formatEuros(eurosEnCentimes(p as number)) } catch { return 'prix non renseigné' }
 }
 
-/** Durée affichée : cycle complet pour une annuelle, délai avant floraison sinon. */
+/** Durée affichée : cycle complet pour une annuelle, floraison sinon (jours au champ ignorés). */
 function dureeCycle(c: CultureCatalog): string {
-  const avant = (c.jours_cellule || 0) + c.jours_champ
-  const annees = c.annees_avant_recolte || 0
-  const fl = c.floraison_debut ? `, floraison dès le ${c.floraison_debut}` : ''
-  switch (cycleDe(c)) {
-    case 'vivace': return `fleurit après ${annees ? `${annees} an${annees > 1 ? 's' : ''} + ` : ''}${avant} j${fl}, chaque année`
-    case 'bisannuelle': return `fleurit après ${avant} j${fl}`
-    default: return `${avant + c.jours_recolte} j`
-  }
+  if (cycleDe(c) === 'annuelle') return `${(c.jours_cellule || 0) + c.jours_champ + c.jours_recolte} j`
+  if (!c.debut_floraison) return cycleDe(c) === 'vivace' ? 'chaque année' : 'une fois'
+  const delai = c.delai_premiere_floraison_jours != null ? `, au moins ${c.delai_premiere_floraison_jours} j après plantation` : ''
+  return `floraison dès le ${c.debut_floraison}${delai}${cycleDe(c) === 'vivace' ? ', chaque année' : ''}`
+}
+
+/** Données de floraison manquantes, jamais devinées. */
+function BadgesFloraison({ c }: { c: CultureCatalog }) {
+  if (floraisonARenseigner(c)) return <span className="block font-medium text-warning" title="Sans début de floraison, les plantations n’ont pas de dates de récolte : hors prévisionnel de CA et hors disponibilités">floraison à renseigner</span>
+  if (delaiAConfirmer(c)) return <span className="block font-medium text-warning" title="Calculé avec 0 jour : prochaine floraison après la plantation">délai avant 1re floraison à confirmer</span>
+  return null
 }
 
 type SortKey = 'name' | 'type' | 'cycle' | 'premiere_implantation' | 'jours_cellule' | 'jours_champ' | 'jours_recolte' | 'rendement_plant' | 'prix_tige' | 'espacement_cm'
@@ -52,18 +55,22 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
   const [rangs, setRangs] = useState(culture?.rangs_par_planche ?? 5)
   const [graines, setGraines] = useState(culture?.graines_par_plant ?? 1)
   const [notes, setNotes] = useState(culture?.notes || '')
-  // 013 : cycle, 1ère implantation possible (jj/mm), années avant 1re récolte (vivace)
+  // 013 : cycle, 1ère implantation possible (jj/mm) ; vivace et bisannuelle :
+  // début de floraison (jj/mm) et délai avant 1re floraison à la place des jours au champ
   const [cycle, setCycle] = useState<CycleCulture>(cycleDe(culture ?? {}))
   const [implantation, setImplantation] = useState(culture?.premiere_implantation ?? '')
-  const [annees, setAnnees] = useState(culture?.annees_avant_recolte ?? 0)
-  const [floraison, setFloraison] = useState(culture?.floraison_debut ?? '')
+  const [floraison, setFloraison] = useState(culture?.debut_floraison ?? '')
+  const [delai, setDelai] = useState(culture?.delai_premiere_floraison_jours == null ? '' : String(culture.delai_premiere_floraison_jours))
+  const annuelle = cycle === 'annuelle'
+  const delaiNombre = delai.trim() === '' ? null : Number(delai.trim())
   const [loading, setLoading] = useState(false)
   const [tried, setTried] = useState(false)
 
   const erreurs = erreursFicheCycle({
-    jours_cellule: joursCellule, jours_champ: joursChamp, jours_recolte: joursRecolte,
-    cycle, premiere_implantation: implantation.trim() || null, annees_avant_recolte: cycle === 'vivace' ? annees : 0,
-    floraison_debut: cycle !== 'annuelle' ? floraison.trim() || null : null,
+    jours_cellule: joursCellule, jours_champ: annuelle ? joursChamp : 0, jours_recolte: joursRecolte,
+    cycle, premiere_implantation: implantation.trim() || null,
+    debut_floraison: annuelle ? null : floraison.trim() || null,
+    delai_premiere_floraison_jours: annuelle ? null : delaiNombre,
   })
 
   const submit = async (e?: React.FormEvent) => {
@@ -75,10 +82,11 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
       name, type,
       cycle,
       premiere_implantation: implantation.trim() || null,
-      annees_avant_recolte: cycle === 'vivace' ? annees : 0,
-      floraison_debut: cycle !== 'annuelle' ? floraison.trim() || null : null,
+      debut_floraison: annuelle ? null : floraison.trim() || null,
+      delai_premiere_floraison_jours: annuelle ? null : delaiNombre,
       jours_cellule: joursCellule,
-      jours_champ: joursChamp,
+      // Vivace / bisannuelle : jours au champ ignorés, valeur neutre
+      jours_champ: annuelle ? joursChamp : 0,
       jours_recolte: joursRecolte,
       rendement_plant: rendement,
       prix_tige: prix,
@@ -128,9 +136,11 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
         {cycle === 'annuelle'
           ? <p className="text-xs text-fg-muted">Cycle total : <strong className="num text-fg">{cycleTotal} jours</strong></p>
           : <p className="text-xs text-fg-muted">
-              {cycle === 'vivace' ? 'Vivace' : 'Bisannuelle'} : première floraison <strong className="num text-fg">{annees > 0 && cycle === 'vivace' ? `${annees} an${annees > 1 ? 's' : ''} et ` : ''}{joursCellule + joursChamp} jours</strong> après le semis
-              {cycle === 'vivace' ? ', puis chaque année. Occupe sa planche jusqu’à son arrachage.' : ', une seule fois. Libère la planche après la récolte.'}
+              {cycle === 'vivace' ? 'Vivace' : 'Bisannuelle'} : récolte à partir du <strong className="num text-fg">{floraison.trim() || 'début de floraison à renseigner'}</strong>
+              {delaiNombre != null ? `, au moins ${delaiNombre} jours après la plantation` : floraison.trim() ? ' suivant la plantation (délai avant 1re floraison à confirmer)' : ''}
+              {cycle === 'vivace' ? ', puis chaque année. Occupe sa planche jusqu’à son arrachage.' : ', une seule fois.'}
             </p>}
+        {annuelle && <>
         <div className="mt-2 flex h-2.5 gap-[2px] overflow-hidden rounded-full" aria-hidden>
           {cycleTotal > 0 && <>
             <div className="bg-phase-cellule" style={{ width: `${joursCellule / cycleTotal * 100}%` }} />
@@ -139,6 +149,7 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
           </>}
         </div>
         <p className="num mt-1.5 text-xs text-fg-subtle">{joursCellule} j cellule + {joursChamp} j champ + {joursRecolte} j récolte</p>
+        </>}
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -160,22 +171,21 @@ function CultureForm({ culture, ctx, onClose }: { culture: CultureCatalog | null
           options={CYCLES_CULTURE.map(c => ({ value: c, label: LIBELLE_CYCLE[c] }))} />
         <div className="grid grid-cols-3 gap-3">
           <Field label="Jours en cellule">{num(joursCellule, setJoursCellule, { min: 0 })}</Field>
-          <Field label={cycle === 'annuelle' ? 'Jours au champ' : 'Jours au champ avant floraison'}>{num(joursChamp, setJoursChamp, { min: 0 })}</Field>
-          <Field label={cycle === 'vivace' ? 'Jours de récolte par an' : 'Jours de récolte'}>{num(joursRecolte, setJoursRecolte, { min: 1 })}</Field>
-          <Field label="1ère implantation possible" className="col-span-3 sm:col-span-1" hint="jj/mm, par exemple 21/05">
-            <Input value={implantation} onChange={e => setImplantation(e.target.value)} placeholder="21/05" inputMode="numeric" maxLength={5} />
-          </Field>
-          {cycle !== 'annuelle' && (
-            <Field label="Début de floraison" className="col-span-3 sm:col-span-1"
-              hint={floraison.trim() ? 'jj/mm, chaque année' : 'jj/mm : à renseigner, sinon la récolte suit les jours au champ'}>
+          {annuelle && <Field label="Jours au champ">{num(joursChamp, setJoursChamp, { min: 0 })}</Field>}
+          {!annuelle && (
+            <Field label="Début de floraison" hint={floraison.trim() ? 'jj/mm, chaque année' : 'jj/mm : sans lui, pas de dates de récolte'}>
               <Input value={floraison} onChange={e => setFloraison(e.target.value)} placeholder="15/06" inputMode="numeric" maxLength={5} />
             </Field>
           )}
-          {cycle === 'vivace' && (
-            <Field label="Années avant la 1re récolte" className="col-span-3 sm:col-span-1" hint="En plus des jours au champ (pivoine : 3 ans).">
-              {num(annees, setAnnees, { min: 0, max: 10, step: 1 })}
+          <Field label={cycle === 'vivace' ? 'Jours de récolte par an' : 'Jours de récolte'}>{num(joursRecolte, setJoursRecolte, { min: 1 })}</Field>
+          {!annuelle && (
+            <Field label="Délai avant 1re floraison (jours)" className="col-span-3 sm:col-span-1" hint={delai.trim() ? 'Après la plantation' : 'À confirmer : vide = 0 jour'}>
+              <Input type="number" inputMode="numeric" min={0} max={3650} step={1} value={delai} onChange={e => setDelai(e.target.value)} placeholder="à confirmer" />
             </Field>
           )}
+          <Field label="1ère implantation possible" className="col-span-3 sm:col-span-1" hint="jj/mm, par exemple 21/05">
+            <Input value={implantation} onChange={e => setImplantation(e.target.value)} placeholder="21/05" inputMode="numeric" maxLength={5} />
+          </Field>
         </div>
         {tried && erreurs.length > 0 && (
           <ul role="alert" className="mt-2 space-y-0.5 text-xs font-medium text-danger">
@@ -322,8 +332,9 @@ export default function Catalogue({ ctx }: { ctx: any }) {
                       {c.name}{!c.user_id && <Star className="h-3 w-3 shrink-0 fill-current text-warning" aria-label="Culture système" />}
                     </p>
                     <p className="num truncate text-xs text-fg-muted">
-                      {c.jours_cellule || 0} / {c.jours_champ} / {c.jours_recolte} j · {dureeCycle(c)}{c.premiere_implantation ? ` · dès le ${c.premiere_implantation}` : ''} · {prixTige(c.prix_tige)}
+                      {cycleDe(c) === 'annuelle' ? `${c.jours_cellule || 0} / ${c.jours_champ} / ${c.jours_recolte} j` : `${c.jours_cellule || 0} j cellule, ${c.jours_recolte} j récolte`} · {dureeCycle(c)}{c.premiere_implantation ? ` · dès le ${c.premiere_implantation}` : ''} · {prixTige(c.prix_tige)}
                     </p>
+                    <span className="text-xs"><BadgesFloraison c={c} /></span>
                   </div>
                   <CycleBadge cycle={c.cycle} masquerAnnuelle />
                   <TypeBadge type={c.type} />
@@ -366,11 +377,11 @@ export default function Catalogue({ ctx }: { ctx: any }) {
                     <td className="text-center"><TypeBadge type={c.type} /></td>
                     <td className="text-center"><CycleBadge cycle={c.cycle} /></td>
                     <td className="num text-center">{c.jours_cellule || 0}</td>
-                    <td className="num text-center">{c.jours_champ}</td>
+                    <td className="num text-center">{cycleDe(c) === 'annuelle' ? c.jours_champ : <span className="text-xs text-fg-subtle" title="Vivace ou bisannuelle : la récolte suit le début de floraison">sans objet</span>}</td>
                     <td className="num text-center">{c.jours_recolte}</td>
                     <td className="num text-center text-xs font-semibold">
                       {dureeCycle(c)}
-                      {floraisonARenseigner(c) && <span className="block font-medium text-warning" title="Sans début de floraison, la récolte se calcule avec les jours au champ (méthode du tableur)">floraison à renseigner</span>}
+                      <BadgesFloraison c={c} />
                     </td>
                     <td className="num text-center">{c.premiere_implantation || <span className="text-fg-subtle" title="Non renseignée dans la charte">non renseignée</span>}</td>
                     <td className="num text-center">{c.rendement_plant}</td>

@@ -6,7 +6,12 @@
 // fleurit chaque année dans la même fenêtre : on ne duplique pas la
 // plantation, on répète sa fenêtre de récolte.
 //
-//  * `date_recolte` / `date_fin` : PREMIÈRE fenêtre de récolte (comme avant) ;
+//  * `date_recolte` / `date_fin` : PREMIÈRE fenêtre de récolte. Annuelle :
+//    plantation + jours au champ. Vivace et bisannuelle : première
+//    occurrence du début de floraison (jj/mm) à partir de plantation +
+//    délai avant 1re floraison ; les jours au champ du tableur (335 à
+//    365 j) sont ignorés. Sans début de floraison : pas de dates de
+//    récolte (null), jamais devinées ;
 //  * fenêtre de l'année n : même jour, n années plus tard, même durée ;
 //  * occupation : de la plantation à `arrachee_le` inclus ; sans
 //    `arrachee_le`, une vivace est en place sans date de fin connue.
@@ -42,7 +47,8 @@ export function estSansFin(d: DateISO): boolean {
 
 type PlantingCycle = {
   id: string
-  date_fin: DateISO
+  /** Null pour une vivace ou bisannuelle sans début de floraison. */
+  date_fin: DateISO | null
   cycle?: CycleCulture | null
   arrachee_le?: DateISO | null
 }
@@ -61,6 +67,8 @@ export function vivaceEnPlace(p: PlantingCycle, jour?: DateISO): boolean {
 export function finOccupation(p: PlantingCycle): DateISO {
   if (p.arrachee_le) return p.arrachee_le
   if (cycleDe(p) === 'vivace') return EN_PLACE_SANS_FIN
+  // Bisannuelle sans floraison connue : en place, fin inconnue
+  if (!p.date_fin && cycleDe(p) === 'bisannuelle') return EN_PLACE_SANS_FIN
   if (!p.date_fin) throw new Error(`Plantation ${p.id} : date de fin manquante, occupation non calculable`)
   return p.date_fin
 }
@@ -71,9 +79,11 @@ export function finOccupation(p: PlantingCycle): DateISO {
  * tant qu'elle est en place. Une fenêtre est coupée à l'arrachage.
  */
 export function fenetresRecolte(
-  p: PlantingCycle & { date_recolte: DateISO },
+  p: PlantingCycle & { date_recolte: DateISO | null },
   periode: Intervalle,
 ): Intervalle[] {
+  // Vivace ou bisannuelle sans début de floraison : aucune récolte datée
+  if ((!p.date_recolte || !p.date_fin) && cycleDe(p) !== 'annuelle') return []
   if (!p.date_recolte || !p.date_fin) throw new Error(`Plantation ${p.id} : dates de récolte manquantes`)
   const duree = ecartJours(p.date_recolte, p.date_fin)
   if (duree < 0) throw new Error(`Plantation ${p.id} : fin de récolte avant le début`)
@@ -90,7 +100,7 @@ export function fenetresRecolte(
 }
 
 /** La plantation est-elle en récolte ce jour-là (vivaces : chaque année) ? */
-export function enRecolteLe(p: PlantingCycle & { date_recolte: DateISO }, jour: DateISO): boolean {
+export function enRecolteLe(p: PlantingCycle & { date_recolte: DateISO | null }, jour: DateISO): boolean {
   return fenetresRecolte(p, { debut: jour, fin: jour }).length > 0
 }
 
@@ -158,18 +168,34 @@ export function dateSuggeree(
  * `floraisonARenseigner` le signale à l'écran.
  */
 export function premiereRecolte(
-  c: { jours_champ: number; annees_avant_recolte?: number | null; cycle?: CycleCulture | null; floraison_debut?: string | null },
+  c: { jours_champ: number; cycle?: CycleCulture | null; debut_floraison?: string | null; delai_premiere_floraison_jours?: number | null },
   plantation: DateISO,
-): DateISO {
-  const cycle = cycleDe(c)
-  const base = ajouterAnnees(ajouterJours(plantation, c.jours_champ), cycle === 'vivace' ? c.annees_avant_recolte || 0 : 0)
-  if (cycle !== 'annuelle' && lireJourMois(c.floraison_debut)) return prochaineOccurrence(c.floraison_debut!, base)
-  return base
+): DateISO | null {
+  if (cycleDe(c) === 'annuelle') return ajouterJours(plantation, c.jours_champ)
+  if (!lireJourMois(c.debut_floraison)) return null
+  return prochaineOccurrence(c.debut_floraison!, ajouterJours(plantation, c.delai_premiere_floraison_jours ?? 0))
 }
 
-/** Vivace ou bisannuelle sans période de floraison : dates de récolte approximatives. */
-export function floraisonARenseigner(c: { cycle?: CycleCulture | null; floraison_debut?: string | null }): boolean {
-  return cycleDe(c) !== 'annuelle' && !lireJourMois(c.floraison_debut)
+/** Vivace ou bisannuelle sans début de floraison : pas de dates de récolte. */
+export function floraisonARenseigner(c: { cycle?: CycleCulture | null; debut_floraison?: string | null }): boolean {
+  return cycleDe(c) !== 'annuelle' && !lireJourMois(c.debut_floraison)
+}
+
+/** Floraison connue mais délai avant la 1re floraison non confirmé (calcul avec 0). */
+export function delaiAConfirmer(c: { cycle?: CycleCulture | null; debut_floraison?: string | null; delai_premiere_floraison_jours?: number | null }): boolean {
+  return cycleDe(c) !== 'annuelle' && !!lireJourMois(c.debut_floraison) && c.delai_premiere_floraison_jours == null
+}
+
+/**
+ * Plantations dont les dates de récolte sont connues : les seules qui
+ * entrent dans le prévisionnel (CA, disponibilités, tâches, exports).
+ * Les autres sont « floraison à renseigner », listées à part.
+ */
+export function avecDatesDeRecolte<T extends { date_recolte?: DateISO | null; date_fin?: DateISO | null }>(ps: T[]): T[] {
+  return ps.filter(p => !!p.date_recolte && !!p.date_fin)
+}
+export function sansDatesDeRecolte<T extends { date_recolte?: DateISO | null; date_fin?: DateISO | null }>(ps: T[]): T[] {
+  return ps.filter(p => !p.date_recolte || !p.date_fin)
 }
 
 // ------------------------------------------------------------
@@ -195,24 +221,22 @@ export function erreursFicheCycle(f: FicheCycle): string[] {
   }
   if (out.length) return out
   const cycle = cycleDe(f)
-  if (f.jours_cellule + f.jours_champ > 365) {
-    out.push(cycle === 'vivace'
-      ? 'Jours en cellule + jours au champ dépassent 365 : pour une floraison au-delà d’un an, indiquez les années avant la première récolte.'
-      : 'Jours en cellule + jours au champ dépassent 365 j.')
-  }
+  if (f.jours_cellule > 365) out.push('Les jours en cellule dépassent 365 j.')
   if (f.jours_recolte > 365) out.push('La fenêtre de récolte dépasse 365 j.')
   if (cycle === 'annuelle' && f.jours_cellule + f.jours_champ + f.jours_recolte > 365) {
     out.push(`Cycle de ${f.jours_cellule + f.jours_champ + f.jours_recolte} j pour une annuelle (365 au plus) : s’il s’agit d’une vivace ou d’une bisannuelle, changez le cycle.`)
   }
-  const annees = f.annees_avant_recolte ?? 0
-  if (!Number.isInteger(annees) || annees < 0 || annees > 10) out.push('Années avant la première récolte : entre 0 et 10.')
-  else if (annees > 0 && cycle !== 'vivace') out.push('Les années avant la première récolte ne concernent que les vivaces.')
+  const delai = f.delai_premiere_floraison_jours
+  if (delai != null) {
+    if (cycle === 'annuelle') out.push('Le délai avant la 1re floraison ne concerne que les vivaces et les bisannuelles.')
+    else if (!Number.isInteger(delai) || delai < 0 || delai > 3650) out.push('Délai avant la 1re floraison : nombre entier de jours, entre 0 et 3650.')
+  }
   if (f.premiere_implantation && !lireJourMois(f.premiere_implantation)) {
     out.push('1ère implantation possible : format jj/mm attendu (par exemple 21/05).')
   }
-  if (f.floraison_debut) {
+  if (f.debut_floraison) {
     if (cycle === 'annuelle') out.push('Le début de floraison annuel ne concerne que les vivaces et les bisannuelles.')
-    else if (!lireJourMois(f.floraison_debut)) out.push('Début de floraison : format jj/mm attendu (par exemple 15/06).')
+    else if (!lireJourMois(f.debut_floraison)) out.push('Début de floraison : format jj/mm attendu (par exemple 15/06).')
   }
   return out
 }
