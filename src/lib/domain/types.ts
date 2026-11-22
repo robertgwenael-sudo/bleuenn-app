@@ -606,3 +606,113 @@ export interface CostAchat extends Cost {
   purchase_order_id?: string | null
   purchase_order_line_id?: string | null
 }
+
+// ------------------------------------------------------------
+// Gestion : justificatifs, comptes, relevés, rapprochement (012)
+// ------------------------------------------------------------
+export interface Receipt {
+  id: string
+  farm_id: string
+  /** Valeurs confirmées par l'utilisatrice (jamais l'OCR seul). */
+  date_piece: DateISO | null
+  montant: EurosNumeric | null
+  fournisseur: string | null
+  notes: string | null
+  ocr_texte: string | null
+  cost_id: string | null
+  payment_id: string | null
+  sans_objet_le: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export const RECEIPT_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const
+export type ReceiptMime = (typeof RECEIPT_MIMES)[number]
+
+export interface ReceiptPage {
+  id: string
+  receipt_id: string
+  farm_id: string
+  page: number
+  /** `<farm_id>/<receipt_id>/<fichier>` dans le bucket privé `justificatifs`. */
+  path: string
+  mime: ReceiptMime
+  taille: number | null
+  nom_origine: string | null
+  width: number | null
+  height: number | null
+  created_by: string | null
+  created_at: string
+}
+
+export type BankAccountKind = 'banque' | 'caisse'
+
+export interface BankAccount {
+  id: string
+  farm_id: string
+  name: string
+  kind: BankAccountKind
+  /** Solde au début de `date_solde_initial` ; null = non calculable. */
+  solde_initial: EurosNumeric | null
+  date_solde_initial: DateISO | null
+  csv_mapping: unknown | null
+  archived_at: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface BankImport {
+  id: string
+  farm_id: string
+  account_id: string
+  fichier: string
+  nb_lignes: number
+  nb_nouvelles: number
+  nb_doublons: number
+  date_min: DateISO | null
+  date_max: DateISO | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface BankTransaction {
+  id: string
+  farm_id: string
+  account_id: string
+  import_id: string | null
+  date: DateISO
+  label: string
+  /** < 0 débit, > 0 crédit. */
+  amount: EurosNumeric
+  empreinte: string
+  created_by: string | null
+  created_at: string
+}
+
+export type BankMatchKind = 'depense' | 'paiement' | 'vente' | 'hors_facture'
+
+/** Contrainte `bank_matches.categorie` (012), opérations hors facture. */
+export const HORS_FACTURE_CATEGORIES = [
+  'vente_hors_facture', 'subvention_aide', 'remboursement', 'apport_personnel',
+  'prelevement_personnel', 'virement_interne', 'emprunt', 'autre',
+] as const
+export type HorsFactureCategorie = (typeof HORS_FACTURE_CATEGORIES)[number]
+
+export interface BankMatch {
+  id: string
+  farm_id: string
+  transaction_id: string
+  kind: BankMatchKind
+  cost_id: string | null
+  payment_id: string | null
+  sale_id: string | null
+  categorie: HorsFactureCategorie | null
+  libelle: string | null
+  /** Part du mouvement couverte, même signe que le mouvement. */
+  amount: EurosNumeric
+  annule_le: string | null
+  annule_par: string | null
+  created_by: string | null
+  created_at: string
+}

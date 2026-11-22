@@ -23,7 +23,7 @@ fictives en mémoire (n'importe quel email / mot de passe).
 
 ## Base de données
 
-Les migrations `supabase/migrations/001` à `008` sont appliquées en production.
+Les migrations `supabase/migrations/001` à `012` sont appliquées en production.
 Toute nouvelle migration se teste d'abord dans une transaction annulée (voir
 `CLAUDE.md`), puis s'applique.
 
@@ -35,6 +35,10 @@ Toute nouvelle migration se teste d'abord dans une transaction annulée (voir
 | 006 | la ferme devient permanente (jardins, équipe), duplication de plan |
 | 007 | écritures commerciales atomiques (vente, commande, livraison) |
 | 008 | dépenses, temps passé, taux horaire de la ferme |
+| 009 | journal de culture, photos (bucket privé), registre des traitements |
+| 010 | factures, avoirs, paiements (numérotation continue, documents figés) |
+| 011 | fournisseurs, bons de commande, réception vers les dépenses |
+| 012 | justificatifs (bucket privé), comptes, relevés CSV, rapprochement |
 
 ## Réglages Supabase à faire dans le tableau de bord
 

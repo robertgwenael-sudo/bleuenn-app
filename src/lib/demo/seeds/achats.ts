@@ -131,7 +131,7 @@ export function seed_achats(db: Db): void {
       })
     }
     db.costs.push({
-      id: `64000000-0000-4000-8000-${bon.id.slice(-12)}`, farm_id: FARM, season_id: bon.season_id, date: bon.received_date,
+      id: `64100000-0000-4000-8000-${bon.id.slice(-12)}`, farm_id: FARM, season_id: bon.season_id, date: bon.received_date,
       category: 'transport', amount: bon.shipping_amount, culture_id: null, planche_id: null, supplier: f.name,
       notes: `${bon.number} · frais de port`, purchase_order_id: bon.id, purchase_order_line_id: null,
       created_by: DEMO_USER_ID, created_at: `${bon.received_date}T12:00:00Z`,

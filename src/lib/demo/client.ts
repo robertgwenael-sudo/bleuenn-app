@@ -6,6 +6,7 @@
 //   from(t).select/insert/update/delete + eq/neq/in/or/is/gte/lte/order/limit/range/single/maybeSingle
 //   rpc('season_team' | 'join_season_by_token' | 'invite_by_email' | 'farm_team' | 'duplicate_season_plan')
 //   storage.from('journal').upload / createSignedUrl / remove (images en blob: URL, migration 009)
+//   storage.from('justificatifs') : idem (migration 012)
 // ainsi que les triggers (calc_planting_dates, propagate_catalog_changes,
 // add_season_owner, colonne générée sales.total) et la vue plantings_full
 // (migration 002), avec les mêmes formules.
@@ -18,6 +19,10 @@ import { OBJETS_JOURNAL_DEMO } from './seeds/journal'
 import { emettreAvoirDemo, emettreFactureDemo, enregistrerPaiementDemo, invoicesStatusDemo, refusFacturesDemo } from './seeds/factures'
 import { rpcAchatsDemo, refusSuppressionAchats } from './seeds/achats'
 import { aujourdhuiParisISO } from '../types'
+import {
+  DEFAULTS_GESTION, OBJETS_JUSTIFICATIFS_DEMO, TABLES_GESTION, filtreFermeGestion, gestionApresSuppression, gestionAvantEcriture,
+  gestionAvantSuppression, rpcGestionDemo,
+} from './seeds/gestion'
 
 type Row = Record<string, any>
 type Result = { data: any; error: { message: string; code?: string } | null; count?: number | null; status?: number }
@@ -170,6 +175,8 @@ const DEFAULTS: Record<string, Row> = {
   // Migration 011 (achats)
   suppliers: { kind: 'semencier', contact_name: null, email: null, phone: null, website: null, address: null, customer_number: null,
     min_order_amount: null, free_shipping_threshold: null, lead_time_days: null, organic_certified: false, notes: null, archived_at: null },
+  // Migration 012 (gestion)
+  ...DEFAULTS_GESTION,
 }
 
 // Migration 009 : triggers journal_entries_set_farm, journal_photos_set_farm,
@@ -250,6 +257,7 @@ function tableRows(table: string): Row[] {
   if (table === 'planting_actuals') return plantingActuals()
   if (table === 'invoices_status') return invoicesStatusDemo(d)  // migration 010
   if (!d[table]) throw new Error(`Table inconnue en mode démo : ${table}`)
+  if (TABLES_GESTION.has(table)) return filtreFermeGestion(d, table, currentUser()?.id)  // policies 012
   if (TABLES_JOURNAL.has(table)) {
     // Policy 009 : farm_id in my_farm_ids()
     const me = currentUser()?.id
@@ -459,6 +467,8 @@ class DemoQuery implements PromiseLike<Result> {
           if (errCout) return { data: null, error: errCout }
           const errJournal = journalSetFarm(t, row, null)
           if (errJournal) return { data: null, error: errJournal }
+          const errGestion = gestionAvantEcriture(d, t, row, null, currentUser()?.id ?? null)  // triggers 012
+          if (errGestion) return { data: null, error: errGestion }
           if (t === 'seasons') row.invite_token ??= uuid()
           if (t === 'team_members') row.joined_at ??= new Date().toISOString()
           if (t === 'suppliers') {
@@ -508,6 +518,13 @@ class DemoQuery implements PromiseLike<Result> {
             Object.assign(r, copie)
             continue
           }
+          if (TABLES_GESTION.has(t)) {
+            const copie = { ...r, ...this.payload }
+            const errGestion = gestionAvantEcriture(d, t, copie, r, currentUser()?.id ?? null)  // triggers 012
+            if (errGestion) return { data: null, error: errGestion }
+            Object.assign(r, copie)
+            continue
+          }
           Object.assign(r, this.payload)
           coutsSetFarm(t, r)
           if (t === 'plantings') calcPlanting(r)
@@ -523,6 +540,8 @@ class DemoQuery implements PromiseLike<Result> {
         const rows = this.match(tableRows(t))
         const refus010 = refusFacturesDemo(d, t, 'delete', rows)
         if (refus010) return { data: null, error: refus010 }
+        const refus012 = gestionAvantSuppression(d, t, rows)
+        if (refus012) return { data: null, error: refus012 }
         if (t === 'culture_catalog' && rows.some(r => [...d.costs, ...d.time_entries].some((x: Row) => x.culture_id === r.id))) {
           return { data: null, error: { code: '23503', message: 'Cette culture porte des dépenses ou du temps saisi (on delete restrict).' } }
         }
@@ -535,6 +554,7 @@ class DemoQuery implements PromiseLike<Result> {
         }
         d[t] = d[t].filter((r: Row) => !rows.includes(r))
         cascadeDelete(t, rows)
+        gestionApresSuppression(d, t, rows)
         return this.returning ? this.finish(rows) : { data: null, error: null }
       }
       return { data: null, error: null }
@@ -616,6 +636,8 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
     return { data: r.data.id, error: null }
   }
   if (fn === 'enregistrer_vente') return venteAvecLignes(args.p_sale, args.p_lines)
+  const rpc012 = await rpcGestionDemo(fn, args, d as any, me.id, q)  // migration 012
+  if (rpc012) return rpc012
   if (fn === 'enregistrer_commande') {
     const o = args.p_order as Row
     let id = args.p_order_id as string | null
@@ -770,9 +792,11 @@ function dossierAutorise(path: string): boolean {
   const d = getDb() as any
   return parties.length === 3 && !path.includes('..') && d.farm_members.some((m: Row) => m.user_id === me && m.farm_id === parties[0])
 }
+const BUCKETS_DEMO = new Set(['journal', 'justificatifs'])
 function objetStorage(bucket: string, path: string): string | undefined {
-  if (bucket !== 'journal') return undefined
-  return objetsStorage.get(path) ?? OBJETS_JOURNAL_DEMO.get(path)
+  if (!BUCKETS_DEMO.has(bucket)) return undefined
+  const cle = `${bucket}:${path}`
+  return objetsStorage.get(cle) ?? (bucket === 'journal' ? OBJETS_JOURNAL_DEMO.get(path) : OBJETS_JUSTIFICATIFS_DEMO.get(path))
 }
 const storage = {
   from(bucket: string) {
@@ -780,10 +804,10 @@ const storage = {
       async upload(path: string, file: Blob, opts?: { upsert?: boolean; contentType?: string }) {
         await wait(250)
         if (horsLigneDemo()) return erreurStorage('Failed to fetch', '0')
-        if (bucket !== 'journal') return erreurStorage('Bucket not found', '404')
+        if (!BUCKETS_DEMO.has(bucket)) return erreurStorage('Bucket not found', '404')
         if (!currentUser() || !dossierAutorise(path)) return erreurStorage('new row violates row-level security policy', '403')
         if (objetStorage(bucket, path) && !opts?.upsert) return erreurStorage('The resource already exists', '409')
-        objetsStorage.set(path, URL.createObjectURL(file))
+        objetsStorage.set(`${bucket}:${path}`, URL.createObjectURL(file))
         return { data: { path, id: uuid(), fullPath: `${bucket}/${path}` }, error: null }
       },
       async createSignedUrl(path: string) {
@@ -799,9 +823,10 @@ const storage = {
         const out: Row[] = []
         for (const p of paths) {
           if (!dossierAutorise(p)) continue // filtré par la policy, sans erreur
-          const url = objetsStorage.get(p)
+          const url = objetsStorage.get(`${bucket}:${p}`)
           if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
-          if (objetsStorage.delete(p) || OBJETS_JOURNAL_DEMO.delete(p)) out.push({ name: p, bucket_id: bucket })
+          const demo = bucket === 'journal' ? OBJETS_JOURNAL_DEMO : OBJETS_JUSTIFICATIFS_DEMO
+          if (objetsStorage.delete(`${bucket}:${p}`) || demo.delete(p)) out.push({ name: p, bucket_id: bucket })
         }
         return { data: out, error: null }
       },

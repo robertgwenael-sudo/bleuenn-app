@@ -25,6 +25,8 @@ import Exports from '@/components/Exports'
 import Journal from '@/components/Journal'
 import Factures from '@/components/Factures'
 import Fournisseurs from '@/components/Fournisseurs'
+import Gestion from '@/components/Gestion'
+import Justificatifs from '@/components/Justificatifs'
 import { AppShell } from '@/components/shell/AppShell'
 import { VALID_IDS } from '@/components/shell/nav'
 import { LogoMark } from '@/components/shell/Logo'
@@ -145,6 +147,8 @@ export default function Home() {
       {section === 'journal' && <Journal ctx={ctx} />}
       {section === 'factures' && <Factures ctx={ctx} />}
       {section === 'fournisseurs' && <Fournisseurs ctx={ctx} />}
+      {section === 'gestion' && <Gestion ctx={ctx} onNav={setSection} />}
+      {section === 'justificatifs' && <Justificatifs ctx={ctx} />}
     </AppShell>
   )
 }

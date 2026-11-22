@@ -52,7 +52,7 @@ d'abord pour la saisie au champ.
     src/components/   écrans ; ui/ design system ; shell/ navigation (nav.ts)
     src/lib/demo/     faux client Supabase en mémoire (NEXT_PUBLIC_DEMO=1) ;
                       données par domaine dans seeds/
-    supabase/migrations/  001 → 008, appliquées en production
+    supabase/migrations/  001 → 012, appliquées en production
 
 ## Commandes
 
@@ -83,5 +83,9 @@ rejet définitif visible. Les appels Supabase ne sont jamais mis en cache.
 - Une semaine appartient au mois de son lundi (vue Tâches).
 - Commande : livrer = facturer ; unités par défaut botte 10, bouquet 15, seau 25.
 - Disponibilités : seules les commandes confirmées, prêtes ou livrées réservent.
+- Factures : sans TVA ; la mention d'absence de TVA est saisie d'après le comptable (jamais en dur) ;
+  numérotation F/AV par année, avoir total uniquement.
+- Achats : prix au centime ; réception saisie en cumul, dépenses créées sans doublon.
+- Gestion : vente sans facture = encaissée le jour même ; dépense datée à sa date.
 - Rentabilité : frais généraux répartis au prorata surface × jours (ou CA) ; un seul
   taux horaire, vide = temps « non calculable » ; €/heure sur la marge hors temps.
