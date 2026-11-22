@@ -99,6 +99,40 @@ export function fenetresRecolte(
   return out
 }
 
+/**
+ * Une ligne par fenêtre de récolte qui touche `periode` : une vivace en place
+ * depuis plusieurs années donne une ligne par floraison (dates de la fenêtre
+ * de l'année, mêmes tiges et même revenu estimés : la récolte se répète).
+ * Annuelles, bisannuelles et plantations sans dates : inchangées, à
+ * l'appelant de les filtrer ou de les signaler. Les lignes d'une même vivace
+ * gardent son `id` : à sommer par semaine, pas à indexer par plantation.
+ */
+export function recoltesDansPeriode<T extends PlantingCycle & { date_recolte: DateISO | null }>(plantings: T[], periode: Intervalle): T[] {
+  const out: T[] = []
+  for (const p of plantings) {
+    if (cycleDe(p) !== 'vivace' || !p.date_recolte || !p.date_fin) { out.push(p); continue }
+    for (const f of fenetresRecolte(p, periode)) out.push({ ...p, date_recolte: f.debut, date_fin: f.fin })
+  }
+  return out
+}
+
+/**
+ * Plantations vues depuis l'année civile `annee` : une vivace prend la
+ * fenêtre de récolte qui COMMENCE cette année-là (une seule par an), ou
+ * disparaît si elle ne fleurit pas cette année (pas encore en fleur,
+ * arrachée). Les autres plantations sont rendues telles quelles.
+ */
+export function recoltesDeLAnnee<T extends PlantingCycle & { date_recolte: DateISO | null }>(plantings: T[], annee: number): T[] {
+  const an = { debut: dateCivile(annee, 1, 1), fin: dateCivile(annee, 12, 31) }
+  const out: T[] = []
+  for (const p of plantings) {
+    if (cycleDe(p) !== 'vivace' || !p.date_recolte || !p.date_fin) { out.push(p); continue }
+    const f = fenetresRecolte(p, an).find(x => x.debut >= an.debut)
+    if (f) out.push({ ...p, date_recolte: f.debut, date_fin: f.fin })
+  }
+  return out
+}
+
 /** La plantation est-elle en récolte ce jour-là (vivaces : chaque année) ? */
 export function enRecolteLe(p: PlantingCycle & { date_recolte: DateISO | null }, jour: DateISO): boolean {
   return fenetresRecolte(p, { debut: jour, fin: jour }).length > 0

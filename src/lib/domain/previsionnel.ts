@@ -17,6 +17,7 @@
 
 import { ajouterJours, lundisEntre, type Intervalle } from './dates'
 import { caPrevuPlantation, repartitionPrevueValorisee, type PlantingReel } from './reel'
+import { recoltesDansPeriode } from './cultures'
 import type { Centimes, CultureType, DateISO } from './types'
 
 export type PlantingPrevision = PlantingReel
@@ -77,10 +78,13 @@ export function previsionnelHebdo(plantings: PlantingPrevision[], periode: Inter
   const parCulture = new Map<string, CulturePrevision>()
   const non_calculables: PlantationNonCalculable[] = []
 
-  for (const p of plantings) {
+  // Vivaces : chaque floraison qui touche la période compte (013)
+  for (const p of recoltesDansPeriode(plantings, periode)) {
     let repartition
     try {
-      if (!p.date_recolte || !p.date_fin) throw new Error('date de récolte non calculable')
+      if (!p.date_recolte || !p.date_fin) {
+        throw new Error((p.cycle ?? 'annuelle') !== 'annuelle' ? 'début de floraison à renseigner' : 'date de récolte non calculable')
+      }
       repartition = repartitionPrevueValorisee(p, caPlantation(p))
     } catch (e) {
       non_calculables.push({ id: p.id, culture_name: p.culture_name, raison: e instanceof Error ? e.message : String(e) })

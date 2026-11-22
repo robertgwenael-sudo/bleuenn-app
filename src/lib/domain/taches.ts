@@ -14,6 +14,7 @@ import {
   lundiDeSemaine, lundiSemaineIso, lundisEntre, moisEntre, premierLundiDuMois, semaineIso, type Intervalle,
 } from './dates'
 import type { DateISO, PlantingFull, Task, TaskKind } from './types'
+import { cycleDe, fenetresRecolte } from './cultures'
 
 /**
  * Pinçage : environ 3 semaines après la mise en place au champ, quand le
@@ -38,7 +39,7 @@ const ORDRE_KIND: Record<TaskKind, number> = {
 export type PlantingTaches = Pick<PlantingFull,
   'id' | 'season_id' | 'planche_id' | 'culture_name' | 'date_semis' | 'date_plantation' | 'date_recolte'
   | 'semis_direct' | 'pincer' | 'filet'
-> & Partial<Pick<PlantingFull, 'planche_name' | 'garden_name' | 'season_name'>>
+> & Partial<Pick<PlantingFull, 'planche_name' | 'garden_name' | 'season_name' | 'date_fin' | 'cycle' | 'arrachee_le'>>
 
 export type StoredTask = Pick<Task,
   'id' | 'season_id' | 'title' | 'kind' | 'due_date' | 'planting_id' | 'planche_id'
@@ -103,10 +104,35 @@ export function tachesDUnePlantation(p: PlantingTaches): Tache[] {
   return out
 }
 
-/** Tâches du plan dont l'échéance tombe dans la période. */
+/** Clé de la tâche « début de récolte » d'une vivace pour une année après la première. */
+export function cleRecolteRepetee(plantingId: string, annee: number): string {
+  return `recolte-${annee}:${plantingId}`
+}
+const RE_RECOLTE_REPETEE = /^recolte-\d{4}:(.+)$/
+
+/**
+ * Vivace en place : la récolte revient chaque année. Une tâche « début de
+ * récolte » par floraison qui commence dans la période, la première gardant
+ * la clé habituelle ; les suivantes `recolte-<année>:<plantation>`.
+ */
+function tachesRecolteRepetees(p: PlantingTaches, periode: Intervalle): Tache[] {
+  if (cycleDe(p) !== 'vivace' || !p.date_recolte || !p.date_fin) return []
+  const modele = tachesDUnePlantation(p).find(t => t.kind === 'recolte')
+  if (!modele) return []
+  return fenetresRecolte({ ...p, date_fin: p.date_fin }, periode)
+    .filter(f => f.debut !== p.date_recolte && dansIntervalle(f.debut, periode))
+    .map(f => {
+      const cle = cleRecolteRepetee(p.id, Number(f.debut.slice(0, 4)))
+      return { ...modele, due_date: f.debut, cle, auto_key: cle }
+    })
+}
+
+/** Tâches du plan dont l'échéance tombe dans la période (vivaces : récolte chaque année). */
 export function genererTachesPlan(plantings: PlantingTaches[], periode: Intervalle): Tache[] {
-  return trierTaches(plantings.flatMap(tachesDUnePlantation)
-    .filter(t => t.due_date !== null && dansIntervalle(t.due_date, periode)))
+  return trierTaches([
+    ...plantings.flatMap(tachesDUnePlantation),
+    ...plantings.flatMap(p => tachesRecolteRepetees(p, periode)),
+  ].filter(t => t.due_date !== null && dansIntervalle(t.due_date, periode)))
 }
 
 function depuisStockee(t: StoredTask): Tache {
@@ -155,7 +181,10 @@ export function fusionnerTaches(generees: Tache[], stockees: StoredTask[]): Tach
 export function lignesOrphelines(plantings: PlantingTaches[], stockees: StoredTask[]): StoredTask[] {
   // auto_key = '<kind>:<planting_id>' : unique sur la ferme, quelle que soit la saison
   const cles = new Set(plantings.flatMap(tachesDUnePlantation).map(t => t.auto_key))
-  return stockees.filter(s => s.auto_key && !cles.has(s.auto_key))
+  // Récolte répétée d'une vivace (recolte-<année>:<plantation>) : orpheline si la plantation n'est plus une vivace du plan
+  const vivaces = new Set(plantings.filter(p => cycleDe(p) === 'vivace').map(p => p.id))
+  const repetee = (k: string) => { const m = RE_RECOLTE_REPETEE.exec(k); return !!m && vivaces.has(m[1]) }
+  return stockees.filter(s => s.auto_key && !cles.has(s.auto_key) && !repetee(s.auto_key))
 }
 
 export function trierTaches(taches: Tache[]): Tache[] {

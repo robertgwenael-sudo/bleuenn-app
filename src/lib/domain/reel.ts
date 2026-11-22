@@ -18,11 +18,12 @@ import type {
   Centimes, CultureType, DateISO, EurosNumeric, HarvestLite, Loss, LossReason, PlantingActual, PlantingFull,
 } from './types'
 import { LOSS_REASONS } from './types'
+import { recoltesDansPeriode } from './cultures'
 
 export type PlantingReel = Pick<PlantingFull,
   'id' | 'culture_id' | 'culture_name' | 'culture_type' | 'garden_id' | 'garden_name'
   | 'date_recolte' | 'date_fin' | 'tiges_estimees' | 'prix_tige'
-> & Partial<Pick<PlantingFull, 'planche_name' | 'season_id'>> & {
+> & Partial<Pick<PlantingFull, 'planche_name' | 'season_id' | 'cycle' | 'arrachee_le'>> & {
   /** Revenu estimé calculé en base (trigger) ; s'il est là, il fait foi pour le CA prévu. */
   revenu_estime?: EurosNumeric | null
 }
@@ -147,7 +148,10 @@ export function caPrevuPlantation(p: PlantingReel): Centimes {
 export function tigesPrevuesParSemaine(plantings: PlantingReel[], lundis: DateISO[]): number[] {
   const index = new Map(lundis.map((l, i) => [l, i]))
   const out = lundis.map(() => 0)
-  for (const p of plantings) {
+  if (!lundis.length) return out
+  // Vivaces : une fenêtre de récolte par année affichée (013)
+  const periode = { debut: lundis[0], fin: ajouterJours(lundis[lundis.length - 1], 6) }
+  for (const p of recoltesDansPeriode(plantings, periode)) {
     if (!p.date_recolte || !p.date_fin || !Number.isFinite(Number(p.tiges_estimees))) continue
     for (const s of repartitionPrevue(p)) {
       const i = index.get(s.lundi)
@@ -291,7 +295,9 @@ export function reelParSemaine(args: {
     if (!a) { a = { prevu: 0, caP: 0, rec: 0, perd: 0, caR: 0 }; m.set(l, a) }
     return a
   }
-  for (const p of args.plantings) {
+  // Vivaces : avec une période, chaque floraison qui la touche compte (013)
+  const plantings = args.periode ? recoltesDansPeriode(args.plantings, args.periode) : args.plantings
+  for (const p of plantings) {
     // CA réparti comme les tiges : la somme des semaines retombe sur le revenu estimé
     for (const s of repartitionPrevueValorisee(p, caPrevuPlantation(p))) {
       const a = acc(s.lundi)

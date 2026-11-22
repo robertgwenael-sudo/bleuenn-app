@@ -22,6 +22,7 @@ import { ajouterJours, chevauche, cleSemaine, dansIntervalle, estDateValide, fen
 import { eurosEnCentimes, formatEuros } from './montants'
 import { repartitionPrevue, type LossLite, type PlantingReel } from './reel'
 import { tigesLigne } from './ventes'
+import { recoltesDansPeriode } from './cultures'
 import type { Centimes, DateISO, HarvestLite, Order, OrderLine, OrderStatus } from './types'
 
 export const STATUTS_ENGAGES: readonly OrderStatus[] = ['confirmee', 'prete', 'livree']
@@ -98,7 +99,8 @@ export function calculerDisponibilites(args: {
     return a
   }
 
-  for (const p of args.plantings) {
+  // Vivaces : chaque floraison qui touche la fenêtre compte (013)
+  for (const p of recoltesDansPeriode(args.plantings, periode)) {
     for (const s of repartitionPrevue(p)) {
       const a = acc(p.culture_id, s.lundi)
       if (a) a.prevu += s.tiges
@@ -207,7 +209,7 @@ function majuscule(s: string): string {
 // ainsi que l'aneth semé à l'automne disparaissait de la Disponibilité.
 // ------------------------------------------------------------
 export type PlantingCalendrier = Pick<PlantingReel, 'id' | 'culture_name' | 'culture_type' | 'date_recolte' | 'date_fin'>
-  & Partial<Pick<PlantingReel, 'season_id'>> & { season_name?: string | null; planche_name?: string | null; garden_name?: string | null }
+  & Partial<Pick<PlantingReel, 'season_id' | 'cycle' | 'arrachee_le'>> & { season_name?: string | null; planche_name?: string | null; garden_name?: string | null }
 
 export interface LigneCalendrierRecolte {
   culture_name: string
@@ -234,7 +236,7 @@ export function plantationsSansRecolte<T extends Pick<PlantingReel, 'date_recolt
 export function calendrierRecolte(plantings: PlantingCalendrier[], periode: Intervalle): CalendrierRecolte {
   const lundis = lundisEntre(periode)
   const parNom = new Map<string, LigneCalendrierRecolte>()
-  for (const p of plantings) {
+  for (const p of recoltesDansPeriode(plantings, periode)) {
     if (!estDateValide(p.date_recolte) || !estDateValide(p.date_fin)) continue
     const recolte = { debut: p.date_recolte, fin: p.date_fin < p.date_recolte ? p.date_recolte : p.date_fin }
     const semaines = lundis.filter(l => chevauche(recolte, { debut: l, fin: ajouterJours(l, 6) }))
