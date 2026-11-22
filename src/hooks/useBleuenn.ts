@@ -86,12 +86,62 @@ export function useBleuenn() {
     return error
   }
   const signOut = async () => {
-    await supabase.auth.signOut()
+    if (!ecrire(await supabase.auth.signOut(), 'déconnexion')) return
     setUser(null)
     setProfile(null)
   }
 
+  /**
+   * Données de la saison active ET de la ferme :
+   *  - jardins et planches par ferme (permanents, toutes saisons) ;
+   *  - `plantings` : saison active (inchangé pour les écrans existants) ;
+   *  - `farmPlantings` : toute la ferme, toutes saisons, pour lire
+   *    l'occupation des planches par dates.
+   */
+  const loadSeasonData = async (seasonId: string, farmId: string | null | undefined = activeSeason?.farm_id) => {
+    const gardensQuery = farmId
+      ? supabase.from('gardens').select('*, planches(*)').eq('farm_id', farmId).order('sort_order')
+      : supabase.from('gardens').select('*, planches(*)').eq('season_id', seasonId).order('sort_order')
+    const [garRes, plRes, farmPlRes, harRes, salRes, soRes] = await Promise.all([
+      gardensQuery,
+      supabase.from('plantings_full').select('*').eq('season_id', seasonId),
+      farmId
+        ? supabase.from('plantings_full').select('*').eq('farm_id', farmId).order('date_semis')
+        : Promise.resolve({ data: null, error: null }),
+      supabase.from('harvests').select('*').eq('season_id', seasonId).order('date', { ascending: false }),
+      supabase.from('sales').select('*').eq('season_id', seasonId).order('date', { ascending: false }),
+      supabase.from('seed_orders').select('*').eq('season_id', seasonId).order('culture_name'),
+    ])
+    const seasonPlantings = lire(plRes, 'les plantations de la saison', [] as PlantingFull[])
+    setGardens(lire(garRes, 'les jardins', [] as Garden[]))
+    setPlantings(seasonPlantings)
+    setFarmPlantings(farmId ? lire(farmPlRes, 'les plantations de la ferme', [] as PlantingFull[]) : seasonPlantings)
+    setHarvests(lire(harRes, 'les récoltes', [] as Harvest[]))
+    setSales(lire(salRes, 'les ventes', [] as Sale[]))
+    setSeedOrders(lire(soRes, 'les commandes de graines', [] as SeedOrder[]))
+  }
+
+  /** Ferme et équipe de la ferme (RPC `farm_team`, emails compris). */
+  const loadFarm = async (farmId: string | null | undefined) => {
+    if (!farmId) { setFarm(null); setFarmTeam([]); return }
+    const [farmRes, teamRes] = await Promise.all([
+      supabase.from('farms').select('*').eq('id', farmId).maybeSingle(),
+      supabase.rpc('farm_team', { p_farm_id: farmId }),
+    ])
+    setFarm(lire<Farm | null>(farmRes, 'la ferme', null))
+    setFarmTeam(lire(teamRes, 'l’équipe de la ferme', [] as FarmMember[]))
+  }
+
+  /** Équipe de la saison. */
+  const loadTeamMembers = async (seasonId: string) => {
+    // profiles n'est lisible que par son propriétaire : un join renverrait
+    // null pour les coéquipiers. season_team() n'expose que email et nom.
+    const res = await supabase.rpc('season_team', { p_season_id: seasonId })
+    setTeamMembers(lire(res, 'l’équipe de la saison', [] as TeamMember[]))
+  }
+
   // ─── Load all data when user changes ────
+  // Déclaré après les fonctions qu'il appelle (react-hooks/immutability).
   const loadAll = useCallback(async () => {
     if (!user) return
     setLoading(true)
@@ -137,47 +187,6 @@ export function useBleuenn() {
   }, [user])
 
   useEffect(() => { loadAll() }, [loadAll])
-
-  /**
-   * Données de la saison active ET de la ferme :
-   *  - jardins et planches par ferme (permanents, toutes saisons) ;
-   *  - `plantings` : saison active (inchangé pour les écrans existants) ;
-   *  - `farmPlantings` : toute la ferme, toutes saisons, pour lire
-   *    l'occupation des planches par dates.
-   */
-  const loadSeasonData = async (seasonId: string, farmId: string | null | undefined = activeSeason?.farm_id) => {
-    const gardensQuery = farmId
-      ? supabase.from('gardens').select('*, planches(*)').eq('farm_id', farmId).order('sort_order')
-      : supabase.from('gardens').select('*, planches(*)').eq('season_id', seasonId).order('sort_order')
-    const [garRes, plRes, farmPlRes, harRes, salRes, soRes] = await Promise.all([
-      gardensQuery,
-      supabase.from('plantings_full').select('*').eq('season_id', seasonId),
-      farmId
-        ? supabase.from('plantings_full').select('*').eq('farm_id', farmId).order('date_semis')
-        : Promise.resolve({ data: null, error: null }),
-      supabase.from('harvests').select('*').eq('season_id', seasonId).order('date', { ascending: false }),
-      supabase.from('sales').select('*').eq('season_id', seasonId).order('date', { ascending: false }),
-      supabase.from('seed_orders').select('*').eq('season_id', seasonId).order('culture_name'),
-    ])
-    const seasonPlantings = lire(plRes, 'les plantations de la saison', [] as PlantingFull[])
-    setGardens(lire(garRes, 'les jardins', [] as Garden[]))
-    setPlantings(seasonPlantings)
-    setFarmPlantings(farmId ? lire(farmPlRes, 'les plantations de la ferme', [] as PlantingFull[]) : seasonPlantings)
-    setHarvests(lire(harRes, 'les récoltes', [] as Harvest[]))
-    setSales(lire(salRes, 'les ventes', [] as Sale[]))
-    setSeedOrders(lire(soRes, 'les commandes de graines', [] as SeedOrder[]))
-  }
-
-  /** Ferme et équipe de la ferme (RPC `farm_team`, emails compris). */
-  const loadFarm = async (farmId: string | null | undefined) => {
-    if (!farmId) { setFarm(null); setFarmTeam([]); return }
-    const [farmRes, teamRes] = await Promise.all([
-      supabase.from('farms').select('*').eq('id', farmId).maybeSingle(),
-      supabase.rpc('farm_team', { p_farm_id: farmId }),
-    ])
-    setFarm(lire<Farm | null>(farmRes, 'la ferme', null))
-    setFarmTeam(lire(teamRes, 'l’équipe de la ferme', [] as FarmMember[]))
-  }
 
   const switchSeason = async (seasonId: string) => {
     // Déactiver toutes, activer celle-ci
@@ -294,31 +303,33 @@ export function useBleuenn() {
   // ─── CRUD Récoltes ─────────────────────
   const createHarvest = async (plantingId: string, date: string, tiges: number, quality: string, notes: string) => {
     if (!activeSeason) return null
-    const { data } = await supabase.from('harvests').insert({
+    const res = await supabase.from('harvests').insert({
       planting_id: plantingId, season_id: activeSeason.id, date, tiges, quality, notes
     }).select().single()
+    const data = ecrire(res, 'saisie de la récolte') ? res.data : null
     if (data && activeSeason) await loadSeasonData(activeSeason.id)
     return data
   }
 
   const deleteHarvest = async (id: string) => {
-    await supabase.from('harvests').delete().eq('id', id)
+    ecrire(await supabase.from('harvests').delete().eq('id', id), 'suppression de la récolte')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
   // ─── CRUD Ventes ───────────────────────
   const createSale = async (date: string, channel: string, cultures: string, tiges: number, prix: number, client: string) => {
     if (!activeSeason) return null
-    const { data } = await supabase.from('sales').insert({
+    const res = await supabase.from('sales').insert({
       season_id: activeSeason.id, user_id: user.id, date, channel,
       cultures_sold: cultures, tiges, prix_unitaire: prix, client
     }).select().single()
+    const data = ecrire(res, 'enregistrement de la vente') ? res.data : null
     if (data && activeSeason) await loadSeasonData(activeSeason.id)
     return data
   }
 
   const deleteSale = async (id: string) => {
-    await supabase.from('sales').delete().eq('id', id)
+    ecrire(await supabase.from('sales').delete().eq('id', id), 'suppression de la vente')
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
@@ -327,20 +338,21 @@ export function useBleuenn() {
     if (!activeSeason) return
     const existing = seedOrders.find(s => s.culture_name === cultureName)
     if (existing) {
-      await supabase.from('seed_orders').update(updates).eq('id', existing.id)
+      ecrire(await supabase.from('seed_orders').update(updates).eq('id', existing.id), 'modification de la commande de graines')
     } else {
-      await supabase.from('seed_orders').insert({
+      ecrire(await supabase.from('seed_orders').insert({
         season_id: activeSeason.id, user_id: user.id, culture_name: cultureName, ...updates
-      })
+      }), 'commande de graines')
     }
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
   // ─── Catalogue custom ─────────────────
   const addCulture = async (culture: Partial<CultureCatalog>) => {
-    const { data } = await supabase.from('culture_catalog').insert({
+    const res = await supabase.from('culture_catalog').insert({
       ...culture, user_id: user.id
     }).select().single()
+    const data = ecrire(res, 'ajout de la culture') ? res.data : null
     if (data) {
       setCatalog(prev => [...prev, data as CultureCatalog].sort((a, b) => a.name.localeCompare(b.name)))
     }
@@ -348,40 +360,31 @@ export function useBleuenn() {
   }
 
   const updateCulture = async (id: string, updates: Partial<CultureCatalog>) => {
-    const { error } = await supabase.from('culture_catalog').update(updates).eq('id', id)
-    if (error) { console.error('updateCulture error:', error); return }
+    if (!ecrire(await supabase.from('culture_catalog').update(updates).eq('id', id), 'modification de la culture')) return
     setCatalog(prev => prev.map(c => c.id === id ? { ...c, ...updates } as CultureCatalog : c))
     if (activeSeason) await loadSeasonData(activeSeason.id)
   }
 
   const deleteCulture = async (id: string) => {
-    const { error } = await supabase.from('culture_catalog').delete().eq('id', id)
-    if (error) { console.error('deleteCulture error:', error); return }
+    if (!ecrire(await supabase.from('culture_catalog').delete().eq('id', id), 'suppression de la culture')) return
     setCatalog(prev => prev.filter(c => c.id !== id))
   }
 
   // ─── Profile ───────────────────────────
   const updateProfile = async (updates: Partial<Profile>) => {
-    await supabase.from('profiles').update(updates).eq('id', user.id)
+    if (!ecrire(await supabase.from('profiles').update(updates).eq('id', user.id), 'mise à jour du profil')) return
     setProfile(prev => prev ? { ...prev, ...updates } : prev)
-  }
-
-  // ─── Équipe ───────────────────────────
-  const loadTeamMembers = async (seasonId: string) => {
-    // profiles n'est lisible que par son propriétaire : un join renverrait
-    // null pour les coéquipiers. season_team() n'expose que email et nom.
-    const res = await supabase.rpc('season_team', { p_season_id: seasonId })
-    setTeamMembers(lire(res, 'l’équipe de la saison', [] as TeamMember[]))
   }
 
   const enableInviteLink = async () => {
     if (!activeSeason) return null
-    const { data } = await supabase
+    const res = await supabase
       .from('seasons')
       .update({ invite_enabled: true })
       .eq('id', activeSeason.id)
       .select('invite_token')
       .single()
+    const data = ecrire(res, 'activation du lien d’invitation') ? res.data : null
     if (data) {
       setActiveSeason(prev => prev ? { ...prev, invite_enabled: true, invite_token: data.invite_token } : prev)
     }
@@ -390,19 +393,20 @@ export function useBleuenn() {
 
   const disableInviteLink = async () => {
     if (!activeSeason) return
-    await supabase.from('seasons').update({ invite_enabled: false }).eq('id', activeSeason.id)
+    if (!ecrire(await supabase.from('seasons').update({ invite_enabled: false }).eq('id', activeSeason.id), 'désactivation du lien d’invitation')) return
     setActiveSeason(prev => prev ? { ...prev, invite_enabled: false } : prev)
   }
 
   const regenerateInviteToken = async () => {
     if (!activeSeason) return null
     const newToken = crypto.randomUUID()
-    const { data } = await supabase
+    const res = await supabase
       .from('seasons')
       .update({ invite_token: newToken, invite_enabled: true })
       .eq('id', activeSeason.id)
       .select('invite_token')
       .single()
+    const data = ecrire(res, 'nouveau lien d’invitation') ? res.data : null
     if (data) {
       setActiveSeason(prev => prev ? { ...prev, invite_token: data.invite_token, invite_enabled: true } : prev)
     }

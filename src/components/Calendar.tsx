@@ -95,7 +95,9 @@ function SubtotalRows({ label, plantings, semaines, isGlobal }: {
   const bg = isGlobal ? 'bg-surface-3' : 'bg-surface-2'
   const border = isGlobal ? 'border-t-2 border-border-strong' : 'border-t border-border'
 
-  const Bars = ({ values, max, colorClass }: { values: number[]; max: number; colorClass: string }) => (
+  // Fonction de rendu (et non composant) : un composant défini pendant le rendu
+  // serait remonté à chaque rendu (react-hooks/static-components).
+  const bars = (values: number[], max: number, colorClass: string) => (
     <>
       {semaines.map((s, i) => {
         const v = values[i]
@@ -129,14 +131,14 @@ function SubtotalRows({ label, plantings, semaines, isGlobal }: {
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-phase-cellule" aria-hidden />Plants en cellule</span>
         </td>
         <td className={bg} /><td className={bg} />
-        <Bars values={plantsEnCellule} max={maxCellule} colorClass="bg-phase-cellule" />
+        {bars(plantsEnCellule, maxCellule, 'bg-phase-cellule')}
       </tr>
       <tr>
         <td className={cn(stickyCol, bg, 'px-3 py-1 text-xs text-fg-muted')}>
           <span className="inline-flex items-center gap-1.5"><Scissors className="h-3 w-3 text-primary" aria-hidden />Tiges à récolter</span>
         </td>
         <td className={bg} /><td className={bg} />
-        <Bars values={tigesARecolter} max={maxTiges} colorClass="bg-phase-recolte" />
+        {bars(tigesARecolter, maxTiges, 'bg-phase-recolte')}
       </tr>
     </>
   )

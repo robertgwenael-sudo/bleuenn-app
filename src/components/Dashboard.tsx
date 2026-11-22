@@ -1,6 +1,7 @@
 'use client'
 import { useMemo } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { CalendarClock, ChevronRight, Coins, Fence, Flower, Ruler, Scissors, Store, Target } from 'lucide-react'
 import { getPlantingStatus } from '@/lib/types'
@@ -135,9 +136,9 @@ export default function Dashboard({ ctx, onNav }: { ctx: any; onNav?: (id: strin
           <CardHeader title="Prochaines tâches"
             description={tk.loading ? 'Chargement…' : `${aFaireSemaine} à faire cette semaine${groupes.en_retard.length ? ` · ${groupes.en_retard.length} en retard` : ''}`}
             icon={<CalendarClock className="h-4 w-4" />}
-            action={<a href="/#taches" onClick={e => { if (onNav) { e.preventDefault(); onNav('taches') } }}
+            action={<Link href="/#taches" onClick={e => { if (onNav) { e.preventDefault(); onNav('taches') } }}
               className="inline-flex h-8 shrink-0 items-center gap-1 rounded-btn px-3 text-xs font-medium text-primary hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Voir le mois<ChevronRight className="h-3.5 w-3.5" aria-hidden /></a>} />
+              Voir le mois<ChevronRight className="h-3.5 w-3.5" aria-hidden /></Link>} />
           <CardContent className="pt-1">
             {tk.loading ? (
               <div className="space-y-2 pt-3">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-11 w-full" />)}</div>

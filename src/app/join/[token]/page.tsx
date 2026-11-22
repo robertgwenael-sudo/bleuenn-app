@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { AlertCircle, CheckCircle2, Loader2, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
@@ -84,7 +85,7 @@ export default function JoinPage() {
           <p role="alert" className="mb-7 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{message}
           </p>
-          <a href="/" className={linkBtn}>Retour à l’accueil</a>
+          <Link href="/" className={linkBtn}>Retour à l’accueil</Link>
         </div>
       )}
     </AuthLayout>

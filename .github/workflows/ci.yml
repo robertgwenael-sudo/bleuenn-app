@@ -16,6 +16,8 @@ jobs:
       - run: npm ci
       - name: Types
         run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
       - name: Tests de la logique métier
         run: npm test
       - name: Build de production
@@ -28,3 +30,18 @@ jobs:
           if grep -rl "Amarante queue-de-renard" .next/static; then
             echo "Données de démo trouvées dans le paquet de production" && exit 1
           fi
+      - name: Navigateur des tests de parcours
+        run: npx playwright install --with-deps chromium
+      - name: Tests de parcours (mode démo, build de production)
+        run: npm run test:e2e
+        env:
+          E2E_BUILD: '1'
+      - name: Rapport des tests de parcours
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

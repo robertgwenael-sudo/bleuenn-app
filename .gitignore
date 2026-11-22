@@ -11,3 +11,8 @@ next-env.d.ts
 # Fichiers générés localement par les outils
 .claude/
 AGENTS.md
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
