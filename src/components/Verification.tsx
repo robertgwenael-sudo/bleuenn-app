@@ -7,6 +7,9 @@ import type { PlantingFull, Garden } from '@/lib/types'
 import { Button, Card, Dialog, EmptyState, PageHeader, TypeBadge, cn, useConfirm } from '@/components/ui'
 import { AddPlantingForm, EditPlantingForm } from '@/components/plantings/PlantingForms'
 import { photos } from '@/lib/images'
+import { calculerProduction, tauxDeLaFerme, type Montant } from '@/lib/domain/production'
+import { eurosEnCentimes, sommeCentimes } from '@/lib/domain/montants'
+import { CelluleCalcul, CelluleMontant, CelluleRepartition, eurosRonds, nb } from '@/components/semis/format'
 
 // Classes de cellules (tableau dense de type tableur)
 const GH = 'border-b border-r border-border px-2 py-2 text-center text-[0.62rem] font-semibold uppercase tracking-wider'
@@ -15,6 +18,10 @@ const TD = 'border-b border-border/60 px-2 py-1.5 group-hover:bg-surface-2'
 const ST = 'border-b border-border bg-surface-2 px-2 py-1.5'
 const FT = 'border-t-2 border-border-strong bg-surface-3 px-2 py-2.5'
 const SEP = 'border-r border-border'
+
+/** Somme des revenus estimés (base) en centimes ; une plantation sans estimation ne compte pas. */
+const revenuCentimes = (ps: PlantingFull[]) =>
+  sommeCentimes(ps.filter(p => p.revenu_estime !== null && p.revenu_estime !== undefined).map(p => eurosEnCentimes(p.revenu_estime)))
 
 // ─── Composant principal ────────────────────────────
 export default function Verification({ ctx }: { ctx: any }) {
@@ -56,44 +63,28 @@ export default function Verification({ ctx }: { ctx: any }) {
     setModal('add')
   }
 
-  // Calculs dérivés
+  // Calculs dérivés : la même formule que le tableur et que la base (015),
+  // pertes de la ferme ; une donnée absente s'affiche, jamais un défaut inventé.
+  const taux = tauxDeLaFerme(ctx.farm)
   const calc = (p: PlantingFull) => {
-    const surface = p.surface_m2 || p.planche_m2 || 1
-    const espacement_cm = p.espacement_cm || 20
-    const rangs = p.rangs_par_planche || 5
-    const graines_par_plant = p.graines_par_plant || 1
-    const rendement = p.rendement || 1
-    const prix = p.prix_tige || 0.5
-    const jc = p.jours_cellule || 0
-    const jch = p.jours_champ || 0
-    const jr = p.jours_recolte || 21
-
-    let plants = Math.max(1, Math.floor(surface * 10000 / (espacement_cm * espacement_cm)))
-    if (plants > surface * 50) plants = Math.floor(surface * 25)
-
-    const tiges_brutes = Math.round(plants * rendement)
-    const tiges_nettes = Math.round(tiges_brutes * 0.7)
-    const revenu = Math.round(tiges_nettes * prix * 100) / 100
-    const graines = Math.ceil(plants * 1.3 * graines_par_plant)
-
-    const semaines_recolte = Math.max(1, Math.round(jr / 7))
-    const tiges_par_semaine = Math.round(tiges_nettes / semaines_recolte)
-    const ca_semaine = Math.round(tiges_par_semaine * prix * 100) / 100
-
+    const pr = calculerProduction({
+      surface_m2: p.surface_m2, rangs_par_planche: p.rangs_par_planche, espacement_cm: p.espacement_cm,
+      graines_par_plant: p.graines_par_plant, rendement: p.rendement, prix_tige: p.prix_tige,
+      jours_recolte: p.jours_recolte, achat_plant: (p as { achat_plant?: boolean | null }).achat_plant,
+    }, taux)
+    const prixMontant: Montant = p.prix_tige === null || p.prix_tige === undefined
+      ? { etat: 'manquant', champs: ['prix'] }
+      : { etat: 'ok', centimes: eurosEnCentimes(p.prix_tige) }
     const ds = new Date(p.date_semis + 'T00:00:00')
     const dp = new Date(p.date_plantation + 'T00:00:00')
     const dr = p.date_recolte ? new Date(p.date_recolte + 'T00:00:00') : null
     const df = p.date_fin ? new Date(p.date_fin + 'T00:00:00') : null
 
     return {
-      surface, espacement_cm, rangs, graines_par_plant,
-      plants: p.plants_count || plants,
-      graines: p.graines_necessaires || graines,
-      tiges_brutes,
-      tiges_nettes: p.tiges_estimees || tiges_nettes,
-      tiges_par_semaine, rendement, prix,
-      revenu: p.revenu_estime || revenu,
-      ca_semaine, jc, jch, jr,
+      surface: p.surface_m2 ?? '—', espacement_cm: p.espacement_cm ?? '—', rangs: p.rangs_par_planche ?? '—',
+      graines_par_plant: p.graines_par_plant ?? '—',
+      pr, prixMontant,
+      jc: p.jours_cellule || 0, jch: p.jours_champ ?? '—', jr: p.jours_recolte ?? '—',
       pincer: p.pincer, filet: p.filet, couvre_sol: p.couvre_sol, semis_direct: p.semis_direct,
       temp_germination: p.temp_germination,
       date_semis: formatDateShort(p.date_semis),
@@ -123,12 +114,12 @@ export default function Verification({ ctx }: { ctx: any }) {
   return (
     <div>
       <PageHeader title="Tableau de vérification"
-        description={`Vue complète de la production — ${totalPlantings} cultures réparties sur ${gardens.length} jardins`}
+        description={`Vue complète de la production : ${totalPlantings} cultures réparties sur ${gardens.length} jardins`}
         image={photos.champCoucherSoleil} />
 
       {/* Modale édition */}
       <Dialog open={modal === 'edit' && !!selectedPlanting} onOpenChange={o => !o && setModal(null)} size="lg"
-        title={selectedPlanting ? `Modifier — ${selectedPlanting.culture_name}` : 'Modifier'}>
+        title={selectedPlanting ? `Modifier : ${selectedPlanting.culture_name}` : 'Modifier'}>
         {selectedPlanting && <EditPlantingForm key={selectedPlanting.id} planting={selectedPlanting} ctx={ctx} onClose={() => setModal(null)} />}
       </Dialog>
 
@@ -196,8 +187,7 @@ export default function Verification({ ctx }: { ctx: any }) {
             <tbody>
               {gardenGroupsVisible.map(gg => {
                 const gardenPlantingsCount = gg.planches.reduce((s, pl) => s + pl.plantings.length, 0)
-                const gardenRevenu = gg.planches.reduce((s, pl) =>
-                  s + pl.plantings.reduce((s2, p) => s2 + (p.revenu_estime || 0), 0), 0)
+                const gardenRevenu = revenuCentimes(gg.planches.flatMap(pl => pl.plantings))
 
                 return (
                   <Fragment key={gg.garden.id}>
@@ -206,7 +196,7 @@ export default function Verification({ ctx }: { ctx: any }) {
                         <span className="font-serif text-sm font-semibold text-fg">{gg.garden.name}</span>
                       </td>
                       <td colSpan={27} className="border-y border-border bg-primary-soft px-3 py-2 text-xs text-fg-muted">
-                        {gg.garden.surface_m2} m² — {gardenPlantingsCount} cultures — {gg.planches.length} planches — Revenu estimé : <strong className="num text-fg">{Math.round(gardenRevenu)} €</strong>
+                        {gg.garden.surface_m2} m² · {gardenPlantingsCount} cultures · {gg.planches.length} planches · Revenu estimé : <strong className="num text-fg">{eurosRonds(gardenRevenu)}</strong>
                       </td>
                     </tr>
 
@@ -222,16 +212,16 @@ export default function Verification({ ctx }: { ctx: any }) {
                               </td>
                               <td className={cn(TD, SEP, 'num text-right font-semibold')}>{c.surface}</td>
 
-                              <td className={cn(TD, 'num text-right')}>{c.plants}</td>
-                              <td className={cn(TD, 'num text-right text-fg-muted')}>{c.tiges_brutes}</td>
-                              <td className={cn(TD, 'num text-right text-danger')}>−30 %</td>
-                              <td className={cn(TD, 'num text-right font-semibold')}>{c.tiges_nettes}</td>
-                              <td className={cn(TD, 'num text-right')}>{c.tiges_par_semaine}</td>
-                              <td className={cn(TD, 'num text-right')}>{c.graines}</td>
-                              <td className={cn(TD, SEP, 'num text-right')}>{c.prix.toFixed(2)} €</td>
+                              <td className={cn(TD, 'num text-right')}><CelluleCalcul c={c.pr.plants} /></td>
+                              <td className={cn(TD, 'num text-right text-fg-muted')}><CelluleCalcul c={c.pr.tiges} /></td>
+                              <td className={cn(TD, 'num text-right text-danger')}>−{nb(taux.champ)} %</td>
+                              <td className={cn(TD, 'num text-right font-semibold')}><CelluleCalcul c={c.pr.tigesNettes} /></td>
+                              <td className={cn(TD, 'num text-right')}><CelluleRepartition r={c.pr.tigesParSemaine} /></td>
+                              <td className={cn(TD, 'num text-right')}><CelluleCalcul c={c.pr.graines} /></td>
+                              <td className={cn(TD, SEP, 'num text-right')}><CelluleMontant m={c.prixMontant} /></td>
 
-                              <td className={cn(TD, 'num text-right font-semibold text-primary')}>{Math.round(c.revenu)} €</td>
-                              <td className={cn(TD, 'num text-right')}>{c.ca_semaine} €</td>
+                              <td className={cn(TD, 'num text-right font-semibold text-primary')}><CelluleMontant m={c.pr.revenu} rond /></td>
+                              <td className={cn(TD, 'num text-right')}><CelluleRepartition r={c.pr.caParSemaine} euros /></td>
                               <td className={cn(TD, 'num text-right')}>{p.rendement || '—'}</td>
                               <td className={cn(TD, SEP, 'text-center')}><TypeBadge type={p.culture_type} /></td>
 
@@ -277,7 +267,7 @@ export default function Verification({ ctx }: { ctx: any }) {
                           const stPlants = plGroup.plantings.reduce((s, p) => s + (p.plants_count || 0), 0)
                           const stTiges = plGroup.plantings.reduce((s, p) => s + (p.tiges_estimees || 0), 0)
                           const stGraines = plGroup.plantings.reduce((s, p) => s + (p.graines_necessaires || 0), 0)
-                          const stRevenu = plGroup.plantings.reduce((s, p) => s + (p.revenu_estime || 0), 0)
+                          const stRevenu = revenuCentimes(plGroup.plantings)
                           const stSurface = plGroup.plantings.reduce((s, p) => s + (p.surface_m2 || 0), 0)
                           return (
                             <tr className="text-[0.68rem] font-semibold text-fg-muted">
@@ -290,7 +280,7 @@ export default function Verification({ ctx }: { ctx: any }) {
                               <td className={ST} />
                               <td className={cn(ST, 'num text-right text-fg')}>{stGraines}</td>
                               <td className={cn(ST, SEP)} />
-                              <td className={cn(ST, 'num text-right text-primary')}>{Math.round(stRevenu)} €</td>
+                              <td className={cn(ST, 'num text-right text-primary')}>{eurosRonds(stRevenu)}</td>
                               <td colSpan={19} className={ST} />
                             </tr>
                           )
@@ -331,7 +321,7 @@ export default function Verification({ ctx }: { ctx: any }) {
                   <td className={cn(FT, 'num text-right')}>{gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.graines_necessaires || 0), 0), 0), 0)}</td>
                   <td className={cn(FT, SEP)} />
                   <td className={cn(FT, 'num text-right text-sm text-primary')}>
-                    {Math.round(gardenGroupsVisible.reduce((s, gg) => s + gg.planches.reduce((s2, pl) => s2 + pl.plantings.reduce((s3, p) => s3 + (p.revenu_estime || 0), 0), 0), 0))} €
+                    {eurosRonds(revenuCentimes(gardenGroupsVisible.flatMap(gg => gg.planches.flatMap(pl => pl.plantings))))}
                   </td>
                   <td colSpan={19} className={FT} />
                 </tr>
