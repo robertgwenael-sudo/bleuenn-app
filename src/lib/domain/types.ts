@@ -261,3 +261,105 @@ export interface TimeEntry {
 export interface FarmTauxHoraire {
   taux_horaire: EurosNumeric | null
 }
+
+// ------------------------------------------------------------
+// Journal de culture et registre des traitements (009)
+// ------------------------------------------------------------
+/** Contrainte `journal_entries.kind` (009), dans l'ordre d'affichage. */
+export const JOURNAL_KINDS = [
+  'observation', 'maladie', 'ravageur', 'irrigation', 'fertilisation', 'meteo', 'recolte', 'autre',
+] as const
+export type JournalKind = (typeof JOURNAL_KINDS)[number]
+
+export interface JournalEntry {
+  id: string
+  farm_id: string
+  /** Facultatif : une note peut concerner la ferme hors saison. */
+  season_id: string | null
+  date: DateISO
+  kind: JournalKind
+  body: string | null
+  planche_id: string | null
+  planting_id: string | null
+  culture_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface JournalPhoto {
+  id: string
+  entry_id: string
+  farm_id: string
+  /** Chemin dans le bucket privé `journal` : `<farm_id>/<entry_id>/<fichier>`. */
+  path: string
+  width: number | null
+  height: number | null
+  created_by: string | null
+  created_at: string
+}
+
+/** Contrainte `treatments.produit_type` (009). */
+export const PRODUIT_TYPES = ['fongicide', 'insecticide', 'herbicide', 'acaricide', 'biocontrole', 'autre'] as const
+export type ProduitType = (typeof PRODUIT_TYPES)[number]
+
+/** Contrainte `treatments.dose_unite` (009) : par hectare ou par hectolitre de bouillie. */
+export const DOSE_UNITES = ['g/ha', 'kg/ha', 'mL/ha', 'L/ha', 'g/hL', 'kg/hL', 'mL/hL', 'L/hL'] as const
+export type DoseUnite = (typeof DOSE_UNITES)[number]
+
+/** Contrainte `treatments.quantite_unite` (009). */
+export const QUANTITE_UNITES = ['g', 'kg', 'mL', 'L'] as const
+export type QuantiteUnite = (typeof QUANTITE_UNITES)[number]
+
+/** Contrainte `treatments.cible_type` (009). */
+export const CIBLE_TYPES = ['maladie', 'ravageur', 'adventice', 'autre'] as const
+export type CibleType = (typeof CIBLE_TYPES)[number]
+
+/** Contrainte `treatments.lieu_type` (009). */
+export const LIEU_TYPES = ['planche', 'jardin', 'serre', 'tunnel', 'autre'] as const
+export type LieuType = (typeof LIEU_TYPES)[number]
+
+/**
+ * Ligne du registre phytosanitaire. Les décimaux (`numeric`) arrivent de
+ * PostgREST en `number` ou en `string` ; ils ne servent qu'à l'affichage
+ * et à l'export, sans calcul flottant.
+ */
+export interface Treatment {
+  id: string
+  farm_id: string
+  season_id: string | null
+  date: DateISO
+  produit: string
+  produit_type: ProduitType
+  /** Numéro d'autorisation de mise sur le marché ; null = non renseigné. */
+  amm: string | null
+  dose: number | string
+  dose_unite: DoseUnite
+  quantite_totale: number | string
+  quantite_unite: QuantiteUnite
+  surface_m2: number | string
+  culture_id: string | null
+  /** Libellé figé à la saisie. */
+  culture_libelle: string
+  cible: string
+  cible_type: CibleType
+  lieu_type: LieuType
+  garden_id: string | null
+  planche_id: string | null
+  planting_id: string | null
+  /** Libellé figé à la saisie (« Jardin du Haut · PL 2 », « Tunnel nord »). */
+  lieu_libelle: string
+  /** Référence d'îlot PAC ou coordonnées, texte libre. */
+  ilot_pac: string | null
+  date_recolte_suivante: DateISO | null
+  /** Délai avant récolte en jours, saisi d'après l'étiquette du produit. */
+  delai_avant_recolte_j: number | null
+  operateur_id: string | null
+  operateur_nom: string
+  vent: string | null
+  temperature_c: number | string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string | null
+}

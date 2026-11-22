@@ -5,6 +5,7 @@
 //   signUp / resetPasswordForEmail / updateUser / signOut
 //   from(t).select/insert/update/delete + eq/neq/in/or/is/gte/lte/order/limit/range/single/maybeSingle
 //   rpc('season_team' | 'join_season_by_token' | 'invite_by_email' | 'farm_team' | 'duplicate_season_plan')
+//   storage.from('journal').upload / createSignedUrl / remove (images en blob: URL, migration 009)
 // ainsi que les triggers (calc_planting_dates, propagate_catalog_changes,
 // add_season_owner, colonne générée sales.total) et la vue plantings_full
 // (migration 002), avec les mêmes formules.
@@ -13,6 +14,7 @@
 import { extendDemoDb } from './seeds'
 import { buildDemoDb, DEMO_USER_ID, DEMO_EMAIL, type DemoDb } from './data'
 import { recalculerVenteDemo, totalLigneDemo } from './seeds/commercial'
+import { OBJETS_JOURNAL_DEMO } from './seeds/journal'
 
 type Row = Record<string, any>
 type Result = { data: any; error: { message: string; code?: string } | null; count?: number | null; status?: number }
@@ -154,6 +156,69 @@ const DEFAULTS: Record<string, Row> = {
   // Migration 008 (coûts)
   costs: { culture_id: null, planche_id: null, supplier: null, notes: null },
   time_entries: { kind: 'autre', culture_id: null, planche_id: null, notes: null },
+  // Migration 009 (journal et registre des traitements)
+  journal_entries: { season_id: null, kind: 'observation', body: null, planche_id: null, planting_id: null, culture_id: null, updated_at: null },
+  journal_photos: { width: null, height: null },
+  treatments: { season_id: null, amm: null, culture_id: null, culture_libelle: null, cible_type: 'autre', garden_id: null, planche_id: null, planting_id: null,
+    lieu_libelle: null, ilot_pac: null, date_recolte_suivante: null, delai_avant_recolte_j: null, operateur_id: null, operateur_nom: null,
+    vent: null, temperature_c: null, notes: null, updated_at: null },
+}
+
+// Migration 009 : triggers journal_entries_set_farm, journal_photos_set_farm,
+// treatments_set_farm (farm_id déduit des références, contrôle d'appartenance,
+// libellés figés du registre) et policy « farm_id in my_farm_ids() ».
+const TABLES_JOURNAL = new Set(['journal_entries', 'journal_photos', 'treatments'])
+function journalSetFarm(t: string, row: Row, old: Row | null): { message: string; code?: string } | null {
+  if (!TABLES_JOURNAL.has(t)) return null
+  const d = getDb() as any
+  const me = currentUser()?.id ?? null
+  const err = (message: string, code = 'P0001') => ({ code, message })
+  const mesFermes = new Set(d.farm_members.filter((m: Row) => m.user_id === me).map((m: Row) => m.farm_id))
+  row.created_by ??= me
+  if (t === 'journal_photos') {
+    const e = d.journal_entries.find((x: Row) => x.id === row.entry_id)
+    if (!e) return err(`Note ${row.entry_id} introuvable`)
+    row.farm_id = e.farm_id
+    if (!String(row.path).startsWith(`${e.farm_id}/${e.id}/`) || String(row.path).includes('..')) return err(`Chemin de photo invalide : ${row.path}`)
+  } else {
+    const change = (c: string) => !old || row[c] !== old[c]
+    if (row.planting_id && change('planting_id')) {
+      const p = d.plantings.find((x: Row) => x.id === row.planting_id)
+      if (p) { row.planche_id ??= p.planche_id; row.culture_id ??= p.culture_id }
+      if (p && (row.planche_id !== p.planche_id || row.culture_id !== p.culture_id)) return err(`La plantation ${row.planting_id} ne correspond pas à la planche ou à la culture indiquée`)
+    }
+    const planche = row.planche_id ? d.planches.find((x: Row) => x.id === row.planche_id) : null
+    if (t === 'treatments' && planche) row.garden_id = planche.garden_id
+    const fermeDeJardin = (gid: string | null) => d.gardens.find((g: Row) => g.id === gid)?.farm_id ?? null
+    const ferme = d.seasons.find((s: Row) => s.id === row.season_id)?.farm_id
+      ?? (planche ? fermeDeJardin(planche.garden_id) : null)
+      ?? (row.planting_id ? d.seasons.find((s: Row) => s.id === d.plantings.find((p: Row) => p.id === row.planting_id)?.season_id)?.farm_id : null)
+      ?? (t === 'treatments' ? fermeDeJardin(row.garden_id) : null)
+    if (ferme) row.farm_id = ferme
+    if (!row.farm_id) return err('Ferme introuvable : indiquez une saison, une planche ou la ferme')
+    if (planche && fermeDeJardin(planche.garden_id) !== row.farm_id) return err(`Planche ${row.planche_id} hors de la ferme`)
+    if (t === 'treatments') {
+      const c = row.culture_id ? d.culture_catalog.find((x: Row) => x.id === row.culture_id) : null
+      if (c && (!String(row.culture_libelle ?? '').trim() || (old && change('culture_id') && row.culture_libelle === old.culture_libelle))) row.culture_libelle = c.name
+      if (!String(row.culture_libelle ?? '').trim()) return err('Culture traitée requise')
+      const g = d.gardens.find((x: Row) => x.id === row.garden_id)
+      if (g && (!String(row.lieu_libelle ?? '').trim() || (old && (change('planche_id') || change('garden_id')) && row.lieu_libelle === old.lieu_libelle))) {
+        row.lieu_libelle = planche ? `${g.name} · ${planche.name}` : g.name
+      }
+      if (!String(row.lieu_libelle ?? '').trim()) return err('Localisation requise')
+      if (row.operateur_id && change('operateur_id')) {
+        if (!d.farm_members.some((m: Row) => m.farm_id === row.farm_id && m.user_id === row.operateur_id)) return err(`L'opérateur ${row.operateur_id} n'est pas membre de la ferme`)
+        if (!String(row.operateur_nom ?? '').trim()) {
+          const pr = d.profiles.find((x: Row) => x.id === row.operateur_id)
+          row.operateur_nom = pr?.owner_name || pr?.email
+        }
+      }
+      if (!String(row.operateur_nom ?? '').trim()) return err('Opérateur requis')
+    }
+    if (old) row.updated_at = new Date().toISOString()
+  }
+  if (!mesFermes.has(row.farm_id)) return err(`new row violates row-level security policy for table "${t}"`, '42501')
+  return null
 }
 
 // Migration 008, trigger couts_set_farm : farm_id recopié de la saison, jamais du client
@@ -173,6 +238,12 @@ function tableRows(table: string): Row[] {
   if (table === 'plantings_full') return plantingsFull()
   if (table === 'planting_actuals') return plantingActuals()
   if (!d[table]) throw new Error(`Table inconnue en mode démo : ${table}`)
+  if (TABLES_JOURNAL.has(table)) {
+    // Policy 009 : farm_id in my_farm_ids()
+    const me = currentUser()?.id
+    const fermes = new Set(d.farm_members.filter((m: Row) => m.user_id === me).map((m: Row) => m.farm_id))
+    return d[table].filter((r: Row) => fermes.has(r.farm_id))
+  }
   return d[table]
 }
 
@@ -202,6 +273,12 @@ function cascadeDelete(table: string, removed: Row[]) {
   }
   // Migration 008 : planche supprimée → planche_id à null
   if (table === 'planches') for (const t of ['costs', 'time_entries']) for (const r of (d as any)[t]) if (ids.has(r.planche_id)) r.planche_id = null
+  // Migration 009 : journal et registre survivent aux suppressions en amont (libellés figés)
+  const dj = d as any
+  if (table === 'journal_entries') drop('journal_photos' as keyof DemoDb, r => ids.has(r.entry_id))
+  for (const [src, col] of [['planches', 'planche_id'], ['plantings', 'planting_id'], ['seasons', 'season_id'], ['culture_catalog', 'culture_id'], ['gardens', 'garden_id']] as const) {
+    if (table === src) for (const t of ['journal_entries', 'treatments']) for (const r of dj[t] ?? []) if (ids.has(r[col])) r[col] = null
+  }
   // Migration 005 (commercial) : cascades et « on delete set null »
   const dx = d as any
   if (table === 'sales') {
@@ -358,6 +435,8 @@ class DemoQuery implements PromiseLike<Result> {
           }
           const errCout = coutsSetFarm(t, row)
           if (errCout) return { data: null, error: errCout }
+          const errJournal = journalSetFarm(t, row, null)
+          if (errJournal) return { data: null, error: errJournal }
           if (t === 'seasons') row.invite_token ??= uuid()
           if (t === 'team_members') row.joined_at ??= new Date().toISOString()
           d[t].push(row)
@@ -381,8 +460,15 @@ class DemoQuery implements PromiseLike<Result> {
       }
 
       if (this.op === 'update') {
-        const rows = this.match(d[t])
+        const rows = this.match(tableRows(t))
         for (const r of rows) {
+          if (TABLES_JOURNAL.has(t)) {
+            const copie = { ...r, ...this.payload }
+            const errJournal = journalSetFarm(t, copie, r)
+            if (errJournal) return { data: null, error: errJournal }
+            Object.assign(r, copie)
+            continue
+          }
           Object.assign(r, this.payload)
           coutsSetFarm(t, r)
           if (t === 'plantings') calcPlanting(r)
@@ -395,7 +481,7 @@ class DemoQuery implements PromiseLike<Result> {
       }
 
       if (this.op === 'delete') {
-        const rows = this.match(d[t])
+        const rows = this.match(tableRows(t))
         if (t === 'culture_catalog' && rows.some(r => [...d.costs, ...d.time_entries].some((x: Row) => x.culture_id === r.id))) {
           return { data: null, error: { code: '23503', message: 'Cette culture porte des dépenses ou du temps saisi (on delete restrict).' } }
         }
@@ -617,9 +703,60 @@ async function rpc(fn: string, args: Row = {}): Promise<Result> {
   return { data: null, error: { message: `Fonction inconnue en mode démo : ${fn}` } }
 }
 
+// ─── Storage (migration 009 : bucket privé `journal`) ─────────────
+// Les fichiers déposés restent en mémoire sous forme de blob: URL ; une « URL
+// signée » est cette blob: URL (ou l'image publique d'une photo de démo).
+// Mêmes règles que les policies : premier dossier = une ferme de l'appelant.
+const objetsStorage = new Map<string, string>()
+const erreurStorage = (message: string, statusCode = '400') => ({ data: null, error: { name: 'StorageApiError', message, statusCode } })
+function dossierAutorise(path: string): boolean {
+  const me = currentUser()?.id
+  const parties = path.split('/')
+  const d = getDb() as any
+  return parties.length === 3 && !path.includes('..') && d.farm_members.some((m: Row) => m.user_id === me && m.farm_id === parties[0])
+}
+function objetStorage(bucket: string, path: string): string | undefined {
+  if (bucket !== 'journal') return undefined
+  return objetsStorage.get(path) ?? OBJETS_JOURNAL_DEMO.get(path)
+}
+const storage = {
+  from(bucket: string) {
+    return {
+      async upload(path: string, file: Blob, opts?: { upsert?: boolean; contentType?: string }) {
+        await wait(250)
+        if (horsLigneDemo()) return erreurStorage('Failed to fetch', '0')
+        if (bucket !== 'journal') return erreurStorage('Bucket not found', '404')
+        if (!currentUser() || !dossierAutorise(path)) return erreurStorage('new row violates row-level security policy', '403')
+        if (objetStorage(bucket, path) && !opts?.upsert) return erreurStorage('The resource already exists', '409')
+        objetsStorage.set(path, URL.createObjectURL(file))
+        return { data: { path, id: uuid(), fullPath: `${bucket}/${path}` }, error: null }
+      },
+      async createSignedUrl(path: string) {
+        await wait(60)
+        if (horsLigneDemo()) return erreurStorage('Failed to fetch', '0')
+        const url = objetStorage(bucket, path)
+        if (!currentUser() || !url || path.split('/')[0] === '' || !dossierAutorise(path)) return erreurStorage('Object not found', '404')
+        return { data: { signedUrl: url }, error: null }
+      },
+      async remove(paths: string[]) {
+        await wait(90)
+        if (horsLigneDemo()) return erreurStorage('Failed to fetch', '0')
+        const out: Row[] = []
+        for (const p of paths) {
+          if (!dossierAutorise(p)) continue // filtré par la policy, sans erreur
+          const url = objetsStorage.get(p)
+          if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+          if (objetsStorage.delete(p) || OBJETS_JOURNAL_DEMO.delete(p)) out.push({ name: p, bucket_id: bucket })
+        }
+        return { data: out, error: null }
+      },
+    }
+  },
+}
+
 let client: any = null
 
 /** Client unique (partagé par useBleuenn, /reset-password et /join). */
 export function createDemoClient(): any {
-  return (client ??= { auth, from: (t: string) => new DemoQuery(t), rpc })
+  return (client ??= { auth, from: (t: string) => new DemoQuery(t), rpc, storage })
 }
