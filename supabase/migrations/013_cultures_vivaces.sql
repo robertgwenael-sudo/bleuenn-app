@@ -477,6 +477,8 @@ drop function pg_temp.cv_norm(text);
 
 -- ============================================================
 -- -- down (à exécuter manuellement pour annuler 013)
+-- -- APRÈS les down de 016 puis 015 : leurs fonctions (trigger de 015,
+-- -- reprendre_plan_dans_saison de 016) lisent achat_plant et cycle.
 -- ============================================================
 -- begin;
 -- -- Vue : retour à la définition de 006 (les colonnes ajoutées disparaissent)

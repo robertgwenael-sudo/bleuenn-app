@@ -372,6 +372,8 @@ to authenticated;
 -- -- saison basculée par J garde son année : remettre year à la main si voulu)
 -- ============================================================
 -- update public.seasons set name = nom_initial where nom_initial is not null;
+-- -- duplicate_season_plan : retour à la définition de 013 (section E de
+-- -- 013_cultures_vivaces.sql : vivaces exclues, achat_plant recopié)
 -- create or replace function public.duplicate_season_plan(p_source_season uuid, p_name text, p_year int, p_shift_years int default 1)
 -- returns uuid language plpgsql security definer set search_path = '' as $f$
 -- declare v_src public.seasons%rowtype; v_new uuid;
@@ -380,9 +382,10 @@ to authenticated;
 --   select * into v_src from public.seasons where id = p_source_season;
 --   insert into public.seasons (user_id, farm_id, name, year, revenue_goal, is_active)
 --   values (auth.uid(), v_src.farm_id, p_name, p_year, v_src.revenue_goal, false) returning id into v_new;
---   insert into public.plantings (planche_id, culture_id, season_id, surface_m2, date_semis, jours_cellule_override, jours_champ_override, jours_recolte_override, rendement_override, prix_override, notes)
---   select planche_id, culture_id, v_new, surface_m2, (date_semis + make_interval(years => p_shift_years))::date, jours_cellule_override, jours_champ_override, jours_recolte_override, rendement_override, prix_override, notes
---   from public.plantings where season_id = p_source_season;
+--   insert into public.plantings (planche_id, culture_id, season_id, surface_m2, date_semis, jours_cellule_override, jours_champ_override, jours_recolte_override, rendement_override, prix_override, notes, achat_plant)
+--   select p.planche_id, p.culture_id, v_new, p.surface_m2, (p.date_semis + make_interval(years => p_shift_years))::date, p.jours_cellule_override, p.jours_champ_override, p.jours_recolte_override, p.rendement_override, p.prix_override, p.notes, p.achat_plant
+--   from public.plantings p join public.culture_catalog c on c.id = p.culture_id
+--   where p.season_id = p_source_season and c.cycle <> 'vivace';
 --   return v_new;
 -- end; $f$;
 -- drop function if exists public.basculer_saison(uuid, int, boolean);
