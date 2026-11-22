@@ -623,7 +623,7 @@ const MOTS_TOTAL: RegExp[] = [
   /total ttc|montant ttc|\bttc\b/,
   /\btotal\b|\bmontant\b/,
 ]
-const EXCLUS_TOTAL = /sous[- ]?total|total h\.?t|\bht\b|\btva\b|remise|rendu|monnaie|economis|fidelite|points?\b/
+const EXCLUS_TOTAL = /sous\s*-?\s*total|total h\.?t|\bht\b|\btva\b|remise|rendu|monnaie|economis|fidelite|points?\b/
 
 export interface SuggestionMontant { centimes: Centimes; ligne: string; confiance: 'mot-cle' | 'plus-grand' }
 

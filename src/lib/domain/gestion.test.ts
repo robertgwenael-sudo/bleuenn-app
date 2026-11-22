@@ -371,3 +371,20 @@ describe('fichiers et exports', () => {
     expect(csv).toContain("05/11/2026;Autre;'=FRAIS;;3,00;MANQUANT;;")
   })
 })
+
+// Sorties RÉELLES de tesseract.js 7 (fra, best_int) sur des photos de tickets générées
+// (papier tourné, flou, bruit) : scratchpad gestion/ocr.
+const OCR_REEL: Record<string, string> = {
+  "jardinerie": "JARDINERIE DES QUATRE VENTS\nZA de Kerlann 29000 QUIMPER\n\nTel 02 98 00 06 00\n\nTicket 0042 Caisse 2\n\nle 14/11/2026 10:32\n\nTERREAU 70L 2 x 12,90 25,80\nSECATEUR BYPASS 24,90\nSOUS - TOTAL 50,70\nREMISE FIDELITE -2,00\nTOTAL TTC 48,70 EUR\ndont TVA 20% 8,12\ncB 48,70\nMerci de votre visite\n",
+  "graineterie": "Graineterie du Lac\n\n12 rue des Semeurs 56000 Vannes\nSIRET 123 456 789 00612\n\nFACTURE N FA-2026-1187\n\nDate de facture : 3 novembre 2026\nEcheance : 03/12/2026\n\nGraines Zinnia 4 3,50 14,00\nBulbes Renoncule 100 6,42 42,00\nTotal HT 56,00\nTVA 5,5 % 3,08\nTotal TTC 59,08\nNet a payer 59,08 EUR\n",
+  "station": "STATION DU PORT\nCARBURANT GAZOLE\n22.11.26 08:14\nVOLUME 38,52 L\nPRIX/L 1,749\nMONTANT\n\n67,37\n\nMERCI\n"
+}
+
+describe('lecture automatique sur sorties réelles de l’OCR', () => {
+  it('jardinerie, graineterie, station', () => {
+    const s = (k: string) => [extraireMontantOcr(OCR_REEL[k])?.centimes, extraireDateOcr(OCR_REEL[k], '2026-11-22'), extraireFournisseurOcr(OCR_REEL[k])]
+    expect(s('jardinerie')).toEqual([4870, '2026-11-14', 'JARDINERIE DES QUATRE VENTS'])
+    expect(s('graineterie')).toEqual([5908, '2026-11-03', 'Graineterie du Lac'])
+    expect(s('station')).toEqual([6737, '2026-11-22', 'STATION DU PORT'])
+  })
+})

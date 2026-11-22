@@ -1,12 +1,13 @@
 import {
   LayoutDashboard, Fence, Sprout, CalendarRange, Scissors, Store, PackageOpen,
-  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, PiggyBank, FileDown, NotebookPen, ReceiptText, Factory, type LucideIcon,
+  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, PiggyBank, FileDown, NotebookPen, ReceiptText, Factory, Landmark, ScanLine, type LucideIcon,
 } from 'lucide-react'
 
 export type SectionId =
   | 'dashboard' | 'jardins' | 'semis' | 'calendrier' | 'recoltes' | 'ventes'
   | 'commandes' | 'disponibilite' | 'analytique' | 'catalogue' | 'verification'
   | 'taches' | 'reel' | 'clients' | 'livraisons' | 'rentabilite' | 'exports' | 'journal' | 'factures' | 'fournisseurs'
+  | 'gestion' | 'justificatifs'
 
 export type Section = { id: SectionId; label: string; short: string; icon: LucideIcon; key: string; description: string }
 
@@ -15,6 +16,8 @@ export const SECTIONS: Section[] = [
   { id: 'taches', label: 'Tâches', short: 'Tâches', icon: ListChecks, key: 'h', description: 'Travaux du mois, semaine par semaine' },
   { id: 'reel', label: 'Prévu / réel', short: 'Réel', icon: Scale, key: 'p', description: 'Récoltes, pertes et CA face au prévu' },
   { id: 'rentabilite', label: 'Coûts & rentabilité', short: 'Marge', icon: PiggyBank, key: 'm', description: 'Dépenses, temps passé et marge par culture' },
+  { id: 'gestion', label: 'Gestion', short: 'Gestion', icon: Landmark, key: 'g', description: 'Trésorerie, banque, export comptable' },
+  { id: 'justificatifs', label: 'Justificatifs', short: 'Justif.', icon: ScanLine, key: 'i', description: 'Tickets et factures d’achat scannés' },
   { id: 'analytique', label: 'Analytique', short: 'Analytique', icon: ChartNoAxesCombined, key: 'a', description: 'Prévisionnel de chiffre d’affaires' },
   { id: 'jardins', label: 'Jardins & planches', short: 'Jardins', icon: Fence, key: 'j', description: 'Parcelles, planches et plantations' },
   { id: 'semis', label: 'Semis & germination', short: 'Semis', icon: Sprout, key: 's', description: 'Suivi de toutes les cultures' },
@@ -34,7 +37,7 @@ export const SECTIONS: Section[] = [
 ]
 
 export const NAV_GROUPS: { label: string; ids: SectionId[] }[] = [
-  { label: 'Pilotage', ids: ['dashboard', 'taches', 'reel', 'rentabilite', 'analytique'] },
+  { label: 'Pilotage', ids: ['dashboard', 'taches', 'reel', 'rentabilite', 'gestion', 'justificatifs', 'analytique'] },
   { label: 'Cultures', ids: ['jardins', 'semis', 'calendrier', 'journal', 'disponibilite'] },
   { label: 'Commercial', ids: ['recoltes', 'livraisons', 'ventes', 'factures', 'clients'] },
   { label: 'Référentiel', ids: ['catalogue', 'commandes', 'fournisseurs', 'verification', 'exports'] },
