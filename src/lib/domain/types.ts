@@ -716,3 +716,38 @@ export interface BankMatch {
   created_by: string | null
   created_at: string
 }
+
+// ============================================================
+// ▼▼▼ Cultures et catalogue : annuelles, bisannuelles, vivaces (013) ▼▼▼
+// Section propre à la migration 013, à fusionner telle quelle.
+// ============================================================
+export const CYCLES_CULTURE = ['annuelle', 'bisannuelle', 'vivace'] as const
+export type CycleCulture = (typeof CYCLES_CULTURE)[number]
+
+/** Colonnes ajoutées à `culture_catalog` (facultatives tant que 013 n'est pas appliquée). */
+export interface ChampsCultureCycle {
+  /** Absent avant 013 : se lit « annuelle ». */
+  cycle?: CycleCulture
+  /** 1ère date d'implantation au champ possible, `jj/mm` (charte). */
+  premiere_implantation?: string | null
+  /** Vivace ou bisannuelle : début de la récolte chaque année, `jj/mm` (absent de la charte, à saisir). Null = pas de dates de récolte. */
+  debut_floraison?: string | null
+  /** Vivace ou bisannuelle : délai minimal plantation → 1re floraison. Null = à confirmer (calcul avec 0). */
+  delai_premiere_floraison_jours?: number | null
+}
+
+/** Colonnes ajoutées à `plantings` et à la vue `plantings_full`. */
+export interface ChampsPlantingCycle {
+  /** OPTION PLANT : plant acheté, la date saisie est la date de plantation. */
+  achat_plant?: boolean
+  /** Dernier jour en place. Null : vivace toujours en place, annuelle jusqu'à `date_fin`. */
+  arrachee_le?: DateISO | null
+  /** Vue seulement : cycle de la culture. */
+  cycle?: CycleCulture
+  /** Vue seulement : null = vivace toujours en place (ou bisannuelle sans floraison connue). */
+  fin_occupation?: DateISO | null
+  premiere_implantation?: string | null
+  debut_floraison?: string | null
+  delai_premiere_floraison_jours?: number | null
+}
+// ▲▲▲ fin de la section 013 ▲▲▲

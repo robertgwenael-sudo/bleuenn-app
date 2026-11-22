@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase'
+import { avecDatesDeRecolte } from '@/lib/domain/cultures'
 import {
   deplacerTache, ligneCocherTache, tachesAAfficher,
   type CibleDeplacement, type DateISO, type PlanningMensuel, type PlantingFull, type PlantingTaches,
@@ -98,7 +99,8 @@ export function useTaches(ctx: CtxTaches) {
     ])
     if (pl.error) { signaler('Impossible de charger les plantations', pl.error); setErreur(pl.error.message) }
     if (tk.error) { signaler('Impossible de charger les tâches', tk.error); setErreur(tk.error.message) }
-    if (!pl.error) setPlantings((pl.data ?? []) as PlantingFull[])
+    // 013 : une vivace sans début de floraison n'a pas de dates de récolte
+    if (!pl.error) setPlantings(avecDatesDeRecolte((pl.data ?? []) as PlantingFull[]))
     if (!tk.error) setStockees((tk.data ?? []) as StoredTask[])
     setSaisons(ss)
     setLoading(false)

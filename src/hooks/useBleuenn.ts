@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase'
+import { avecDatesDeRecolte, sansDatesDeRecolte } from '@/lib/domain/cultures'
 import type {
   Season, Garden, Planche, CultureCatalog, PlantingFull,
   Harvest, Sale, SeedOrder, Profile, TeamMember, Farm, FarmMember
@@ -55,6 +56,11 @@ export function useBleuenn() {
   const [farm, setFarm] = useState<Farm | null>(null)
   const [farmTeam, setFarmTeam] = useState<FarmMember[]>([])
   const [farmPlantings, setFarmPlantings] = useState<PlantingFull[]>([])
+  // 013 : toutes les plantations de la ferme, y compris les vivaces et
+  // bisannuelles sans début de floraison (pas de dates de récolte). Seuls
+  // Jardins et les formulaires de plantation (occupation) les lisent ;
+  // `plantings` et `farmPlantings` ne gardent que les plantations datées.
+  const [farmPlantingsTout, setFarmPlantingsTout] = useState<PlantingFull[]>([])
   const [today] = useState<string>(aujourdhuiParis)
   const [loading, setLoading] = useState(true)
 
@@ -113,9 +119,12 @@ export function useBleuenn() {
       supabase.from('seed_orders').select('*').eq('season_id', seasonId).order('culture_name'),
     ])
     const seasonPlantings = lire(plRes, 'les plantations de la saison', [] as PlantingFull[])
+    const toutesFerme = farmId ? lire(farmPlRes, 'les plantations de la ferme', [] as PlantingFull[]) : seasonPlantings
     setGardens(lire(garRes, 'les jardins', [] as Garden[]))
-    setPlantings(seasonPlantings)
-    setFarmPlantings(farmId ? lire(farmPlRes, 'les plantations de la ferme', [] as PlantingFull[]) : seasonPlantings)
+    // Hors prévisionnel (CA, disponibilités, semis…) : floraison à renseigner
+    setPlantings(avecDatesDeRecolte(seasonPlantings))
+    setFarmPlantings(avecDatesDeRecolte(toutesFerme))
+    setFarmPlantingsTout(toutesFerme)
     setHarvests(lire(harRes, 'les récoltes', [] as Harvest[]))
     setSales(lire(salRes, 'les ventes', [] as Sale[]))
     setSeedOrders(lire(soRes, 'les commandes de graines', [] as SeedOrder[]))
@@ -181,7 +190,7 @@ export function useBleuenn() {
         loadFarm(active.farm_id),
       ])
     } else {
-      setFarm(null); setFarmTeam([]); setFarmPlantings([])
+      setFarm(null); setFarmTeam([]); setFarmPlantings([]); setFarmPlantingsTout([])
     }
     setLoading(false)
   }, [user])
@@ -265,6 +274,7 @@ export function useBleuenn() {
     rendement_override?: number
     prix_override?: number
     notes?: string
+    achat_plant?: boolean
   }) => {
     if (!activeSeason) return null
     const { data, error } = await supabase.from('plantings').insert({
@@ -280,9 +290,33 @@ export function useBleuenn() {
     return data
   }
 
+  /**
+   * 013 : plusieurs cultures d'un coup sur une planche. Une seule requête
+   * INSERT multi-lignes : tout ou rien. Renvoie le nombre de plantations
+   * créées (0 si l'insertion a été refusée, erreur signalée).
+   */
+  const createPlantings = async (plancheId: string, lignes: {
+    culture_id: string; date_semis: string; surface_m2: number; achat_plant?: boolean
+  }[]): Promise<number> => {
+    if (!activeSeason || lignes.length === 0) return 0
+    const res = await supabase.from('plantings').insert(lignes.map(l => ({
+      planche_id: plancheId,
+      culture_id: l.culture_id,
+      season_id: activeSeason.id,
+      date_semis: l.date_semis,
+      surface_m2: l.surface_m2,
+      achat_plant: !!l.achat_plant,
+    }))).select('id')
+    if (!ecrire(res, `ajout de ${lignes.length} plantation${lignes.length > 1 ? 's' : ''}`)) return 0
+    await loadSeasonData(activeSeason.id)
+    return (res.data ?? []).length
+  }
+
   const updatePlanting = async (id: string, updates: {
     date_semis?: string
     surface_m2?: number
+    achat_plant?: boolean
+    arrachee_le?: string | null
     jours_cellule_override?: number
     jours_champ_override?: number
     jours_recolte_override?: number
@@ -291,8 +325,9 @@ export function useBleuenn() {
     notes?: string
   }) => {
     const { error } = await supabase.from('plantings').update(updates).eq('id', id)
-    ecrire({ error }, 'modification de la plantation')
+    const ok = ecrire({ error }, 'modification de la plantation')
     if (activeSeason) await loadSeasonData(activeSeason.id)
+    return ok
   }
 
   const deletePlanting = async (id: string) => {
@@ -494,13 +529,15 @@ export function useBleuenn() {
     gardens, catalog, plantings, harvests, sales, seedOrders,
     createGarden, updateGarden, deleteGarden,
     createPlanche, updatePlanche, deletePlanche,
-    createPlanting, updatePlanting, deletePlanting,
+    createPlanting, createPlantings, updatePlanting, deletePlanting,
     createHarvest, deleteHarvest,
     createSale, deleteSale,
     upsertSeedOrder, addCulture, updateCulture, deleteCulture,
     teamMembers, isOwner,
     // Niveau ferme (migration 006)
     farm, farmTeam, farmPlantings, isFarmOwner, duplicatePlan, today,
+    // 013 : occupation complète et plantations « floraison à renseigner »
+    farmPlantingsTout, plantingsFloraisonManquante: sansDatesDeRecolte(farmPlantingsTout),
     enableInviteLink, disableInviteLink, regenerateInviteToken,
     joinByToken, inviteByEmail, getPendingInvites, cancelInvite, removeMember,
     reload: loadAll,

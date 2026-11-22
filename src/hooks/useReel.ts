@@ -16,6 +16,7 @@ import type {
   DateISO, HarvestLite, Loss, LossReason, Order, OrderLine, PlantingActual, SaleLine,
 } from '@/lib/domain'
 import type { CommandeAvecLignes, LossLite, PlantingReel, VenteCalcul } from '@/lib/domain'
+import { avecDatesDeRecolte } from '@/lib/domain/cultures'
 
 const supabase = createClient()
 
@@ -179,7 +180,8 @@ export function useDisponibiliteFerme(ctx: ReelCtx) {
         supabase.from('orders').select('id, status, delivery_date').in('season_id', seasonIds),
         supabase.from('order_lines').select('order_id, culture_id, label, quantity, stems_per_unit').in('season_id', seasonIds),
       ])
-      const plantings = verifier<PlantingReel[]>(p, 'plantations de la ferme')
+      // 013 : sans début de floraison, pas de prévu ni de disponibilités (listées dans Jardins)
+      const plantings = avecDatesDeRecolte(verifier<PlantingReel[]>(p, 'plantations de la ferme'))
       const recoltes = verifier<HarvestLite[]>(h, 'récoltes de la ferme')
       const pertes = verifier<LossLite[]>(l, 'pertes de la ferme')
       const orders = verifier<Pick<Order, 'id' | 'status' | 'delivery_date'>[]>(o, 'commandes')

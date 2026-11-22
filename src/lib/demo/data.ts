@@ -21,7 +21,10 @@ const id = (prefix: string) => {
 // [nom, type, j.cellule, j.champ, j.récolte, rendement/plant, prix/tige, t° germ., pincer, filet, couvre-sol, semis direct, espacement cm, rangs, graines/plant, notes]
 type Cat = [string, 'RR' | 'MP' | 'RU', number, number, number, number, number, number | null, boolean, boolean, boolean, boolean, number, number, number, string | null]
 const CATALOG: Cat[] = [
-  ['Achillée', 'RR', 35, 90, 42, 6, 0.6, 20, false, false, true, false, 30, 3, 2, 'Récolter quand 80 % des fleurs sont ouvertes'],
+  // Vivaces (013) : jours au champ ignorés (0), la récolte suit le début de floraison (FLORAISON ci-dessous)
+  ['Achillée', 'RR', 30, 0, 21, 5, 0.7, 20, false, false, true, false, 30, 3, 2, 'Vivace : récolter quand 80 % des fleurs sont ouvertes'],
+  ['Ancolie', 'MP', 0, 0, 21, 3, 0.85, 20, false, false, true, false, 23, 5, 2, 'Vivace, stratification au froid avant semis'],
+  ['Anémone', 'RR', 0, 120, 56, 3, 0.8, 10, false, false, false, false, 20, 5, 1, 'Griffes trempées, plantées début novembre sous abri'],
   ['Ammi majus', 'MP', 28, 80, 28, 5, 0.7, 18, true, true, false, false, 30, 3, 2, 'Supporte un semis d’automne sous voile'],
   ['Amarante queue-de-renard', 'MP', 21, 70, 28, 2, 0.9, 22, false, true, false, false, 30, 3, 2, null],
   ['Bleuet', 'RR', 21, 70, 35, 8, 0.4, 16, true, false, false, true, 20, 4, 1, 'Couper au stade bouton à peine ouvert'],
@@ -36,7 +39,7 @@ const CATALOG: Cat[] = [
   ['Nigelle', 'RU', 0, 85, 21, 2, 0.5, 15, false, false, false, true, 15, 6, 3, 'Capsules séchées en fin de saison'],
   ['Pois de senteur', 'MP', 28, 110, 42, 6, 0.8, 15, true, true, false, false, 15, 2, 1, 'Récolter tous les deux jours'],
   ['Renoncule', 'RU', 30, 120, 28, 4, 1.5, 12, false, false, false, false, 20, 4, 1, 'Griffes pré-germées'],
-  ['Rudbeckia', 'RR', 28, 85, 49, 8, 0.6, 21, true, false, false, false, 35, 3, 2, null],
+  ['Rudbeckia', 'RR', 28, 0, 49, 8, 0.6, 21, true, false, false, false, 35, 3, 2, null],
   ['Scabieuse', 'RR', 28, 80, 49, 8, 0.7, 20, false, false, false, false, 30, 3, 2, 'Les capsules se vendent aussi'],
   ['Statice', 'MP', 30, 80, 21, 3, 0.5, 20, false, false, true, false, 20, 5, 1, 'Sécher à l’envers après récolte'],
   ['Tournesol', 'RU', 0, 70, 14, 1, 1.0, 21, false, false, false, true, 20, 4, 1, 'Variétés sans pollen, semis échelonnés'],
@@ -44,6 +47,22 @@ const CATALOG: Cat[] = [
   ['Zinnia', 'RR', 21, 60, 56, 10, 0.6, 24, true, false, false, false, 30, 3, 2, 'Test du « tige qui ne plie pas »'],
   ['Feuillage de menthe', 'RR', 0, 60, 70, 8, 0.3, null, false, false, true, false, 30, 3, 1, 'Bouturage en godets'],
 ]
+
+// Migration 013 : cycle (annuelle par défaut) et 1ère date d'implantation
+// possible, reprises de la charte de culture quand elle les donne.
+const CYCLE: Record<string, 'bisannuelle' | 'vivace'> = { 'Achillée': 'vivace', 'Ancolie': 'vivace', 'Rudbeckia': 'vivace' }
+// DÉMO : début de floraison (jj/mm) et délai avant 1re floraison FICTIFS,
+// plausibles mais absents de la charte de Marine. Achillée sans délai
+// (« à confirmer »), Rudbeckia sans floraison (« à renseigner », hors
+// prévisionnel) : les deux cas de données manquantes restent visibles.
+const FLORAISON: Record<string, string> = { 'Achillée': '15/06', 'Ancolie': '15/05' }
+const DELAI_FLORAISON: Record<string, number> = { 'Ancolie': 240 }
+const IMPLANTATION: Record<string, string> = {
+  'Ammi majus': '21/05', 'Amarante queue-de-renard': '28/05', 'Bleuet': '15/05', 'Célosie à plumes': '29/05',
+  'Cosmos': '21/05', 'Dahlia': '15/05', 'Eucalyptus': '21/05', 'Gomphréna': '21/05', 'Gueule-de-loup (muflier)': '01/04',
+  'Lisianthus': '21/05', 'Nigelle': '01/04', 'Pois de senteur': '15/04', 'Scabieuse': '01/04', 'Statice': '01/04',
+  'Tournesol': '21/05', 'Zinnia': '21/05',
+}
 
 export function buildDemoDb() {
   n = 0
@@ -69,6 +88,8 @@ export function buildDemoDb() {
     id: id('40000000'), user_id: null, name: c[0], type: c[1], jours_cellule: c[2], jours_champ: c[3], jours_recolte: c[4],
     rendement_plant: c[5], prix_tige: c[6], temp_germination: c[7], pincer: c[8], filet: c[9], couvre_sol: c[10],
     semis_direct: c[11], espacement_cm: c[12], rangs_par_planche: c[13], graines_par_plant: c[14], notes: c[15], created_at: now,
+    cycle: CYCLE[c[0]] ?? 'annuelle', premiere_implantation: IMPLANTATION[c[0]] ?? null,
+    debut_floraison: FLORAISON[c[0]] ?? null, delai_premiere_floraison_jours: DELAI_FLORAISON[c[0]] ?? null,
   }))
   const cat = (name: string) => {
     const c = culture_catalog.find(x => x.name === name)
@@ -95,6 +116,8 @@ export function buildDemoDb() {
   const pl = (gi: number, pi: number) => planches.filter(p => p.garden_id === gardens[gi].id)[pi].id
 
   // [jardin, planche, culture, date de semis, surface m²]
+  // Une date de semis antérieure à 2026 rattache la plantation à la saison 2025.
+  // Surfaces vérifiées par plantations-demo.test.ts : aucune planche en conflit.
   const PLANTINGS: [number, number, string, string, number][] = [
     // Jardin du Haut
     [0, 0, 'Zinnia', '2026-04-10', 6], [0, 0, 'Cosmos', '2026-04-03', 6],
@@ -114,8 +137,12 @@ export function buildDemoDb() {
     [2, 1, 'Lisianthus', '2026-01-20', 9],
     [2, 2, 'Chrysanthème d’automne', '2026-05-05', 9],
     [2, 3, 'Pois de senteur', '2026-01-10', 4.5], [2, 3, 'Pois de senteur', '2026-11-26', 4.5],
+    // Anémones : griffes plantées début novembre sous abri, à côté des pois de senteur
+    [2, 3, 'Anémone', '2026-11-01', 4.5],
     // Bordure du Ruisseau
-    [3, 0, 'Achillée', '2026-02-28', 5], [3, 0, 'Feuillage de menthe', '2026-04-01', 5],
+    // Vivaces en place depuis 2025 : achillée (fleurit chaque juin), ancolie (chaque mai)
+    [3, 0, 'Achillée', '2025-06-01', 5], [3, 0, 'Feuillage de menthe', '2026-04-01', 5],
+    [3, 2, 'Ancolie', '2025-05-15', 4],
     [3, 1, 'Eucalyptus', '2026-02-05', 10],
     [3, 2, 'Scabieuse', '2026-04-12', 4], [3, 2, 'Bleuet', '2026-10-12', 4],
     [3, 3, 'Dahlia', '2026-04-01', 8],
@@ -127,9 +154,10 @@ export function buildDemoDb() {
     [2, 1, 'Renoncule', '2026-11-30', 4],
   ]
   const plantings: Row[] = PLANTINGS.map(([gi, pi, c, ds, m2]) => ({
-    id: id('70000000'), planche_id: pl(gi, pi), culture_id: cat(c), season_id: SEASON_2026,
+    id: id('70000000'), planche_id: pl(gi, pi), culture_id: cat(c), season_id: ds < '2026' ? SEASON_2025 : SEASON_2026,
     surface_m2: m2, date_semis: ds, jours_cellule_override: 0, jours_champ_override: null,
     jours_recolte_override: null, rendement_override: null, prix_override: null, notes: null, created_at: now,
+    achat_plant: false, arrachee_le: null,
   }))
   const plantingOf = (culture: string, ds: string) => {
     const cid = cat(culture)

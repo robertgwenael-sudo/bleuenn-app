@@ -12,8 +12,9 @@ const MAELLE_ID = '00000000-0000-4000-8000-000000000003'
  *  - une « Saison 2027 » déjà ébauchée (non active), dont les plantations
  *    de printemps arrivent sur des planches encore occupées par les
  *    semis d'automne 2026 (renoncules, pois de senteur…) ;
- *  - un conflit de surface réel en serre froide (lisianthus 2027 contre
- *    renoncules 2026), pour que l'alerte soit visible ;
+ *  - AUCUN conflit de surface (retour de Marine : les conflits de la démo
+ *    étaient faux) ; les lisianthus 2027 sont des plants achetés (plugs),
+ *    plantés en mars à côté des renoncules d'automne ;
  *  - une troisième personne dans l'équipe de la ferme.
  * Modifie la base en place.
  */
@@ -57,23 +58,25 @@ export function seed_ferme(db: DemoDb & Record<string, any[]>): void {
     return c.id
   }
 
-  // [jardin, planche, culture, semis, m²]
-  const P2027: [string, string, string, string, number][] = [
+  // [jardin, planche, culture, semis (ou plantation d'un plant acheté), m², plant acheté]
+  const P2027: [string, string, string, string, number, boolean?][] = [
     ['Jardin du Haut', 'PL 1', 'Cosmos', '2027-04-02', 6],
     ['Jardin du Haut', 'PL 1', 'Zinnia', '2027-04-12', 6],
     ['Jardin du Haut', 'PL 2', 'Dahlia', '2027-03-18', 12],
     ['Jardin du Haut', 'PL 4', 'Zinnia', '2027-05-14', 8],
     ['Parcelle du Verger', 'PL 4', 'Célosie à plumes', '2027-04-22', 5],
-    // Serre froide PL 1 : renoncules 2026 encore en place jusqu'en juin 2027
-    ['Serre froide', 'PL 1', 'Lisianthus', '2027-01-12', 9],
+    // Serre froide PL 2 : 4 m² de renoncules d'automne jusqu'à fin mai 2027,
+    // les plugs de lisianthus prennent les 5 m² restants
+    ['Serre froide', 'PL 2', 'Lisianthus', '2027-03-15', 5, true],
     ['Serre froide', 'PL 3', 'Chrysanthème d’automne', '2027-05-06', 9],
     ['Bordure du Ruisseau', 'PL 4', 'Dahlia', '2027-04-02', 8],
   ]
-  P2027.forEach(([g, pl, c, ds, m2], i) => {
+  P2027.forEach(([g, pl, c, ds, m2, achat], i) => {
     db.plantings.push({
       id: `71000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, planche_id: planche(g, pl), culture_id: culture(c),
       season_id: SEASON_2027, surface_m2: m2, date_semis: ds, jours_cellule_override: 0, jours_champ_override: null,
       jours_recolte_override: null, rendement_override: null, prix_override: null, notes: null, created_at: now,
+      achat_plant: !!achat, arrachee_le: null,
     })
   })
 }
