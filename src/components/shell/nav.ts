@@ -1,12 +1,12 @@
 import {
   LayoutDashboard, Fence, Sprout, CalendarRange, Scissors, Store, PackageOpen,
-  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, PiggyBank, FileDown, type LucideIcon,
+  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, PiggyBank, FileDown, NotebookPen, ReceiptText, type LucideIcon,
 } from 'lucide-react'
 
 export type SectionId =
   | 'dashboard' | 'jardins' | 'semis' | 'calendrier' | 'recoltes' | 'ventes'
   | 'commandes' | 'disponibilite' | 'analytique' | 'catalogue' | 'verification'
-  | 'taches' | 'reel' | 'clients' | 'livraisons' | 'rentabilite' | 'exports'
+  | 'taches' | 'reel' | 'clients' | 'livraisons' | 'rentabilite' | 'exports' | 'journal' | 'factures'
 
 export type Section = { id: SectionId; label: string; short: string; icon: LucideIcon; key: string; description: string }
 
@@ -19,9 +19,11 @@ export const SECTIONS: Section[] = [
   { id: 'jardins', label: 'Jardins & planches', short: 'Jardins', icon: Fence, key: 'j', description: 'Parcelles, planches et plantations' },
   { id: 'semis', label: 'Semis & germination', short: 'Semis', icon: Sprout, key: 's', description: 'Suivi de toutes les cultures' },
   { id: 'calendrier', label: 'Calendrier de culture', short: 'Calendrier', icon: CalendarRange, key: 'c', description: 'Vue hebdomadaire des phases' },
+  { id: 'journal', label: 'Journal & traitements', short: 'Journal', icon: NotebookPen, key: 'n', description: 'Observations, photos, registre phytosanitaire' },
   { id: 'disponibilite', label: 'Disponibilité', short: 'Dispo.', icon: Flower2, key: 'd', description: 'Fleurs disponibles par semaine' },
   { id: 'recoltes', label: 'Récoltes', short: 'Récoltes', icon: Scissors, key: 'r', description: 'Saisie et suivi des récoltes' },
   { id: 'livraisons', label: 'Commandes clients', short: 'Cdes', icon: Truck, key: 'b', description: 'Commandes à préparer et livrer' },
+  { id: 'factures', label: 'Factures & paiements', short: 'Factures', icon: ReceiptText, key: 'f', description: 'Factures numérotées, avoirs, encaissements' },
   { id: 'clients', label: 'Clients', short: 'Clients', icon: Users, key: 'l', description: 'Fleuristes, particuliers, mariages' },
   { id: 'ventes', label: 'Ventes', short: 'Ventes', icon: Store, key: 'v', description: 'Ventes par canal' },
   { id: 'commandes', label: 'Commandes de graines', short: 'Graines', icon: PackageOpen, key: 'o', description: 'Besoins et commandes de semences' },
@@ -32,8 +34,8 @@ export const SECTIONS: Section[] = [
 
 export const NAV_GROUPS: { label: string; ids: SectionId[] }[] = [
   { label: 'Pilotage', ids: ['dashboard', 'taches', 'reel', 'rentabilite', 'analytique'] },
-  { label: 'Cultures', ids: ['jardins', 'semis', 'calendrier', 'disponibilite'] },
-  { label: 'Commercial', ids: ['recoltes', 'livraisons', 'ventes', 'clients'] },
+  { label: 'Cultures', ids: ['jardins', 'semis', 'calendrier', 'journal', 'disponibilite'] },
+  { label: 'Commercial', ids: ['recoltes', 'livraisons', 'ventes', 'factures', 'clients'] },
   { label: 'Référentiel', ids: ['catalogue', 'commandes', 'verification', 'exports'] },
 ]
 
