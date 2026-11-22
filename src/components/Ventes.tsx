@@ -15,6 +15,7 @@ import { HBarChart } from '@/components/charts/HBarChart'
 import { useIntent } from '@/components/shell/ui-context'
 import { photos } from '@/lib/images'
 import { dejaAffichee, useCommercial } from '@/hooks/useCommercial'
+import { useNumerosFactureParVente } from '@/hooks/useFactures'
 import { LignesEditor, useTotauxSaisie } from '@/components/commercial/LignesEditor'
 import {
   aujourdhuiParis, CANAUX, canalTone, jourLivraison, KIND_LABEL, nouvelleLigne, pluriel, libelleQuantite, type LigneSaisie,
@@ -46,6 +47,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
   const formRef = useRef<HTMLDivElement>(null)
   const firstRef = useRef<HTMLSelectElement>(null)
   const { ok, totaux, toutesValides } = useTotauxSaisie(lignes)
+  const facturees = useNumerosFactureParVente(ctx.activeSeason?.farm_id, com.sales)
 
   // Tant que le hook charge, on affiche les ventes du contexte (sans lignes)
   const ventes: V[] = useMemo(() => (com.loading && com.sales.length === 0
@@ -240,6 +242,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
                           <Badge tone={canalTone[v.channel] || 'neutral'}>{v.channel}</Badge>
                           <span className="text-xs text-fg-subtle">{jourLivraison(v.date, today, false)}</span>
                           {v.order_id && <Truck className="h-3.5 w-3.5 text-fg-subtle" aria-label="Issue d’une commande" />}
+                          {facturees.get(v.id) && <Badge tone="green">Facturée n° {facturees.get(v.id)}</Badge>}
                         </div>
                         <p className="mt-1 truncate text-sm text-fg">{v.cultures_sold || '—'}</p>
                         <p className="num truncate text-xs text-fg-muted">
@@ -299,6 +302,7 @@ export default function Ventes({ ctx }: { ctx: any }) {
                             <span className="flex items-center gap-1.5">
                               <span className="truncate">{nomClient(v) || '—'}</span>
                               {v.order_id && <Truck className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-label="Issue d’une commande" />}
+                              {facturees.get(v.id) && <Badge tone="green">Facturée n° {facturees.get(v.id)}</Badge>}
                             </span>
                           </td>
                           <td className="w-px text-right">
