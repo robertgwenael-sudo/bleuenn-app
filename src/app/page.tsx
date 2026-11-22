@@ -20,6 +20,8 @@ import Taches from '@/components/Taches'
 import Reel from '@/components/Reel'
 import Clients from '@/components/Clients'
 import Livraisons from '@/components/Livraisons'
+import Rentabilite from '@/components/Rentabilite'
+import Exports from '@/components/Exports'
 import { AppShell } from '@/components/shell/AppShell'
 import { VALID_IDS } from '@/components/shell/nav'
 import { LogoMark } from '@/components/shell/Logo'
@@ -135,6 +137,8 @@ export default function Home() {
       {section === 'reel' && <Reel ctx={ctx} />}
       {section === 'clients' && <Clients ctx={ctx} />}
       {section === 'livraisons' && <Livraisons ctx={ctx} />}
+      {section === 'rentabilite' && <Rentabilite ctx={ctx} />}
+      {section === 'exports' && <Exports ctx={ctx} />}
     </AppShell>
   )
 }

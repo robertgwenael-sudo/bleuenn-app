@@ -1,12 +1,12 @@
 import {
   LayoutDashboard, Fence, Sprout, CalendarRange, Scissors, Store, PackageOpen,
-  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, type LucideIcon,
+  Flower2, ChartNoAxesCombined, BookOpen, TableProperties, ListChecks, Scale, Users, Truck, PiggyBank, FileDown, type LucideIcon,
 } from 'lucide-react'
 
 export type SectionId =
   | 'dashboard' | 'jardins' | 'semis' | 'calendrier' | 'recoltes' | 'ventes'
   | 'commandes' | 'disponibilite' | 'analytique' | 'catalogue' | 'verification'
-  | 'taches' | 'reel' | 'clients' | 'livraisons'
+  | 'taches' | 'reel' | 'clients' | 'livraisons' | 'rentabilite' | 'exports'
 
 export type Section = { id: SectionId; label: string; short: string; icon: LucideIcon; key: string; description: string }
 
@@ -14,6 +14,7 @@ export const SECTIONS: Section[] = [
   { id: 'dashboard', label: 'Tableau de bord', short: 'Accueil', icon: LayoutDashboard, key: 't', description: 'Vue d’ensemble de la saison' },
   { id: 'taches', label: 'Tâches', short: 'Tâches', icon: ListChecks, key: 'h', description: 'Travaux du mois, semaine par semaine' },
   { id: 'reel', label: 'Prévu / réel', short: 'Réel', icon: Scale, key: 'p', description: 'Récoltes, pertes et CA face au prévu' },
+  { id: 'rentabilite', label: 'Coûts & rentabilité', short: 'Marge', icon: PiggyBank, key: 'm', description: 'Dépenses, temps passé et marge par culture' },
   { id: 'analytique', label: 'Analytique', short: 'Analytique', icon: ChartNoAxesCombined, key: 'a', description: 'Prévisionnel de chiffre d’affaires' },
   { id: 'jardins', label: 'Jardins & planches', short: 'Jardins', icon: Fence, key: 'j', description: 'Parcelles, planches et plantations' },
   { id: 'semis', label: 'Semis & germination', short: 'Semis', icon: Sprout, key: 's', description: 'Suivi de toutes les cultures' },
@@ -25,14 +26,15 @@ export const SECTIONS: Section[] = [
   { id: 'ventes', label: 'Ventes', short: 'Ventes', icon: Store, key: 'v', description: 'Ventes par canal' },
   { id: 'commandes', label: 'Commandes de graines', short: 'Graines', icon: PackageOpen, key: 'o', description: 'Besoins et commandes de semences' },
   { id: 'catalogue', label: 'Catalogue des cultures', short: 'Catalogue', icon: BookOpen, key: 'k', description: 'Référentiel technique' },
+  { id: 'exports', label: 'Exports', short: 'Exports', icon: FileDown, key: 'e', description: 'Fichiers CSV pour le comptable' },
   { id: 'verification', label: 'Vérification', short: 'Vérif.', icon: TableProperties, key: 'x', description: 'Tableau complet de production' },
 ]
 
 export const NAV_GROUPS: { label: string; ids: SectionId[] }[] = [
-  { label: 'Pilotage', ids: ['dashboard', 'taches', 'reel', 'analytique'] },
+  { label: 'Pilotage', ids: ['dashboard', 'taches', 'reel', 'rentabilite', 'analytique'] },
   { label: 'Cultures', ids: ['jardins', 'semis', 'calendrier', 'disponibilite'] },
   { label: 'Commercial', ids: ['recoltes', 'livraisons', 'ventes', 'clients'] },
-  { label: 'Référentiel', ids: ['catalogue', 'commandes', 'verification'] },
+  { label: 'Référentiel', ids: ['catalogue', 'commandes', 'verification', 'exports'] },
 ]
 
 /** Raccourcis de la barre basse mobile (le reste est dans le tiroir). */
