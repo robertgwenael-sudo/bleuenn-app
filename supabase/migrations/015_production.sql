@@ -5,13 +5,12 @@
 -- ============================================================
 -- ÉCRITE, NON APPLIQUÉE.
 --
--- !!! FUSION AVEC 013 (agent cultures) !!!
--- 013 passe AVANT 015 et réécrit aussi calc_planting_dates (dates, plant
--- acheté). 015 réécrit TOUTE la fonction : elle doit garder la logique de
--- DATES de 013. Ici, le bloc « Dates » reprend 002 + plant acheté
--- (plantation = date saisie) ; à la fusion, REMPLACER ce bloc par celui de
--- 013 et garder le bloc « Estimations » de 015 tel quel. achat_plant est lu
--- par to_jsonb(new) : la fonction marche avec ou sans la colonne.
+-- Fusion avec 013 (faite) : 013 passe AVANT 015 et réécrit aussi
+-- calc_planting_dates. 015 réécrit TOUTE la fonction ; elle reprend donc
+-- à l'identique le bloc « Dates » de 013 (vivaces et bisannuelles :
+-- première récolte = premier début de floraison ≥ plantation + délai ;
+-- plant acheté : plantation = date saisie ; floraison absente : dates de
+-- récolte NULL) et ajoute le bloc « Estimations » de 015.
 --
 -- Correction d'un bug : depuis 001/002, plants = m² × 10 000 / espacement²
 -- (grille carrée, rangs ignorés) : Ammi 5 m² (3 rangs, 30 cm) donnait 55
@@ -42,7 +41,7 @@
 --    Une donnée manquante (espacement, rangs, rendement, prix, graines par
 --    motte) donne NULL, plus jamais la valeur par défaut d'avant (20 cm,
 --    1 tige, 0,50 €) ni la formule « surface / espacement² ».
---    Dates : inchangées, sauf plant acheté (013) : plantation = date saisie.
+--    Dates : celles de 013, inchangées.
 --
 -- 3. Un changement des taux d'une ferme recalcule ses plantations.
 -- ============================================================
@@ -73,14 +72,16 @@ comment on column public.farms.plaque_trous is 'Trous (mottes) par plaque de sem
 -- ------------------------------------------------------------
 -- 2. Estimations des plantations : formules du tableur
 -- ------------------------------------------------------------
-create or replace function calc_planting_dates()
-returns trigger as $$
+create or replace function public.calc_planting_dates()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
 declare
   cat record;
   j_cellule int;
   j_champ int;
   j_recolte int;
-  achat boolean;
   t_semis numeric;
   t_champ numeric;
   surface numeric;
@@ -101,19 +102,25 @@ begin
   t_semis := coalesce(t_semis, 30);
   t_champ := coalesce(t_champ, 30);
 
-  -- 013 : plantings.achat_plant ; absent avant 013, d'où la lecture par jsonb.
-  achat := coalesce((to_jsonb(new) ->> 'achat_plant')::boolean, false);
-
-  -- ===== Dates : À REMPLACER PAR LE BLOC DE 013 À LA FUSION =====
-  -- (ici : 002 inchangée, sauf plant acheté, pas de passage en cellule)
-  j_cellule := case when achat then 0 else coalesce(nullif(new.jours_cellule_override, 0), cat.jours_cellule, 0) end;
+  -- ===== Dates : bloc de 013, à l'identique =====
+  -- Plant acheté : pas de cellule, la date saisie est la plantation
+  j_cellule := case when new.achat_plant then 0
+                    else coalesce(nullif(new.jours_cellule_override, 0), cat.jours_cellule, 0) end;
   j_champ   := coalesce(new.jours_champ_override, cat.jours_champ);
   j_recolte := coalesce(new.jours_recolte_override, cat.jours_recolte, 21);
-  new.date_plantation := new.date_semis + j_cellule;
-  new.date_recolte    := new.date_plantation + j_champ;
-  new.date_fin        := new.date_recolte + j_recolte;
 
-  -- ===== Estimations 015 : formules du tableur (à garder) =====
+  new.date_plantation := new.date_semis + j_cellule;
+  if coalesce(cat.cycle, 'annuelle') = 'annuelle' then
+    new.date_recolte := new.date_plantation + j_champ;
+  else
+    -- Vivace / bisannuelle : première floraison dans SA fenêtre annuelle ;
+    -- sans début de floraison, pas de date de récolte (jamais devinée).
+    new.date_recolte := public.prochaine_date_jjmm(
+      new.date_plantation + coalesce(cat.delai_premiere_floraison_jours, 0), cat.debut_floraison);
+  end if;
+  new.date_fin := new.date_recolte + j_recolte;   -- null si pas de récolte connue
+
+  -- ===== Estimations 015 : formules du tableur =====
   -- Données : 0 ou NULL = manquant
   surface       := nullif(new.surface_m2, 0);
   rangs         := nullif(cat.rangs_par_planche, 0);
@@ -126,20 +133,21 @@ begin
   nettes := plants * rend * (100 - t_champ) / 100.0;
 
   new.plants_count := round(plants);
+  -- Plant acheté : plants à acheter (pertes de levée comprises), pas de graines
   new.graines_necessaires := case
-    when achat then round(plants * (100 + t_semis) / 100.0)
+    when new.achat_plant then round(plants * (100 + t_semis) / 100.0)
     else round(plants * (100 + t_semis) / 100.0 * graines_motte) end;
   new.tiges_estimees := round(nettes);
   new.revenu_estime  := round(nettes * prix, 2);
   return new;
 end;
-$$ language plpgsql;
+$$;
 
 -- ------------------------------------------------------------
 -- 3. Taux d'une ferme modifiés : recalcul de ses plantations
 -- ------------------------------------------------------------
 create or replace function public.propagate_farm_taux()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   update public.plantings p set date_semis = p.date_semis
     from public.planches pl join public.gardens g on g.id = pl.garden_id
@@ -163,7 +171,7 @@ update public.plantings set date_semis = date_semis;
 -- Retour arrière (à exécuter à la main si besoin, dans une transaction) :
 --   drop trigger trg_propagate_farm_taux on public.farms;
 --   drop function public.propagate_farm_taux();
---   -- recréer calc_planting_dates telle qu'en 002 (copier la définition), puis :
+--   -- recréer calc_planting_dates telle qu'en 013 (section C de 013_cultures_vivaces.sql), puis :
 --   update public.plantings set date_semis = date_semis;
 --   alter table public.farms
 --     drop column taux_perte_semis, drop column taux_perte_champ,
