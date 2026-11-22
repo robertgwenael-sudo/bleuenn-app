@@ -111,6 +111,23 @@ function plantingsFull(): Row[] {
   return out
 }
 
+// ─── Vue planting_actuals (migration 005) : réel cumulé par plantation ──
+function plantingActuals(): Row[] {
+  const d = getDb() as any
+  return d.plantings.map((p: Row) => {
+    const hs = d.harvests.filter((h: Row) => h.planting_id === p.id)
+    const ls = (d.losses || []).filter((l: Row) => l.planting_id === p.id)
+    const dates = hs.map((h: Row) => h.date).sort()
+    return {
+      planting_id: p.id, season_id: p.season_id,
+      tiges_recoltees: hs.reduce((s: number, h: Row) => s + h.tiges, 0),
+      tiges_perdues: ls.reduce((s: number, l: Row) => s + l.tiges, 0),
+      nb_recoltes: hs.length ? hs.length : null,
+      premiere_recolte: dates[0] ?? null, derniere_recolte: dates[dates.length - 1] ?? null,
+    }
+  })
+}
+
 // ─── Valeurs par défaut des tables (001_schema.sql) ──────────────
 const DEFAULTS: Record<string, Row> = {
   seasons: { revenue_goal: 15000, is_active: false, invite_enabled: false },
@@ -127,6 +144,7 @@ const DEFAULTS: Record<string, Row> = {
 function tableRows(table: string): Row[] {
   const d = getDb() as any
   if (table === 'plantings_full') return plantingsFull()
+  if (table === 'planting_actuals') return plantingActuals()
   if (!d[table]) throw new Error(`Table inconnue en mode démo : ${table}`)
   return d[table]
 }
