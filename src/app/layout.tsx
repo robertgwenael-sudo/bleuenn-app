@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Fraunces, Inter } from 'next/font/google'
 import Providers from '@/components/Providers'
+import EnregistrementServiceWorker from '@/components/offline/ServiceWorker'
 import './globals.css'
 
 const serif = Fraunces({
@@ -18,6 +19,22 @@ const sans = Inter({
 export const metadata: Metadata = {
   title: 'Bleuenn — Ferme Florale',
   description: 'Application de gestion pour ferme florale',
+  applicationName: 'Bleuenn',
+  // Le manifeste (src/app/manifest.ts) est lié automatiquement par Next.
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+  // iOS : ouverture plein écran depuis l'écran d'accueil.
+  appleWebApp: {
+    capable: true,
+    title: 'Bleuenn',
+    statusBarStyle: 'default',
+  },
+  formatDetection: { telephone: false },
 }
 
 export const viewport: Viewport = {
@@ -40,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen">
         <Providers>{children}</Providers>
+        <EnregistrementServiceWorker />
       </body>
     </html>
   )

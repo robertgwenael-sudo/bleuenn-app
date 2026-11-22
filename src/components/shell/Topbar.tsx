@@ -5,12 +5,16 @@ import { SeasonSelect } from './SeasonSelect'
 import { UserMenu } from './UserMenu'
 import { useTheme } from './theme'
 import { LogoMark } from './Logo'
+import { useSynchroGlobale } from '@/components/offline/useHorsLigne'
+import { PastilleHorsLigne } from '@/components/offline/IndicateurHorsLigne'
 
 export function Topbar({ section, ctx, onMenu, onPalette, onProfile, onTeam, onShortcuts, onDuplicate }: {
   section: string; ctx: any; onMenu: () => void; onPalette: () => void; onProfile: () => void; onTeam: () => void; onShortcuts: () => void; onDuplicate?: () => void
 }) {
   const s = sectionById(section)
   const { resolved, toggle } = useTheme()
+  // Saisies hors ligne : synchro automatique et pastille d'état (ajout localisé).
+  const horsLigne = useSynchroGlobale(ctx)
   return (
     <header className="sticky top-0 z-20 flex h-topbar items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur-md sm:px-5 lg:px-8">
       <button type="button" onClick={onMenu} aria-label="Ouvrir le menu"
@@ -25,6 +29,7 @@ export function Topbar({ section, ctx, onMenu, onPalette, onProfile, onTeam, onS
       </div>
 
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+        <PastilleHorsLigne etat={horsLigne} onClick={() => { window.location.hash = 'recoltes' }} />
         <button type="button" onClick={onPalette}
           className="hidden h-9 w-60 items-center whitespace-nowrap gap-2 rounded-btn border border-border bg-surface px-3 text-sm text-fg-subtle shadow-xs transition hover:border-border-strong md:flex">
           <Search className="h-4 w-4" aria-hidden />
