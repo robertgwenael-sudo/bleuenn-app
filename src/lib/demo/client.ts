@@ -12,6 +12,7 @@
 // ============================================================
 import { extendDemoDb } from './seeds'
 import { buildDemoDb, DEMO_USER_ID, DEMO_EMAIL, type DemoDb } from './data'
+import { recalculerVenteDemo, totalLigneDemo } from './seeds/commercial'
 
 type Row = Record<string, any>
 type Result = { data: any; error: { message: string; code?: string } | null; count?: number | null }
@@ -139,6 +140,11 @@ const DEFAULTS: Record<string, Row> = {
   sales: { client: null, notes: null },
   seed_orders: { graines_needed: 0, graines_ordered: 0, supplier: null, bio: false, received: false },
   team_members: { role: 'member' },
+  // Migration 005 (commercial)
+  clients: { kind: 'particulier', contact_name: null, email: null, phone: null, address: null, notes: null, archived_at: null },
+  orders: { status: 'confirmee', channel: null, notes: null, sale_id: null, client_id: null },
+  sale_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
+  order_lines: { culture_id: null, unit: 'tige', stems_per_unit: 1 },
 }
 
 function tableRows(table: string): Row[] {
@@ -165,6 +171,20 @@ function cascadeDelete(table: string, removed: Row[]) {
     drop('gardens', r => ids.has(r.season_id)); drop('team_members', r => ids.has(r.season_id))
     drop('sales', r => ids.has(r.season_id)); drop('seed_orders', r => ids.has(r.season_id))
   }
+  // Migration 005 (commercial) : cascades et « on delete set null »
+  const dx = d as any
+  if (table === 'sales') {
+    drop('sale_lines' as keyof DemoDb, r => ids.has(r.sale_id))
+    for (const o of dx.orders) if (ids.has(o.sale_id)) o.sale_id = null
+  }
+  if (table === 'orders') {
+    drop('order_lines' as keyof DemoDb, r => ids.has(r.order_id))
+    for (const v of dx.sales) if (ids.has(v.order_id)) v.order_id = null
+  }
+  if (table === 'clients') {
+    for (const t of ['orders', 'sales']) for (const r of dx[t]) if (ids.has(r.client_id)) r.client_id = null
+  }
+  if (table === 'sale_lines') new Set(removed.map(r => r.sale_id)).forEach(sid => recalculerVenteDemo(dx, sid))
 }
 
 type Filter = (r: Row) => boolean
@@ -283,11 +303,20 @@ class DemoQuery implements PromiseLike<Result> {
         for (const v of list) {
           const row: Row = { id: uuid(), created_at: new Date().toISOString(), ...DEFAULTS[t], ...v }
           if (t === 'plantings') calcPlanting(row)
-          if (t === 'sales') row.total = Math.round(row.tiges * row.prix_unitaire * 100) / 100
+          if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === row.id)) row.total = Math.round(row.tiges * row.prix_unitaire * 100) / 100
+          // Migration 005 : season_id recopié du parent, line_total généré
+          if (t === 'sale_lines' || t === 'order_lines') {
+            if ('line_total' in v) return { data: null, error: { code: '428C9', message: 'cannot insert a non-DEFAULT value into column "line_total" (colonne générée)' } }
+            const parent = t === 'sale_lines' ? d.sales.find((x: Row) => x.id === row.sale_id) : d.orders.find((x: Row) => x.id === row.order_id)
+            if (!parent) return { data: null, error: { code: 'P0001', message: `${t === 'sale_lines' ? 'Vente' : 'Commande'} ${row.sale_id ?? row.order_id} introuvable` } }
+            row.season_id = parent.season_id
+            row.line_total = totalLigneDemo(row)
+          }
           if (t === 'seasons') row.invite_token ??= uuid()
           if (t === 'team_members') row.joined_at ??= new Date().toISOString()
           d[t].push(row)
           inserted.push(row)
+          if (t === 'sale_lines') recalculerVenteDemo(d, row.sale_id)
           if (t === 'seasons') d.team_members.push({ id: uuid(), season_id: row.id, user_id: row.user_id, role: 'owner', joined_at: new Date().toISOString() })
         }
         return this.returning ? this.finish(inserted) : { data: null, error: null }
@@ -310,7 +339,9 @@ class DemoQuery implements PromiseLike<Result> {
         for (const r of rows) {
           Object.assign(r, this.payload)
           if (t === 'plantings') calcPlanting(r)
-          if (t === 'sales') r.total = Math.round(r.tiges * r.prix_unitaire * 100) / 100
+          if (t === 'sales' && !d.sale_lines.some((l: Row) => l.sale_id === r.id)) r.total = Math.round(r.tiges * r.prix_unitaire * 100) / 100
+          if (t === 'sale_lines' || t === 'order_lines') r.line_total = totalLigneDemo(r)
+          if (t === 'sale_lines') recalculerVenteDemo(d, r.sale_id)
           if (t === 'culture_catalog') d.plantings.filter((p: Row) => p.culture_id === r.id).forEach(calcPlanting)
         }
         return this.returning ? this.finish(rows) : { data: null, error: null }
